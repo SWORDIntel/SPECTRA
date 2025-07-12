@@ -57,6 +57,12 @@ from telethon.tl.custom.message import Message as TLMessage  # type: ignore
 from telethon.tl.types import InputPeerChannel, InputPeerChat  # type: ignore
 from tqdm.asyncio import tqdm_asyncio  # type: ignore
 
+# Local application imports
+from tgarchive.db import SpectraDB
+from tgarchive.forwarding import AttachmentForwarder
+from tgarchive.config_models import Config, DEFAULT_CFG # Import Config and DEFAULT_CFG
+
+
 # ── Globals ───────────────────────────────────────────────────────────────
 APP_NAME = "spectra_002_archiver"
 __version__ = "2.4.0"
@@ -74,283 +80,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(APP_NAME)
 
-# ── Default configuration ────────────────────────────────────────────────
-DEFAULT_CFG: Dict[str, Any] = {
-    # legacy single-account
-    "api_id": int(os.environ.get("TG_API_ID", 0)),
-    "api_hash": os.environ.get("TG_API_HASH", ""),
-
-    # multi-account list
-    "accounts": [
-        {
-            "api_id": 123456,  # ← edit me
-            "api_hash": "0123456789abcdef0123456789abcdef",
-            "session_name": "spectra_1",
-        },
-    ],
-
-    # rotating proxy
-    "proxy": {
-        "host": "rotating.proxyempire.io",
-        "user": "PROXY_USER",
-        "password": "PROXY_PASS",
-        "ports": list(range(9000, 9010)),
-    },
-
-    # runtime options
-    "entity": "",  # channel/group @link or id
-    "db_path": "spectra.sqlite3",
-    "media_dir": "media",
-    "download_media": True,
-    "download_avatars": True,
-    "media_mime_whitelist": [],
-    "batch": 500,
-    "sleep_between_batches": 1.0,
-    "use_takeout": False,
-    "avatar_size": 128,
-    "collect_usernames": True,
-    "sidecar_metadata": True,
-    "archive_topics": True,  # New option to control topic archiving
-    "default_forwarding_destination_id": None,
-    "forwarding": {
-        "enable_deduplication": True,
-        "secondary_unique_destination": None,
-    },
-    "cloud": {
-        "auto_invite_accounts": True,
-        "invitation_delays": {
-            "min_seconds": 120,
-            "max_seconds": 600,
-            "variance": 0.3
-        }
-    },
-    "vps": {
-        "enabled": False,
-        "host": "",
-        "port": 22,
-        "username": "",
-        "key_path": "~/.ssh/id_rsa",
-        "remote_base_path": "/data/spectra",
-        "directory_structure": {
-            "archives": "archives/{date}/{channel_name}",
-            "media": "media/{type}/{date}",
-            "text_files": "documents/text/{channel_name}",
-            "cloud_downloads": "cloud/{date}/{channel_name}"
-        },
-        "sync_options": {
-            "auto_sync": False,
-            "sync_interval_minutes": 30,
-            "compression": True,
-            "delete_after_sync": False
-        }
-    }
-}
-
-# ── Config loader ─────────────────────────────────────────────────────────
-@dataclass
-class Config:
-    path: Path = Path("spectra_config.json")
-    data: Dict[str, Any] = field(default_factory=lambda: DEFAULT_CFG.copy())
-
-    def __post_init__(self):
-        # First try to load generated configs from TELESMASHER
-        auto_config_loaded = self._try_load_generated_configs()
-
-        loaded_from_file = False
-        if not auto_config_loaded and self.path.exists():
-            try:
-                file_data = json.loads(self.path.read_text())
-                self.data.update(file_data)
-                logger.info(f"Loaded legacy config from {self.path}")
-                loaded_from_file = True
-            except json.JSONDecodeError as exc:
-                logger.warning("Bad JSON in config – using defaults (%s)", exc)
-        
-        if not loaded_from_file and not auto_config_loaded:
-            # If no config file and no auto-config, save default
-            self.save()
-            console.print(
-                "[yellow]Config not found; default created at"
-                f" {self.path}.  Edit credentials then rerun.[/yellow]"
-            )
-            sys.exit(1)
-        
-        # Ensure default_forwarding_destination_id is present
-        if "default_forwarding_destination_id" not in self.data:
-            self.data["default_forwarding_destination_id"] = DEFAULT_CFG["default_forwarding_destination_id"]
-
-        # Ensure forwarding settings are present with defaults
-        forwarding_cfg = self.data.setdefault("forwarding", {})
-        default_forwarding_cfg = DEFAULT_CFG.get("forwarding", {})
-        forwarding_cfg.setdefault("enable_deduplication", default_forwarding_cfg.get("enable_deduplication", True))
-        forwarding_cfg.setdefault("secondary_unique_destination", default_forwarding_cfg.get("secondary_unique_destination", None))
-
-        # Ensure cloud settings are present with defaults
-        cloud_cfg = self.data.setdefault("cloud", {})
-        default_cloud_cfg = DEFAULT_CFG.get("cloud", {})
-        cloud_cfg.setdefault("auto_invite_accounts", default_cloud_cfg.get("auto_invite_accounts", True))
-        cloud_cfg.setdefault("invitation_delays", default_cloud_cfg.get("invitation_delays", {
-            "min_seconds": 120, "max_seconds": 600, "variance": 0.3
-        }))
-
-        # Ensure vps settings are present with defaults
-        vps_cfg = self.data.setdefault("vps", {})
-        default_vps_cfg = DEFAULT_CFG.get("vps", {})
-        for key, value in default_vps_cfg.items():
-            vps_cfg.setdefault(key, value)
-
-        # Ensure nested dictionaries in vps config are also defaulted
-        if "directory_structure" not in vps_cfg:
-            vps_cfg["directory_structure"] = default_vps_cfg.get("directory_structure", {})
-        else:
-            for key, value in default_vps_cfg.get("directory_structure", {}).items():
-                vps_cfg["directory_structure"].setdefault(key, value)
-
-        if "sync_options" not in vps_cfg:
-            vps_cfg["sync_options"] = default_vps_cfg.get("sync_options", {})
-        else:
-            for key, value in default_vps_cfg.get("sync_options", {}).items():
-                vps_cfg["sync_options"].setdefault(key, value)
-
-        # back-compat
-        if not self.data.get("accounts"):
-            self.data["accounts"] = [
-                {
-                    "api_id": self.data["api_id"],
-                    "api_hash": self.data["api_hash"],
-                    "session_name": "spectra_legacy",
-                }
-            ]
-            
-        # Convert TELESMASHER accounts format if needed
-        self._normalize_accounts()
-    
-    def _try_load_generated_configs(self) -> bool:
-        """Try to load configs from TELESMASHER generator format."""
-        config_paths = [
-            Path("config/telegram_reporter_config.json"),
-            Path("./config/telegram_reporter_config.json"),
-            Path("../config/telegram_reporter_config.json"),
-            Path.cwd() / "config" / "telegram_reporter_config.json",
-        ]
-        
-        for cfg_path in config_paths:
-            if cfg_path.exists():
-                try:
-                    generated_config = json.loads(cfg_path.read_text())
-                    logger.info(f"Found generated config at {cfg_path}")
-                    
-                    # Copy accounts and proxy settings
-                    if "accounts" in generated_config:
-                        self.data["telesmasher_accounts"] = generated_config["accounts"]
-                        logger.info(f"Loaded {len(generated_config['accounts'])} accounts from generated config")
-                    
-                    if "proxy" in generated_config:
-                        self.data["proxy"] = generated_config["proxy"]
-                        logger.info("Loaded proxy settings from generated config")
-                    
-                    return True
-                except (json.JSONDecodeError, PermissionError) as e:
-                    logger.warning(f"Error loading generated config: {e}")
-        
-        return False
-    
-    def _normalize_accounts(self):
-        """Convert TELESMASHER account format to SPECTRA format if needed."""
-        telesmasher_accounts = self.data.get("telesmasher_accounts", [])
-        
-        if telesmasher_accounts:
-            # Convert format and add to existing accounts
-            for idx, acc in enumerate(telesmasher_accounts):
-                if all(k in acc for k in ("phone_number", "api_id", "api_hash")):
-                    phone = acc["phone_number"].replace("+", "")
-                    new_account = {
-                        "api_id": acc["api_id"],
-                        "api_hash": acc["api_hash"],
-                        "session_name": f"spectra_auto_{phone}_{idx}",
-                        "phone_number": acc["phone_number"],
-                        "password": acc.get("password", ""),
-                    }
-                    
-                    # Check if this account already exists in our list
-                    exists = False
-                    for existing in self.data["accounts"]:
-                        if (existing.get("api_id") == new_account["api_id"] and 
-                            existing.get("api_hash") == new_account["api_hash"]):
-                            exists = True
-                            break
-                    
-                    if not exists:
-                        self.data["accounts"].append(new_account)
-            
-            logger.info(f"Normalized {len(telesmasher_accounts)} TELESMASHER accounts")
-
-    # helpers
-    def save(self):
-        self.path.write_text(json.dumps(self.data, indent=2))
-
-    def __getitem__(self, item):
-        return self.data[item]
-
-    def __setitem__(self, key, value):
-        self.data[key] = value
-
-    @property
-    def accounts(self):
-        return self.data["accounts"]
-
-    @property
-    def default_forwarding_destination_id(self):
-        return self.data.get("default_forwarding_destination_id")
-
-    @default_forwarding_destination_id.setter
-    def default_forwarding_destination_id(self, value: Optional[str]):
-        self.data["default_forwarding_destination_id"] = value
-    
-    @property
-    def active_accounts(self) -> List[Dict[str, Any]]:
-        """Return a list of accounts that are likely to work."""
-        # Preferred accounts are those created from TELESMASHER configs
-        preferred = [acc for acc in self.accounts 
-                    if acc.get("api_id") and acc.get("api_hash") and 
-                    acc.get("session_name", "").startswith("spectra_auto_")]
-        
-        # If we have preferred accounts, use those; otherwise use all accounts
-        return preferred if preferred else self.accounts
-    
-    def auto_select_account(self) -> Optional[Dict[str, Any]]:
-        """Automatically select an account to use."""
-        active = self.active_accounts
-        
-        if not active:
-            logger.warning("No active accounts available")
-            return None
-        
-        # Randomly select an account for load balancing
-        selected = random.choice(active)
-        logger.info(f"Auto-selected account: {selected.get('session_name', 'unknown')}")
-        return selected
-
-    @property
-    def proxy_conf(self):
-        return self.data.get("proxy", {})
-
-    @property
-    def vps_conf(self):
-        """Returns the VPS configuration dictionary."""
-        # Ensure the vps config is fully populated with defaults if accessed.
-        # This is mostly handled by __post_init__, but this is a safeguard.
-        vps_settings = self.data.setdefault("vps", {})
-        default_vps_settings = DEFAULT_CFG.get("vps", {})
-
-        for key, default_value in default_vps_settings.items():
-            if key not in vps_settings:
-                vps_settings[key] = default_value
-            elif isinstance(default_value, dict): # For nested dicts like directory_structure and sync_options
-                for sub_key, sub_default_value in default_value.items():
-                    if sub_key not in vps_settings[key]:
-                        vps_settings[key][sub_key] = sub_default_value
-        return vps_settings
+# DEFAULT_CFG and Config class are now in config_models.py
 
 # ── Proxy cycler ──────────────────────────────────────────────────────────
 class ProxyCycler:
@@ -702,10 +432,125 @@ async def runner(cfg: Config, auto_account=None):
             logger.exception("Unexpected error – retrying")
             continue
 
+# ── Shunt Mode Function ──────────────────────────────────────────────────
+async def shunt_files_mode(cfg: Config, source_channel_id: str, destination_channel_id: str, account_identifier: Optional[str]):
+    """
+    Handles the logic for shunting files from a source channel to a destination channel.
+    """
+    console.print(f"[cyan]Initiating shunt from '{source_channel_id}' to '{destination_channel_id}'...[/cyan]")
+
+    db_path = Path(cfg.data.get("db_path", DEFAULT_CFG["db_path"]))
+    forwarder = None  # Initialize forwarder to None for finally block
+
+    try:
+        # Initialize DB (needed by AttachmentForwarder for deduplication)
+        db = SpectraDB(db_path=db_path)
+
+        # Initialize AttachmentForwarder
+        # Deduplication is enabled by default in AttachmentForwarder
+        forwarder_config = cfg.data.get("forwarding", {})
+        grouping_config = cfg.data.get("grouping", DEFAULT_CFG["grouping"]) # Ensure defaults if not in file
+
+        forwarder = AttachmentForwarder(
+            config=cfg,
+            db=db,
+            enable_deduplication=forwarder_config.get("enable_deduplication", True),
+            secondary_unique_destination=forwarder_config.get("secondary_unique_destination"),
+            grouping_strategy=grouping_config.get("strategy", "none"),
+            grouping_time_window_seconds=grouping_config.get("time_window_seconds", 300)
+        )
+
+        await forwarder.forward_messages(
+            origin_id=source_channel_id,
+            destination_id=destination_channel_id,
+            account_identifier=account_identifier
+        )
+        console.print("[green]Shunt operation completed successfully.[/green]")
+
+    except Exception as e:
+        logger.exception(f"Error during shunt operation: {e}")
+        console.print(f"[bold red]Error during shunt operation: {e}[/bold red]")
+    finally:
+        if forwarder:
+            await forwarder.close() # Ensure client connection is closed
+        # DB connection is managed by SpectraDB context manager if used with "with"
+        # If not, ensure db.conn.close() is called if db was initialized.
+        # For now, SpectraDB is initialized directly, so it will close on __exit__ if shunt_files_mode was a context manager.
+        # Since it's not, direct close might be needed if not handled by forwarder.close() or SpectraDB's own cleanup.
+        # Current AttachmentForwarder doesn't own/close the DB. SpectraDB closes on __exit__.
+        # Let's assume SpectraDB handles its closure correctly when its instance goes out of scope or via explicit close if necessary.
+        pass
+
+
 # ── npyscreen TUI ────────────────────────────────────────────────────────
 class SpectraApp(npyscreen.NPSAppManaged):
     def onStart(self):
         self.addForm("MAIN", MenuForm, name="SPECTRA-002 Archiver")
+        self.addForm("SHUNT", ShuntForm, name="Shunt Mode")
+
+class ShuntForm(npyscreen.ActionForm):
+    def create(self):
+        self.cfg = Config()
+        self.add(npyscreen.TitleText, name="Source Channel ID:", value="")
+        self.add(npyscreen.TitleText, name="Destination Channel ID:", value="")
+
+        sessions = [acc["session_name"] for acc in self.cfg.accounts]
+        self.acc_sel = self.add(
+            npyscreen.TitleSelectOne,
+            max_height=min(len(sessions)+2, 8),
+            name="Account to Use:",
+            values=sessions,
+            scroll_exit=True,
+            value=[0]
+        )
+
+        grouping_strategies = ["none", "filename", "time"]
+        current_strategy = self.cfg.data.get("grouping", {}).get("strategy", "none")
+        default_strategy_idx = grouping_strategies.index(current_strategy) if current_strategy in grouping_strategies else 0
+        self.grouping_sel = self.add(
+            npyscreen.TitleSelectOne,
+            max_height=4,
+            name="Grouping Strategy:",
+            values=grouping_strategies,
+            scroll_exit=True,
+            value=[default_strategy_idx]
+        )
+
+    def on_ok(self):
+        source_channel = self.get_widget(0).value
+        dest_channel = self.get_widget(1).value
+
+        if not source_channel or not dest_channel:
+            npyscreen.notify_confirm("Source and Destination channels cannot be empty.", "Input Error")
+            return
+
+        selected_account_idx = self.acc_sel.value[0] if self.acc_sel.value else 0
+        account_identifier = self.cfg.accounts[selected_account_idx]['session_name']
+
+        selected_grouping_idx = self.grouping_sel.value[0] if self.grouping_sel.value else 0
+        grouping_strategy = self.grouping_sel.values[selected_grouping_idx]
+
+        # Update config in memory for the shunt function to use
+        self.cfg.data["grouping"]["strategy"] = grouping_strategy
+
+        # Switch back to the main form before running the async task
+        self.parentApp.setNextForm("MAIN")
+
+        # A small message to let the user know the process is starting
+        npyscreen.notify_wait(f"Starting shunt from {source_channel} to {dest_channel}...", "Please wait")
+
+        # Since npyscreen is not async-native, running the async function
+        # will block the TUI. This is a limitation of the current structure.
+        # Ideally, this would run in a separate thread.
+        try:
+            asyncio.run(shunt_files_mode(self.cfg, source_channel, dest_channel, account_identifier))
+            npyscreen.notify_confirm("Shunt operation completed successfully!", "Success")
+        except Exception as e:
+            logger.exception(f"Error during TUI shunt operation: {e}")
+            npyscreen.notify_confirm(f"An error occurred: {e}", "Error")
+
+    def on_cancel(self):
+        self.parentApp.setNextForm("MAIN")
 
 class MenuForm(npyscreen.ActionForm):
     def create(self):
@@ -738,6 +583,13 @@ class MenuForm(npyscreen.ActionForm):
         self.archive_topics = self.add(npyscreen.Checkbox, name="Archive topics/threads", value=self.cfg["archive_topics"])
         self.auto_mode = self.add(npyscreen.Checkbox, name="Use auto-selected account", value=bool(self.auto_account))
 
+        self.add(npyscreen.FixedText, value="", editable=False) # Spacer
+        self.shunt_button = self.add(npyscreen.ButtonPress, name="Shunt Files Between Channels")
+        self.shunt_button.whenPressed = self.switch_to_shunt_form
+
+    def switch_to_shunt_form(self):
+        self.parentApp.setNextForm("SHUNT")
+
     def on_ok(self):
         if self.auto_mode.value and self.auto_account:
             selected_account = self.auto_account
@@ -763,12 +615,36 @@ def main():
     p.add_argument("--no-tui", action="store_true", help="run without ncurses UI")
     p.add_argument("--auto", action="store_true", help="use auto-selected account and skip TUI")
     p.add_argument("--entity", help="channel or group to archive (e.g. @channel)")
+    p.add_argument("--shunt-from", help="Source channel ID for shunting files")
+    p.add_argument("--shunt-to", help="Destination channel ID for shunting files")
+    p.add_argument("--shunt-account", help="Optional: Account phone number or session name to use for shunting")
     args = p.parse_args()
 
     cfg = Config()
+
+    if args.shunt_from and args.shunt_to:
+        # Shunt mode takes precedence
+        if not cfg.accounts:
+            console.print("[bold red]ERROR:[/] No accounts configured. Cannot perform shunt operation.")
+            sys.exit(1)
+
+        console.print(f"[bold blue]Shunt Mode Activated:[/]\n  Source: {args.shunt_from}\n  Destination: {args.shunt_to}")
+        if args.shunt_account:
+            console.print(f"  Using specific account: {args.shunt_account}")
+
+        try:
+            asyncio.run(shunt_files_mode(cfg, args.shunt_from, args.shunt_to, args.shunt_account))
+        except KeyboardInterrupt:
+            console.print("\n[bold red]Shunt operation interrupted by user.[/]")
+            sys.exit(130) # Standard exit code for Ctrl+C
+        except Exception as e:
+            logger.exception(f"Fatal error during shunt operation: {e}")
+            console.print(f"[bold red]A fatal error occurred during shunt: {e}[/bold red]")
+            sys.exit(1)
+        sys.exit(0) # Successful shunt operation
     
     # Auto mode: select account and run immediately if entity is provided
-    if args.auto:
+    elif args.auto:
         auto_account = cfg.auto_select_account()
         if auto_account:
             # Use provided entity or existing config

@@ -5,19 +5,20 @@ from __future__ import annotations
 
 import logging
 import asyncio # Added for asyncio.sleep
-from typing import Optional, Set
+from typing import Optional, Set, List, Tuple # Added List, Tuple
 import hashlib # Added for deduplication
-from datetime import datetime, timezone # Added for deduplication timestamp
+import re # For filename grouping
+from datetime import datetime, timezone, timedelta # Added for deduplication timestamp, timedelta for time grouping
 
 # Third-party imports
-from telethon import TelegramClient, errors as telethon_errors # Added telethon_errors
-from telethon.tl import types # Added for types.MessageMediaWebPage
-from telethon.tl.types import Message as TLMessage, InputPeerChannel, User, Channel, ChatAdminRequiredError # Add more as needed # Added ChatAdminRequiredError
-from telethon.errors import RPCError, ChannelPrivateError, UserDeactivatedError, AuthKeyError, UserBannedInChannelError # Added UserBannedInChannelError
+from telethon import TelegramClient, errors as telethon_errors
+from telethon.tl import types
+from telethon.tl.types import Message as TLMessage, InputPeerChannel, User, Channel
+from telethon.errors import RPCError, ChannelPrivateError, UserDeactivatedError, AuthKeyError, UserBannedInChannelError, ChatAdminRequiredError
 
 # Local application imports
 from tgarchive.db import SpectraDB
-from tgarchive.sync import Config, DEFAULT_CFG # DEFAULT_CFG might not be directly needed here but good for ref
+from tgarchive.config_models import Config, DEFAULT_CFG # Import from new location
 
 logger = logging.getLogger("tgarchive.forwarding")
 
@@ -30,11 +31,13 @@ class AttachmentForwarder:
                  forward_to_all_saved_messages: bool = False,
                  prepend_origin_info: bool = False,
                  destination_topic_id: Optional[int] = None,
-                 secondary_unique_destination: Optional[str] = None, # NEW
-                 enable_deduplication: bool = True): # NEW
+                 secondary_unique_destination: Optional[str] = None,
+                 enable_deduplication: bool = True,
+                 grouping_strategy: str = "none",  # "none", "filename", "time"
+                 grouping_time_window_seconds: int = 300): # 5 minutes default
         """
         Initializes the AttachmentForwarder.
-        Enhanced with deduplication support.
+        Enhanced with deduplication and grouping support.
 
         Args:
             config: The SPECTRA configuration object.
@@ -44,6 +47,8 @@ class AttachmentForwarder:
             destination_topic_id: Optional topic ID for the destination.
             secondary_unique_destination: Channel ID for unique messages only.
             enable_deduplication: Enable duplicate detection.
+            grouping_strategy: Strategy for grouping files ("none", "filename", "time").
+            grouping_time_window_seconds: Time window for time-based grouping.
         """
         self.config = config
         self.db = db
@@ -58,6 +63,46 @@ class AttachmentForwarder:
         self.secondary_unique_destination = secondary_unique_destination
         self.message_hashes: Set[str] = set()  # In-memory cache for hashes
 
+        # Grouping related attributes
+        self.grouping_strategy = grouping_strategy.lower()
+        self.grouping_time_window_seconds = grouping_time_window_seconds
+        if self.grouping_strategy not in ["none", "filename", "time"]:
+            self.logger.warning(f"Invalid grouping strategy '{self.grouping_strategy}'. Defaulting to 'none'.")
+            self.grouping_strategy = "none"
+
+        self.logger.info(f"File grouping strategy: {self.grouping_strategy}")
+        if self.grouping_strategy == "time":
+            self.logger.info(f"Grouping time window: {self.grouping_time_window_seconds} seconds")
+
+        # Regex to capture base, part identifier (and number within), and full extension (including multi-part like .tar.gz)
+        # Group 1: base_name
+        # Group 2: full part string (e.g., _part1, _1, (1))
+        # Group 1: base_name
+        # Group 2: full part string (e.g., _part1, _1, (1), .part1, .1)
+        # Groups for part numbers:
+        #   3: for _part(\d+)
+        #   4: for _(\d+)
+        #   5: for \s\((\d+)\)
+        #   7: for \.part(\d+) (note: group 6 is the start of this pattern)
+        # Simplified Regex:
+        # Group 1: base_name (non-greedy)
+        # Group 2: part_separator_and_identifier (e.g., "_part", ".part", "_", ".", " (")
+        # Group 1: base_name
+        # Group 2: full part string (e.g., _part1, _1, (1), .part1, .1)
+        # Groups for part numbers within Group 2's alternatives:
+        #   3: for _part(\d+)
+        #   4: for _(\d+)
+        #   5: for \s\((\d+)\)
+        #   6: for \.part(\d+)
+        #   7: for \.(\d+)
+        # Group 8: full extension (e.g., .rar, .tar.gz, or empty if no extension)
+        self.filename_group_pattern = re.compile(
+            r"(.+?)"  # Group 1: base_name (non-greedy)
+            r"((?:_part(\d+))|(?:_(\d+))|(?:\s\((\d+)\))|(?:\.part(\d+))|(?:\.(\d+)))?"  # Group 2: Full Part String (optional)
+            # Inner groups for numbers: 3, 4, 5, 6, 7
+            r"((?:\.[a-zA-Z0-9]+)+|)$",  # Group 8: Extension
+            re.IGNORECASE
+        )
         if self.forward_to_all_saved_messages:
             self.logger.info("Forwarding to 'Saved Messages' of all configured accounts is ENABLED.")
         if self.prepend_origin_info:
@@ -134,72 +179,73 @@ class AttachmentForwarder:
                     content_parts.append(f"file_id:{message.file.id}")
                 if hasattr(message.file, 'size') and message.file.size is not None:
                     content_parts.append(f"file_size:{message.file.size}")
-                # Using message.file.name might be too variable if names change slightly but content is same.
-                # However, for some media (like generic web previews), other IDs might be less stable.
-                # Let's stick to IDs and size for now.
 
-            # For WebPage media, try to get URL
             if isinstance(message.media, types.MessageMediaWebPage) and hasattr(message.media.webpage, 'url'):
                  content_parts.append(f"webpage_url:{message.media.webpage.url}")
 
+        if not content_parts and message.media:
+            content_parts.append(f"media_type:{type(message.media).__name__}")
 
-        # Fallback for messages that might only have media but no standard IDs (e.g. some polls, geo points)
-        if not content_parts and message.media: # If no specific IDs were found but media exists
-            content_parts.append(f"media_type:{type(message.media).__name__}") # Add type as a fallback
-
-        if not content_parts and not message.text: # Message with no text and no identifiable media parts
-             # This could be a service message or something unusual. Hash its ID as a last resort.
+        if not content_parts and not message.text:
              content_parts.append(f"message_obj_id:{message.id}")
 
-
-        content_string = "|".join(sorted(str(p) for p in content_parts)) # Sort to ensure order doesn't change hash
+        content_string = "|".join(sorted(str(p) for p in content_parts))
         return hashlib.sha256(content_string.encode('utf-8')).hexdigest()
 
-    async def _is_duplicate(self, message: TLMessage) -> bool:
-        """Check if message has been forwarded before using its hash."""
-        if not self.enable_deduplication:
+    def _compute_group_hash(self, message_group: List[TLMessage]) -> str:
+        """Computes a hash for an entire group of messages."""
+        if not message_group:
+            return ""
+
+        individual_hashes = sorted([self._compute_message_hash(msg) for msg in message_group])
+        combined_hash_input = "|".join(individual_hashes)
+        return hashlib.sha256(combined_hash_input.encode('utf-8')).hexdigest()
+
+    async def _is_duplicate(self, message_group: List[TLMessage]) -> bool:
+        """Check if a message group has been forwarded before using its combined hash."""
+        if not self.enable_deduplication or not message_group:
             return False
 
-        msg_hash = self._compute_message_hash(message)
+        group_hash = self._compute_group_hash(message_group)
+        representative_msg_id = message_group[0].id
 
-        # Check memory cache first
-        if msg_hash in self.message_hashes:
-            self.logger.debug(f"Message ID {message.id} (hash: {msg_hash[:8]}...) found in memory cache as duplicate.")
+        if group_hash in self.message_hashes:
+            self.logger.info(f"Message group starting with ID {representative_msg_id} (group hash: {group_hash[:8]}...) found in memory cache as duplicate.")
             return True
 
-        # Check database if DB is available
         if self.db:
             try:
                 result = self.db.conn.execute(
                     "SELECT 1 FROM forwarded_messages WHERE hash = ?",
-                    (msg_hash,)
+                    (group_hash,)
                 ).fetchone()
 
                 if result:
-                    self.message_hashes.add(msg_hash)  # Update memory cache
-                    self.logger.debug(f"Message ID {message.id} (hash: {msg_hash[:8]}...) found in DB as duplicate.")
+                    self.message_hashes.add(group_hash)
+                    self.logger.info(f"Message group starting with ID {representative_msg_id} (group hash: {group_hash[:8]}...) found in DB as duplicate.")
                     return True
             except Exception as e:
-                self.logger.error(f"Error checking duplicate in DB for hash {msg_hash[:8]}...: {e}", exc_info=True)
-                # If DB check fails, rely on memory cache (or treat as not duplicate to be safe for forwarding)
-                # For now, let's assume if DB check fails, it's not a duplicate to avoid blocking forwards.
+                self.logger.error(f"Error checking duplicate group in DB for hash {group_hash[:8]}...: {e}", exc_info=True)
+        return False
 
-        return False # Not found in cache or DB (or dedup disabled/DB error)
+    async def _record_forwarded(self, message_group: List[TLMessage], origin_id: str, dest_id: str):
+        """Record that a message group was forwarded by storing its combined hash."""
+        if not self.enable_deduplication or not self.db or not message_group:
+            return
 
-    async def _record_forwarded(self, message: TLMessage, origin_id: str, dest_id: str):
-        """Record that a message was forwarded by storing its hash in the database."""
-        if not self.enable_deduplication or not self.db:
-            return # Do nothing if dedup is off or no DB
+        group_hash = self._compute_group_hash(message_group)
+        self.message_hashes.add(group_hash)
 
-        msg_hash = self._compute_message_hash(message)
-        self.message_hashes.add(msg_hash) # Add to memory cache immediately
-
-        # Create a short preview of the content for the DB log
-        content_preview = "Media Message"
-        if message.text:
-            content_preview = (message.text[:100] + '...') if len(message.text) > 100 else message.text
-        elif message.file and message.file.name:
-            content_preview = f"File: {message.file.name}"
+        representative_message = message_group[0]
+        content_preview = f"Group of {len(message_group)} file(s)."
+        if len(message_group) == 1:
+            if representative_message.text:
+                content_preview = (representative_message.text[:100] + '...') if len(representative_message.text) > 100 else representative_message.text
+            elif representative_message.file and representative_message.file.name:
+                content_preview = f"File: {getattr(representative_message.file, 'name', 'N/A')}"
+        else:
+            if representative_message.file and representative_message.file.name:
+                 content_preview += f" Starts with: {getattr(representative_message.file, 'name', 'N/A')}"
 
         try:
             self.db.conn.execute("""
@@ -207,37 +253,19 @@ class AttachmentForwarder:
                 (hash, origin_id, destination_id, message_id, forwarded_at, content_preview)
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (
-                msg_hash,
-                str(origin_id), # Ensure it's a string
-                str(dest_id),   # Ensure it's a string
-                message.id,
+                group_hash,
+                str(origin_id),
+                str(dest_id),
+                representative_message.id,
                 datetime.now(timezone.utc).isoformat(),
                 content_preview
             ))
             self.db.conn.commit()
-            self.logger.debug(f"Recorded forwarded message ID {message.id} (hash: {msg_hash[:8]}...) to DB.")
+            self.logger.info(f"Recorded forwarded message group (representative ID {representative_message.id}, group hash {group_hash[:8]}...) to DB.")
         except Exception as e:
-            self.logger.error(f"Failed to record forwarded message (hash: {msg_hash[:8]}...) to DB: {e}", exc_info=True)
-
+            self.logger.error(f"Failed to record forwarded message group (group hash {group_hash[:8]}...) to DB: {e}", exc_info=True)
 
     async def _get_client(self, account_identifier: Optional[str] = None) -> TelegramClient:
-        """
-        Gets an initialized and connected Telegram client.
-
-        If a client is already initialized and connected for the target account,
-        it will be reused. Otherwise, a new client is created and connected.
-
-        Args:
-            account_identifier: The phone number or session name of the account to use.
-                                If None, the first available account from the config is used.
-
-        Returns:
-            An initialized and connected TelegramClient instance.
-
-        Raises:
-            ValueError: If no suitable accounts are found or if an account is not authorized.
-            ConnectionError: If the client fails to connect.
-        """
         selected_account = None
         if account_identifier:
             for acc in self.config.accounts:
@@ -247,7 +275,7 @@ class AttachmentForwarder:
             if not selected_account:
                 raise ValueError(f"Account '{account_identifier}' not found in configuration.")
         elif self.config.accounts:
-            selected_account = self.config.accounts[0] # Default to the first account
+            selected_account = self.config.accounts[0]
             self.logger.info(f"No account specified, using the first configured account: {selected_account.get('session_name')}")
         else:
             raise ValueError("No accounts configured.")
@@ -259,23 +287,20 @@ class AttachmentForwarder:
         if not all([session_name, api_id, api_hash]):
             raise ValueError(f"Account {session_name or 'Unknown'} is missing critical configuration (session_name, api_id, or api_hash).")
 
-        # Check if we already have a client for this session and it's connected
         if self._client and self._client.session.filename == str(Config().path.parent / session_name) and self._client.is_connected():
              if await self._client.is_user_authorized():
                 self.logger.debug(f"Reusing existing connected client for session: {session_name}")
                 return self._client
-             else: # If not authorized, we need to re-establish
+             else:
                 self.logger.warning(f"Existing client for {session_name} is no longer authorized. Attempting to reconnect.")
                 await self._client.disconnect()
                 self._client = None
 
-
-        # Proxy configuration (simplified from channel_utils.py)
         proxy = None
         proxy_conf = self.config.data.get("proxy")
         if proxy_conf and proxy_conf.get("enabled"):
             try:
-                import socks # type: ignore
+                import socks
                 proxy_type_map = {"socks5": socks.SOCKS5, "socks4": socks.SOCKS4, "http": socks.HTTP}
                 p_type = proxy_conf.get("type", "socks5").lower()
                 if p_type in proxy_type_map:
@@ -294,7 +319,7 @@ class AttachmentForwarder:
             except ImportError:
                 self.logger.warning("PySocks library not found. Proceeding without proxy.")
         
-        client_path = str(Config().path.parent / session_name) # Ensures session files are in the same dir as config
+        client_path = str(Config().path.parent / session_name)
         self._client = TelegramClient(client_path, api_id, api_hash, proxy=proxy)
         
         self.logger.info(f"Connecting to Telegram with account: {session_name}")
@@ -302,17 +327,184 @@ class AttachmentForwarder:
             await self._client.connect()
         except ConnectionError as e:
             self.logger.error(f"Failed to connect to Telegram for account {session_name}: {e}")
-            # Clean up client instance if connection fails
             self._client = None
             raise
             
         if not await self._client.is_user_authorized():
             await self._client.disconnect()
-            self._client = None # Clean up
+            self._client = None
             raise ValueError(f"Account {session_name} is not authorized. Please check credentials or run authorization process.")
         
         self.logger.info(f"Successfully connected and authorized as {session_name}.")
         return self._client
+
+    def _parse_filename_for_grouping(self, filename: str) -> Optional[Tuple[str, str, int, str]]:
+        if not filename:
+            return None
+
+        name_sans_ext = filename
+        current_ext = ""
+
+        # 1. Handle known multi-part extensions first
+        common_multi_extensions = {
+            '.tar.gz': '.tar.gz', '.tar.bz2': '.tar.bz2', '.tar.xz': '.tar.xz',
+        }
+        lower_filename = filename.lower()
+        for multi_ext_key, actual_ext_val in common_multi_extensions.items():
+            if lower_filename.endswith(multi_ext_key):
+                name_sans_ext = filename[:-len(actual_ext_val)]
+                current_ext = actual_ext_val
+                break
+
+        # 2. If not a multi-part, get single extension
+        if not current_ext:
+            if '.' in name_sans_ext: # Check on potentially already stripped name_sans_ext
+                parts = name_sans_ext.rsplit('.', 1)
+                # Handle cases like ".bashrc" where parts[0] would be empty
+                if len(parts) == 2 : # parts[0] can be empty here
+                    name_sans_ext = parts[0]
+                    current_ext = "." + parts[1]
+                # If no dot or only at start and no base, name_sans_ext remains as is, current_ext is ""
+            # else: no dot, name_sans_ext is filename, current_ext is ""
+
+        # 3. Define part regexes that match *standalone* part strings.
+        #    (pattern_regex, number_group_index_in_pattern)
+        #    Order can matter if a string could match multiple (e.g., ".part1" vs ".1").
+        #    More specific patterns (like those with "part") should come first.
+        standalone_part_regexes = [
+            (re.compile(r"^\.part(\d+)$", re.IGNORECASE), 1),  # e.g., ".part1"
+            (re.compile(r"^_part(\d+)$", re.IGNORECASE), 1),  # e.g., "_part1"
+            (re.compile(r"^\s*\((\d+)\)$", re.IGNORECASE), 1),# e.g., " (1)" (space is part of it)
+            # Removed purely numeric patterns like r"^\.(\d{1,4})$" from here,
+            # as they are too general for classifying a standard-looking extension as a part.
+            # These numeric patterns are better suited for finding parts at the end of a base name (step 4).
+        ]
+
+        # 3a. Check if the extracted 'current_ext' is actually a part indicator.
+        # This handles cases like "filename.part1" (no further real extension).
+        if current_ext: # Only if there was something that looked like an extension
+            for pattern, num_idx in standalone_part_regexes:
+                match = pattern.fullmatch(current_ext) # Must match the whole extension string
+                if match:
+                    number_str = match.group(num_idx)
+                    try:
+                        part_number = int(number_str)
+                        # Yes, the 'extension' was a part. True extension is empty.
+                        # name_sans_ext is already the base. current_ext is the part_string.
+                        return name_sans_ext, current_ext, part_number, ""
+                    except ValueError:
+                        pass # Should not happen with \d+
+
+        # 4. If current_ext wasn't a part, look for part indicators at the end of name_sans_ext.
+        #    Part regexes here are anchored to the end of the string ($).
+        #    (pattern_regex, whole_part_group_idx, number_group_idx_in_pattern)
+        part_regexes_at_end = [
+            (re.compile(r"(\.part(\d+))$", re.IGNORECASE), 1, 2),
+            (re.compile(r"(_part(\d+))$", re.IGNORECASE), 1, 2),
+            (re.compile(r"(\s*\((\d+)\))$", re.IGNORECASE), 0, 2), # Group 0 for whole match " (N)"
+            (re.compile(r"(\.(\d{1,4}))$", re.IGNORECASE), 1, 2),
+            (re.compile(r"(_(\d{1,4}))$", re.IGNORECASE), 1, 2),
+        ]
+
+        for pattern, whole_part_idx, num_idx in part_regexes_at_end:
+            match = pattern.search(name_sans_ext)
+            if match:
+                part_string = match.group(whole_part_idx)
+                number_str = match.group(num_idx)
+                base_name = name_sans_ext[:match.start(whole_part_idx)] # Use start of whole_part_idx
+
+                # Handle case like " (1)" where base_name might have a trailing space
+                # if part_string itself doesn't include it from group 0.
+                if whole_part_idx == 0 and base_name.endswith(" ") and not part_string.startswith(" "): # For " (N)"
+                    base_name = base_name.rstrip(" ")
+
+                # If base_name became empty and part_string is the whole name_sans_ext
+                # (e.g. name_sans_ext was "_part1", matched by "(_part(\d+))$")
+                if not base_name and part_string == name_sans_ext:
+                    return name_sans_ext, "", 0, current_ext # Treat as base, no part
+
+                try:
+                    part_number = int(number_str)
+                    return base_name, part_string, part_number, current_ext
+                except ValueError:
+                    continue # Should not happen
+
+        # 5. No part indicator found by any means. name_sans_ext is the final base.
+        return name_sans_ext, "", 0, current_ext
+
+    def _group_messages(self, messages: List[TLMessage]) -> List[List[TLMessage]]:
+        if not messages:
+            return []
+
+        self.logger.debug(f"Starting message grouping with strategy: {self.grouping_strategy} for {len(messages)} messages.")
+
+        if self.grouping_strategy == "none":
+            grouped = [[msg] for msg in messages]
+            self.logger.debug(f"Grouping strategy 'none': {len(grouped)} groups created.")
+            return grouped
+        elif self.grouping_strategy == "time":
+            grouped = self._group_by_time(messages)
+            self.logger.debug(f"Grouping strategy 'time': {len(grouped)} groups created.")
+            return grouped
+        elif self.grouping_strategy == "filename":
+            grouped = self._group_by_filename(messages)
+            self.logger.debug(f"Grouping strategy 'filename': {len(grouped)} groups created.")
+            return grouped
+
+        self.logger.warning(f"Unknown grouping strategy '{self.grouping_strategy}'. Defaulting to 'none'.")
+        return [[msg] for msg in messages]
+
+    def _group_by_time(self, messages: List[TLMessage]) -> List[List[TLMessage]]:
+        if not messages: return []
+        groups: List[List[TLMessage]] = []
+        if not messages: return groups
+        current_group: List[TLMessage] = [messages[0]]
+        for i in range(1, len(messages)):
+            prev_msg = current_group[-1]
+            curr_msg = messages[i]
+            time_diff = curr_msg.date - prev_msg.date
+            same_sender = curr_msg.sender_id == prev_msg.sender_id
+            if same_sender and time_diff <= timedelta(seconds=self.grouping_time_window_seconds):
+                current_group.append(curr_msg)
+            else:
+                groups.append(current_group)
+                current_group = [curr_msg]
+        if current_group: groups.append(current_group)
+        return groups
+
+    def _group_by_filename(self, messages: List[TLMessage]) -> List[List[TLMessage]]:
+        if not messages: return []
+        candidate_keyed_groups: dict[Tuple[int, str, str], list[TLMessage]] = {}
+        lone_messages: list[TLMessage] = []
+        for msg in messages:
+            filename = getattr(msg.file, 'name', None)
+            if not msg.sender_id or not filename :
+                lone_messages.append(msg)
+                continue
+            parsed_info = self._parse_filename_for_grouping(filename)
+            if not parsed_info or not parsed_info[0] or not parsed_info[3]:
+                lone_messages.append(msg)
+                continue
+            base_name, _, _, extension = parsed_info
+            key = (msg.sender_id, base_name.lower(), extension.lower())
+            if key not in candidate_keyed_groups:
+                candidate_keyed_groups[key] = []
+            candidate_keyed_groups[key].append(msg)
+        final_groups: List[List[TLMessage]] = []
+        for key_tuple, group_msgs_list in candidate_keyed_groups.items():
+            if len(group_msgs_list) > 1:
+                group_msgs_list.sort(key=lambda m: (
+                    self._parse_filename_for_grouping(getattr(m.file, 'name', ''))[2]
+                        if self._parse_filename_for_grouping(getattr(m.file, 'name', '')) else 0,
+                    m.id
+                ))
+                final_groups.append(group_msgs_list)
+            else:
+                lone_messages.extend(group_msgs_list)
+        for lone_msg in lone_messages:
+            final_groups.append([lone_msg])
+        final_groups.sort(key=lambda g: g[0].id if g else float('inf'))
+        return final_groups
 
     async def forward_messages(
         self,
@@ -320,154 +512,136 @@ class AttachmentForwarder:
         destination_id: int | str,
         account_identifier: Optional[str] = None
     ):
-        """
-        Forwards messages (currently placeholders for attachments) from an origin
-        Telegram entity to a destination Telegram entity.
-
-        Args:
-            origin_id: The ID or username of the origin channel/chat.
-            destination_id: The ID or username of the destination channel/chat.
-            account_identifier: Optional identifier for the account to use for forwarding.
-        """
         client = None
         try:
             client = await self._get_client(account_identifier)
-            
             self.logger.info(f"Attempting to resolve origin: '{origin_id}'")
             origin_entity = await client.get_entity(origin_id)
             self.logger.info(f"Origin '{origin_id}' resolved to: {origin_entity.id if hasattr(origin_entity, 'id') else 'Unknown ID'}")
-
             self.logger.info(f"Attempting to resolve destination: '{destination_id}'")
             destination_entity = await client.get_entity(destination_id)
             self.logger.info(f"Destination '{destination_id}' resolved to: {destination_entity.id if hasattr(destination_entity, 'id') else 'Unknown ID'}")
 
-            # Basic check if entities could be resolved
             if not origin_entity or not destination_entity:
                 raise ValueError("Could not resolve one or both Telegram entities.")
 
-            self.logger.info(f"Starting to iterate messages from origin: {origin_id}")
-            # TODO: Add pagination/checkpointing if needed for very large channels
-            async for message in client.iter_messages(origin_entity): # type: ignore
-                message: TLMessage # Type hint
-                self.logger.debug(f"Processing Message ID: {message.id} from {origin_id}. Type: {type(message.media).__name__ if message.media else 'Text'}")
+            self.logger.info(f"Fetching all media messages from origin: {origin_id} before grouping and forwarding.")
+            all_media_messages: list[TLMessage] = []
+            async for msg in client.iter_messages(origin_entity):
+                if msg.media:
+                    all_media_messages.append(msg)
+            all_media_messages.reverse()
+            self.logger.info(f"Fetched {len(all_media_messages)} media messages from {origin_id}.")
 
-                # 0. Deduplication Check
-                if await self._is_duplicate(message):
-                    self.logger.info(f"Message ID: {message.id} (from {origin_id}) is a duplicate. Skipping forwarding.")
-                    continue # Skip this message entirely
+            message_groups = self._group_messages(all_media_messages)
+            self.logger.info(f"Processing {len(message_groups)} message group(s) after applying '{self.grouping_strategy}' strategy.")
 
-                # 1. Attachment Filtering (as per existing logic)
-                if not message.media: # This example forwarder focuses on messages with media
-                    self.logger.debug(f"Message {message.id} has no media. Skipping.")
+            for group_idx, message_group in enumerate(message_groups):
+                if not message_group:
+                    self.logger.warning(f"Skipping empty message group at index {group_idx}.")
                     continue
+                representative_message = message_group[0]
+                message = representative_message
+                self.logger.debug(f"Processing Group {group_idx + 1}/{len(message_groups)}, Representative Msg ID: {message.id} from {origin_id}. Items in group: {len(message_group)}")
 
-                self.logger.info(f"Message {message.id} has media. Attempting to forward to {destination_id}.")
-
-                # 2. Message Forwarding Logic & 3. Rate Limit Handling
+                if await self._is_duplicate(message_group):
+                    self.logger.info(f"Message group starting with ID: {representative_message.id} (from {origin_id}) is a duplicate. Skipping forwarding.")
+                    continue
+                self.logger.info(f"Group (representative Msg ID: {message.id}) has media. Attempting to forward to {destination_id}.")
                 successfully_forwarded_main = False
-                # message_to_forward = message # This is what we'll operate on (already just 'message')
-                
                 main_reply_to_arg = self.destination_topic_id 
-
                 try:
-                    # Forward to Primary Destination
-                    if self.prepend_origin_info and not self.destination_topic_id:
-                        origin_title = getattr(origin_entity, 'title', f"ID: {origin_entity.id}")
-                        header = f"[Forwarded from {origin_title} (ID: {origin_entity.id})]\n"
-                        message_content = header + (message.text or "")
-                        
-                        if client.session.filename != str(Config().path.parent / (account_identifier or self.config.accounts[0].get("session_name"))):
-                             await self.close()
-                             client = await self._get_client(account_identifier)
-
-                        await client.send_message(
-                            entity=destination_entity,
-                            message=message_content,
-                            file=message.media,
-                            reply_to=main_reply_to_arg
-                        )
-                        self.logger.info(f"Successfully sent Message ID: {message.id} with origin info from '{origin_id}' to '{destination_id}'.")
-                    else:
-                        await client.forward_messages(
-                            entity=destination_entity,
-                            messages=[message.id],
-                            from_peer=origin_entity,
-                            reply_to=main_reply_to_arg
-                        )
-                        log_msg = f"Successfully forwarded Message ID: {message.id} from '{origin_id}' to main destination '{destination_id}'"
-                        if main_reply_to_arg:
-                            log_msg += f" (Topic/ReplyTo: {main_reply_to_arg})"
-                        self.logger.info(log_msg)
+                    for msg_in_group_idx, current_message_in_group in enumerate(message_group):
+                        self.logger.info(f"Forwarding item {msg_in_group_idx + 1}/{len(message_group)} (Msg ID: {current_message_in_group.id}) of current group.")
+                        if self.prepend_origin_info and not self.destination_topic_id:
+                            origin_title = getattr(origin_entity, 'title', f"ID: {origin_entity.id}")
+                            group_info_header = ""
+                            if len(message_group) > 1:
+                                group_info_header = f"[Group item {msg_in_group_idx+1}/{len(message_group)}] "
+                            header = f"{group_info_header}[Forwarded from {origin_title} (ID: {origin_entity.id})]\n"
+                            message_content = header + (current_message_in_group.text or "")
+                            if client.session.filename != str(Config().path.parent / (account_identifier or self.config.accounts[0].get("session_name"))):
+                                 await self.close()
+                                 client = await self._get_client(account_identifier)
+                            await client.send_message(
+                                entity=destination_entity,
+                                message=message_content,
+                                file=current_message_in_group.media,
+                                reply_to=main_reply_to_arg
+                            )
+                            self.logger.info(f"Successfully sent Message ID: {current_message_in_group.id} with origin info from '{origin_id}' to '{destination_id}'.")
+                        else:
+                            await client.forward_messages(
+                                entity=destination_entity,
+                                messages=[current_message_in_group.id],
+                                from_peer=origin_entity,
+                                reply_to=main_reply_to_arg
+                            )
+                            log_msg = f"Successfully forwarded Message ID: {current_message_in_group.id} from '{origin_id}' to main destination '{destination_id}'"
+                            if main_reply_to_arg:
+                                log_msg += f" (Topic/ReplyTo: {main_reply_to_arg})"
+                            self.logger.info(log_msg)
+                        if len(message_group) > 1 and msg_in_group_idx < len(message_group) - 1:
+                            await asyncio.sleep(1)
                     successfully_forwarded_main = True
-
                 except telethon_errors.FloodWaitError as e_flood:
-                    self.logger.warning(f"Rate limit hit (main destination). Waiting for {e_flood.seconds} seconds.")
-                    await asyncio.sleep(e_flood.seconds + 1) # Add a small buffer
-                    # Re-queue or re-attempt this message? For now, continue to next, effectively skipping current one on flood.
-                    # A more robust solution might put it back in a queue.
-                    self.logger.info(f"Skipping Message ID: {message.id} for main destination due to FloodWait. Will not be recorded as forwarded unless successfully processed later.")
+                    self.logger.warning(f"Rate limit hit (main destination) while processing group (representative Msg ID: {message.id}). Waiting for {e_flood.seconds} seconds.")
+                    await asyncio.sleep(e_flood.seconds + 1)
+                    self.logger.info(f"Skipping rest of Message Group (representative Msg ID: {message.id}) for main destination due to FloodWait.")
                     continue
                 except (ChannelPrivateError, ChatAdminRequiredError, UserBannedInChannelError) as e_perm:
-                    self.logger.error(f"Permission error forwarding Message ID: {message.id} to main destination: {e_perm}")
+                    self.logger.error(f"Permission error forwarding Message Group (representative Msg ID: {message.id}) to main destination: {e_perm}")
                     continue 
                 except RPCError as rpc_error:
-                    self.logger.error(f"RPCError forwarding Message ID: {message.id} to main destination: {rpc_error}")
+                    self.logger.error(f"RPCError forwarding Message Group (representative Msg ID: {message.id}) to main destination: {rpc_error}")
                     continue 
                 except Exception as e_fwd:
-                    self.logger.exception(f"Unexpected error forwarding Message ID: {message.id} to main destination: {e_fwd}")
+                    self.logger.exception(f"Unexpected error forwarding Message Group (representative Msg ID: {message.id}) to main destination: {e_fwd}")
                     continue
-
-                # If successfully forwarded to main, record it and then handle secondary unique destination
                 if successfully_forwarded_main:
-                    await self._record_forwarded(message, str(origin_entity.id), str(destination_entity.id))
-
-                    # Forward to Secondary Unique Destination (if configured and this is a unique message)
+                    await self._record_forwarded(message_group, str(origin_entity.id), str(destination_entity.id))
                     if self.secondary_unique_destination:
-                        self.logger.info(f"Attempting to forward unique Message ID: {message.id} to secondary destination: {self.secondary_unique_destination}")
+                        self.logger.info(f"Attempting to forward unique Message Group (representative Msg ID: {message.id}) to secondary destination: {self.secondary_unique_destination}")
                         try:
                             secondary_dest_entity = await client.get_entity(self.secondary_unique_destination)
-                            # Using forward_messages to preserve "forwarded from" header, unless prepend_origin_info is also desired for secondary
-                            await client.forward_messages(
-                                entity=secondary_dest_entity,
-                                messages=[message.id],
-                                from_peer=origin_entity
-                                # reply_to: Not specified for secondary, could be added if needed
-                            )
-                            self.logger.info(f"Successfully forwarded unique Message ID: {message.id} to secondary destination '{self.secondary_unique_destination}'.")
+                            for msg_s_idx, msg_in_group_secondary in enumerate(message_group):
+                                await client.forward_messages(
+                                    entity=secondary_dest_entity,
+                                    messages=[msg_in_group_secondary.id],
+                                    from_peer=origin_entity
+                                )
+                                self.logger.info(f"  Forwarded item {msg_s_idx+1}/{len(message_group)} (Msg ID: {msg_in_group_secondary.id}) of group to secondary_dest '{self.secondary_unique_destination}'.")
+                                if len(message_group) > 1 and msg_s_idx < len(message_group) - 1:
+                                    await asyncio.sleep(1)
                         except telethon_errors.FloodWaitError as e_flood_sec:
                             self.logger.warning(f"Rate limit hit (secondary destination: {self.secondary_unique_destination}). Waiting for {e_flood_sec.seconds} seconds.")
                             await asyncio.sleep(e_flood_sec.seconds + 1)
-                            self.logger.info(f"Skipping secondary forward for Message ID: {message.id} due to FloodWait.")
+                            self.logger.info(f"Skipping secondary forward for Message Group (representative Msg ID: {message.id}) due to FloodWait.")
                         except Exception as e_sec_fwd:
-                            self.logger.error(f"Error forwarding unique Message ID: {message.id} to secondary destination '{self.secondary_unique_destination}': {e_sec_fwd}", exc_info=True)
-                    
-                    # Forward to Saved Messages (existing logic, applied if main forward was successful)
+                            self.logger.error(f"Error forwarding unique Message Group (representative Msg ID: {message.id}) to secondary destination '{self.secondary_unique_destination}': {e_sec_fwd}", exc_info=True)
                     if self.forward_to_all_saved_messages:
-                        self.logger.info(f"Forwarding Message ID: {message.id} to 'Saved Messages' of all configured accounts.")
+                        self.logger.info(f"Forwarding Message Group (representative Msg ID: {message.id}) to 'Saved Messages' of all configured accounts.")
                         original_main_account_id = client.session.filename
-
                         for acc_config in self.config.accounts:
                             saved_messages_account_id = acc_config.get("session_name") or acc_config.get("phone_number")
                             if not saved_messages_account_id:
                                 self.logger.warning("Skipping an account for 'Saved Messages' forwarding due to missing identifier.")
                                 continue
-
-                            self.logger.info(f"Attempting to forward Message ID: {message.id} to 'Saved Messages' for account: {saved_messages_account_id}")
-
+                            self.logger.info(f"Attempting to forward Message Group (representative Msg ID: {message.id}) to 'Saved Messages' for account: {saved_messages_account_id}")
                             try:
                                 if self._client and self._client.session.filename != str(Config().path.parent / saved_messages_account_id):
-                                    await self.close() # Close current client if it's not for the target saved messages account
-
-                                target_client = await self._get_client(saved_messages_account_id) # Get/switch client
-
-                                await target_client.forward_messages(
-                                    entity='me',
-                                    messages=[message.id],
-                                    from_peer=origin_entity
-                                )
-                                self.logger.info(f"Successfully forwarded Message ID: {message.id} to 'Saved Messages' for account: {saved_messages_account_id}")
-                                await asyncio.sleep(1) # Small delay between accounts
-
+                                    await self.close()
+                                target_client = await self._get_client(saved_messages_account_id)
+                                for msg_sv_idx, msg_in_group_saved in enumerate(message_group):
+                                    await target_client.forward_messages(
+                                        entity='me',
+                                        messages=[msg_in_group_saved.id],
+                                        from_peer=origin_entity
+                                    )
+                                    self.logger.info(f"  Forwarded item {msg_sv_idx+1}/{len(message_group)} (Msg ID: {msg_in_group_saved.id}) of group to Saved Messages for {saved_messages_account_id}.")
+                                    if len(message_group) > 1 and msg_sv_idx < len(message_group) - 1:
+                                        await asyncio.sleep(1)
+                                await asyncio.sleep(1)
                             except telethon_errors.FloodWaitError as e_flood_saved:
                                 self.logger.warning(f"Rate limit hit (Saved Messages for {saved_messages_account_id}). Waiting for {e_flood_saved.seconds} seconds.")
                                 await asyncio.sleep(e_flood_saved.seconds + 1)
@@ -477,30 +651,22 @@ class AttachmentForwarder:
                                 self.logger.error(f"RPCError for account {saved_messages_account_id} when forwarding to Saved Messages: {e_rpc_saved}. Skipping this account.")
                             except Exception as e_saved:
                                 self.logger.exception(f"Unexpected error for account {saved_messages_account_id} when forwarding to Saved Messages: {e_saved}. Skipping this account.")
-
-                        # Restore client for main operation if it was changed
                         if self._client and self._client.session.filename != original_main_account_id:
                              await self.close()
-                        # Next loop iteration will call _get_client with original account_identifier for main operations.
-
-
-            self.logger.info(f"Finished iterating messages from {origin_id}.")
-
+            self.logger.info(f"Finished processing all message groups from {origin_id}.")
         except ValueError as e:
             self.logger.error(f"Configuration or resolution error: {e}")
             raise
-        except (ChannelPrivateError, ChatAdminRequiredError) as e: # Specific Telethon errors
+        except (ChannelPrivateError, ChatAdminRequiredError) as e:
             self.logger.error(f"Telegram channel access error: {e}")
             raise
-        except (AuthKeyError, UserDeactivatedError) as e: # Auth errors
+        except (AuthKeyError, UserDeactivatedError) as e:
             self.logger.error(f"Telegram authentication error with account {account_identifier or 'default'}: {e}. This account might be banned or need re-authentication.")
-            # Potentially mark account as bad or require re-auth.
-            # Re-raising to ensure the operation stops if auth is compromised.
             raise
-        except RPCError as e: # Catch broader RPC errors not handled in the loop (e.g., during get_entity)
+        except RPCError as e:
             self.logger.error(f"Telegram API RPCError (potentially during entity resolution or initial connection phase): {e}")
             raise
-        except ConnectionError as e: # From _get_client if initial connect fails, or general connection loss
+        except ConnectionError as e:
             self.logger.error(f"Connection error: {e}")
             raise
         except Exception as e:
@@ -510,7 +676,7 @@ class AttachmentForwarder:
             if client and client.is_connected():
                 self.logger.info("Disconnecting Telegram client.")
                 await client.disconnect()
-            self._client = None # Clear cached client
+            self._client = None
 
     async def close(self):
         """Closes any active Telegram client connection."""
@@ -524,57 +690,32 @@ class AttachmentForwarder:
         destination_id: int | str,
         orchestration_account_identifier: Optional[str] = None
     ):
-        """
-        Forwards messages from all unique channels found in the account_channel_access table
-        to the specified destination ID.
-
-        Args:
-            destination_id: The ID or username of the destination channel/chat.
-            orchestration_account_identifier: Optional account to use for initial operations or if a specific
-                                             channel does not have a designated account. (Currently, the
-                                             account from DB is prioritized for each channel).
-        """
         if not self.db:
             self.logger.error("Database instance (self.db) not available. Cannot proceed with total forward mode.")
             return
-
         self.logger.info(f"Starting 'Total Forward Mode'. Destination: {destination_id}")
-        
         try:
             unique_channels_with_accounts = self.db.get_all_unique_channels()
         except Exception as e_db:
             self.logger.error(f"Failed to retrieve channels from database: {e_db}", exc_info=True)
             return
-            
         if not unique_channels_with_accounts:
             self.logger.warning("No channels found in account_channel_access table to process for total forward mode.")
             return
-
         self.logger.info(f"Found {len(unique_channels_with_accounts)} unique channels to process.")
-        # Conceptual: Messages from the same origin channel are processed sequentially by forward_messages.
-        # Total mode processes these channels one after another.
-
         for channel_id, accessing_account_phone in unique_channels_with_accounts:
             self.logger.info(f"--- Processing channel ID: {channel_id} using account: {accessing_account_phone} ---")
             try:
-                # Ensure any previous client (if cached and different) is cleared before potentially switching accounts.
-                # The _get_client method handles reusing clients if the identifier matches an existing one.
-                # If accessing_account_phone is different from the last one, _get_client will create a new client.
-                # We call close() here to ensure the previous client is fully disconnected before a new one might be made for a different account.
                 await self.close() 
-
                 await self.forward_messages(
-                    origin_id=channel_id, # channel_id from DB is BIGINT, compatible with int | str
+                    origin_id=channel_id,
                     destination_id=destination_id,
                     account_identifier=accessing_account_phone
                 )
                 self.logger.info(f"--- Finished processing channel ID: {channel_id} ---")
             except Exception as e_fwd_all:
-                # Catching exceptions from forward_messages to ensure the loop continues
                 self.logger.error(f"Failed to forward messages for channel ID {channel_id} using account {accessing_account_phone}: {e_fwd_all}", exc_info=True)
-                # Ensure client is closed/reset if an error occurred mid-operation for one channel
                 await self.close() 
                 self.logger.info(f"Continuing to the next channel after error with channel ID: {channel_id}.")
-                continue # Move to the next channel
-        
+                continue
         self.logger.info("'Total Forward Mode' completed.")

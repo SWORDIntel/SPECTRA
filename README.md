@@ -389,6 +389,72 @@ The "Total Forward Mode" (`--total-mode`) relies on the `account_channel_access`
 
 For more details on the database schema, please refer to the [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md) file.
 
+---
+
+## Shunt Mode (File Transfer)
+
+Shunt Mode is designed to transfer all media files from one Telegram channel (source) to another (destination) with advanced deduplication and file grouping capabilities. This is useful for consolidating archives, moving collections, or reorganizing media across channels.
+
+**Key Features:**
+
+*   **Deduplication:** Ensures that files already present in the destination (based on content hash) or previously shunted are not transferred again. It uses the same `forwarded_messages` table as the general forwarding feature.
+*   **File Grouping:** Attempts to identify and transfer related files as groups. This helps maintain the integrity of multi-part archives or collections of images/videos sent together.
+    *   **Strategies:**
+        *   `none`: No grouping; files are transferred individually.
+        *   `filename`: Groups files based on common base names and sequential numbering patterns (e.g., `archive_part1.rar`, `archive_part2.rar` or `image_001.jpg`, `image_002.jpg`).
+        *   `time`: Groups files sent by the same user within a configurable time window.
+
+**CLI Command:**
+
+The Shunt Mode is activated using specific arguments with the main `tgarchive` command:
+
+```bash
+python -m tgarchive --shunt-from <source_id_or_username> --shunt-to <destination_id_or_username> [options]
+```
+
+**CLI Arguments:**
+
+*   `--shunt-from <id_or_username>`: **Required.** The source channel/chat ID or username from which files will be shunted.
+*   `--shunt-to <id_or_username>`: **Required.** The destination channel/chat ID or username to which files will be transferred.
+*   `--shunt-account <phone_or_session_name>`: Optional. Specifies which configured Telegram account to use for the shunting operation. If not provided, the first available active account from your configuration is typically used.
+
+**Configuration (`spectra_config.json`):**
+
+File grouping behavior for Shunt Mode can be configured in your `spectra_config.json` file under the `grouping` key:
+
+```json
+{
+  // ... other configurations ...
+  "grouping": {
+    "strategy": "filename",  // "none", "filename", or "time"
+    "time_window_seconds": 300 // Time window in seconds for 'time' strategy (e.g., 300 for 5 minutes)
+  },
+  // ... other configurations ...
+}
+```
+
+*   `strategy` (string): Defines the grouping method.
+    *   `"none"` (default): No grouping.
+    *   `"filename"`: Groups based on filename patterns.
+    *   `"time"`: Groups based on time proximity and sender.
+*   `time_window_seconds` (integer): Relevant only for the `"time"` strategy. Specifies the maximum time difference (in seconds) between messages from the same sender to be considered part of the same group.
+
+**Usage Example:**
+
+To shunt all files from `@old_archive_channel` to `@new_consolidated_archive`, using filename-based grouping, and specifying the account `my_worker_account`:
+
+1.  Ensure your `spectra_config.json` has the desired grouping strategy (or rely on defaults):
+    ```json
+    "grouping": {
+      "strategy": "filename"
+    }
+    ```
+2.  Run the command:
+    ```bash
+    python -m tgarchive --shunt-from @old_archive_channel --shunt-to @new_consolidated_archive --shunt-account my_worker_account
+    ```
+
+Files will be fetched from the source, grouped according to the strategy, checked for duplicates against the destination (via the shared deduplication database), and then unique files/groups will be forwarded.
 
 ---
 

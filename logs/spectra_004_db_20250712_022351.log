@@ -1,0 +1,34 @@
+2025-07-12 02:23:51,241 [INFO] tgarchive.config_models: Configuration saved to <MagicMock spec='Path' id='139957276666640'>
+2025-07-12 02:23:51,245 [INFO] tgarchive.forwarding.AttachmentForwarder: File grouping strategy: none
+2025-07-12 02:23:51,246 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication is ENABLED.
+2025-07-12 02:23:51,247 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication table 'forwarded_messages' initialized successfully.
+2025-07-12 02:23:51,248 [INFO] tgarchive.forwarding.AttachmentForwarder: Loaded 0 existing message hashes into memory for deduplication.
+2025-07-12 02:23:51,253 [INFO] tgarchive.config_models: Configuration saved to <MagicMock spec='Path' id='139957278357840'>
+2025-07-12 02:23:51,254 [INFO] tgarchive.forwarding.AttachmentForwarder: File grouping strategy: none
+2025-07-12 02:23:51,254 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication is ENABLED.
+2025-07-12 02:23:51,256 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication table 'forwarded_messages' initialized successfully.
+2025-07-12 02:23:51,256 [INFO] tgarchive.forwarding.AttachmentForwarder: Loaded 0 existing message hashes into memory for deduplication.
+2025-07-12 02:23:51,264 [INFO] tgarchive.config_models: Configuration saved to <MagicMock spec='Path' id='139957277333344'>
+2025-07-12 02:23:51,265 [INFO] tgarchive.forwarding.AttachmentForwarder: File grouping strategy: none
+2025-07-12 02:23:51,265 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication is ENABLED.
+2025-07-12 02:23:51,267 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication table 'forwarded_messages' initialized successfully.
+2025-07-12 02:23:51,268 [INFO] tgarchive.forwarding.AttachmentForwarder: Loaded 0 existing message hashes into memory for deduplication.
+2025-07-12 02:23:51,268 [INFO] tgarchive.forwarding.AttachmentForwarder: File grouping strategy: filename
+2025-07-12 02:23:51,268 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication is ENABLED.
+2025-07-12 02:23:51,270 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication table 'forwarded_messages' initialized successfully.
+2025-07-12 02:23:51,271 [INFO] tgarchive.forwarding.AttachmentForwarder: Loaded 0 existing message hashes into memory for deduplication.
+2025-07-12 02:23:51,278 [INFO] tgarchive.config_models: Configuration saved to <MagicMock spec='Path' id='139957324543616'>
+2025-07-12 02:23:51,279 [INFO] tgarchive.forwarding.AttachmentForwarder: File grouping strategy: none
+2025-07-12 02:23:51,279 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication is ENABLED.
+2025-07-12 02:23:51,281 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication table 'forwarded_messages' initialized successfully.
+2025-07-12 02:23:51,281 [INFO] tgarchive.forwarding.AttachmentForwarder: Loaded 0 existing message hashes into memory for deduplication.
+2025-07-12 02:23:51,281 [INFO] tgarchive.forwarding.AttachmentForwarder: File grouping strategy: time
+2025-07-12 02:23:51,281 [INFO] tgarchive.forwarding.AttachmentForwarder: Grouping time window: 60 seconds
+2025-07-12 02:23:51,281 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication is ENABLED.
+2025-07-12 02:23:51,282 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication table 'forwarded_messages' initialized successfully.
+2025-07-12 02:23:51,283 [INFO] tgarchive.forwarding.AttachmentForwarder: Loaded 0 existing message hashes into memory for deduplication.
+2025-07-12 02:23:51,286 [INFO] tgarchive.config_models: Configuration saved to <MagicMock spec='Path' id='139957275668608'>
+2025-07-12 02:23:51,287 [INFO] tgarchive.forwarding.AttachmentForwarder: File grouping strategy: none
+2025-07-12 02:23:51,287 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication is ENABLED.
+2025-07-12 02:23:51,289 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication table 'forwarded_messages' initialized successfully.
+2025-07-12 02:23:51,289 [INFO] tgarchive.forwarding.AttachmentForwarder: Loaded 0 existing message hashes into memory for deduplication.

@@ -486,6 +486,71 @@ async def shunt_files_mode(cfg: Config, source_channel_id: str, destination_chan
 class SpectraApp(npyscreen.NPSAppManaged):
     def onStart(self):
         self.addForm("MAIN", MenuForm, name="SPECTRA-002 Archiver")
+        self.addForm("SHUNT", ShuntForm, name="Shunt Mode")
+
+class ShuntForm(npyscreen.ActionForm):
+    def create(self):
+        self.cfg = Config()
+        self.add(npyscreen.TitleText, name="Source Channel ID:", value="")
+        self.add(npyscreen.TitleText, name="Destination Channel ID:", value="")
+
+        sessions = [acc["session_name"] for acc in self.cfg.accounts]
+        self.acc_sel = self.add(
+            npyscreen.TitleSelectOne,
+            max_height=min(len(sessions)+2, 8),
+            name="Account to Use:",
+            values=sessions,
+            scroll_exit=True,
+            value=[0]
+        )
+
+        grouping_strategies = ["none", "filename", "time"]
+        current_strategy = self.cfg.data.get("grouping", {}).get("strategy", "none")
+        default_strategy_idx = grouping_strategies.index(current_strategy) if current_strategy in grouping_strategies else 0
+        self.grouping_sel = self.add(
+            npyscreen.TitleSelectOne,
+            max_height=4,
+            name="Grouping Strategy:",
+            values=grouping_strategies,
+            scroll_exit=True,
+            value=[default_strategy_idx]
+        )
+
+    def on_ok(self):
+        source_channel = self.get_widget(0).value
+        dest_channel = self.get_widget(1).value
+
+        if not source_channel or not dest_channel:
+            npyscreen.notify_confirm("Source and Destination channels cannot be empty.", "Input Error")
+            return
+
+        selected_account_idx = self.acc_sel.value[0] if self.acc_sel.value else 0
+        account_identifier = self.cfg.accounts[selected_account_idx]['session_name']
+
+        selected_grouping_idx = self.grouping_sel.value[0] if self.grouping_sel.value else 0
+        grouping_strategy = self.grouping_sel.values[selected_grouping_idx]
+
+        # Update config in memory for the shunt function to use
+        self.cfg.data["grouping"]["strategy"] = grouping_strategy
+
+        # Switch back to the main form before running the async task
+        self.parentApp.setNextForm("MAIN")
+
+        # A small message to let the user know the process is starting
+        npyscreen.notify_wait(f"Starting shunt from {source_channel} to {dest_channel}...", "Please wait")
+
+        # Since npyscreen is not async-native, running the async function
+        # will block the TUI. This is a limitation of the current structure.
+        # Ideally, this would run in a separate thread.
+        try:
+            asyncio.run(shunt_files_mode(self.cfg, source_channel, dest_channel, account_identifier))
+            npyscreen.notify_confirm("Shunt operation completed successfully!", "Success")
+        except Exception as e:
+            logger.exception(f"Error during TUI shunt operation: {e}")
+            npyscreen.notify_confirm(f"An error occurred: {e}", "Error")
+
+    def on_cancel(self):
+        self.parentApp.setNextForm("MAIN")
 
 class MenuForm(npyscreen.ActionForm):
     def create(self):
@@ -517,6 +582,13 @@ class MenuForm(npyscreen.ActionForm):
         self.sidecar = self.add(npyscreen.Checkbox, name="Write sidecar metadata", value=self.cfg["sidecar_metadata"])
         self.archive_topics = self.add(npyscreen.Checkbox, name="Archive topics/threads", value=self.cfg["archive_topics"])
         self.auto_mode = self.add(npyscreen.Checkbox, name="Use auto-selected account", value=bool(self.auto_account))
+
+        self.add(npyscreen.FixedText, value="", editable=False) # Spacer
+        self.shunt_button = self.add(npyscreen.ButtonPress, name="Shunt Files Between Channels")
+        self.shunt_button.whenPressed = self.switch_to_shunt_form
+
+    def switch_to_shunt_form(self):
+        self.parentApp.setNextForm("SHUNT")
 
     def on_ok(self):
         if self.auto_mode.value and self.auto_account:

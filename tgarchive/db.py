@@ -118,6 +118,30 @@ CREATE TABLE IF NOT EXISTS channel_forward_stats (
     finished_at         TEXT NOT NULL,
     status              TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS file_forward_schedule (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    source              TEXT NOT NULL,
+    destination         TEXT NOT NULL,
+    schedule            TEXT NOT NULL,
+    file_types          TEXT,
+    min_file_size       INTEGER,
+    max_file_size       INTEGER,
+    is_enabled          BOOLEAN DEFAULT TRUE,
+    priority            INTEGER DEFAULT 0,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS file_forward_queue (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    schedule_id         INTEGER REFERENCES file_forward_schedule(id),
+    message_id          INTEGER NOT NULL,
+    file_id             TEXT NOT NULL,
+    status              TEXT NOT NULL,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
 """
 
 # ── Helper SQL functions ────────────────────────────────────────────────
@@ -450,6 +474,53 @@ class SpectraDB(AbstractContextManager):
             (schedule_id, messages_forwarded, files_forwarded, bytes_forwarded, started_at, finished_at, status),
         )
         self.conn.commit()
+
+    def add_file_forward_schedule(self, source: str, destination: str, schedule: str, file_types: Optional[str], min_file_size: Optional[int], max_file_size: Optional[int], priority: int) -> None:
+        self._exec_retry(
+            """
+            INSERT INTO file_forward_schedule(source, destination, schedule, file_types, min_file_size, max_file_size, priority, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (source, destination, schedule, file_types, min_file_size, max_file_size, priority, datetime.now(timezone.utc).isoformat(), datetime.now(timezone.utc).isoformat()),
+        )
+        self.conn.commit()
+
+    def get_file_forward_schedules(self) -> List[Tuple[int, str, str, str, Optional[str], Optional[int], Optional[int], int]]:
+        self.cur.execute("SELECT id, source, destination, schedule, file_types, min_file_size, max_file_size, priority FROM file_forward_schedule WHERE is_enabled = TRUE ORDER BY priority DESC")
+        return self.cur.fetchall()
+
+    def get_file_forward_schedule_by_id(self, schedule_id: int) -> Optional[NamedTuple]:
+        self.cur.execute("SELECT id, source, destination, schedule, file_types, min_file_size, max_file_size, priority FROM file_forward_schedule WHERE id = ?", (schedule_id,))
+        row = self.cur.fetchone()
+        if row:
+            FileForwardSchedule = namedtuple("FileForwardSchedule", ["id", "source", "destination", "schedule", "file_types", "min_file_size", "max_file_size", "priority"])
+            return FileForwardSchedule(*row)
+        return None
+
+    def add_to_file_forward_queue(self, schedule_id: int, message_id: int, file_id: str) -> None:
+        self._exec_retry(
+            """
+            INSERT INTO file_forward_queue(schedule_id, message_id, file_id, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (schedule_id, message_id, file_id, "pending", datetime.now(timezone.utc).isoformat(), datetime.now(timezone.utc).isoformat()),
+        )
+        self.conn.commit()
+
+    def get_file_forward_queue(self) -> List[Tuple[int, int, int, str]]:
+        self.cur.execute("SELECT id, schedule_id, message_id, file_id FROM file_forward_queue WHERE status = 'pending' ORDER BY id")
+        return self.cur.fetchall()
+
+    def update_file_forward_queue_status(self, queue_id: int, status: str) -> None:
+        self._exec_retry(
+            "UPDATE file_forward_queue SET status = ?, updated_at = ? WHERE id = ?",
+            (status, datetime.now(timezone.utc).isoformat(), queue_id),
+        )
+        self.conn.commit()
+
+    def get_file_forward_queue_status_by_schedule_id(self, schedule_id: int) -> List[Tuple[int, str, str]]:
+        self.cur.execute("SELECT message_id, file_id, status FROM file_forward_queue WHERE schedule_id = ?", (schedule_id,))
+        return self.cur.fetchall()
 
 __all__ = [
     "SpectraDB",

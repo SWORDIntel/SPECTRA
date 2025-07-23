@@ -29,16 +29,16 @@ from .channel_utils import populate_account_channel_access
 from .forwarding import AttachmentForwarder # Added for handle_forward
 
 try:
-    from .cloud_processor import CloudProcessor
+    from .forwarding_processor import CloudProcessor
 except ImportError:
-    CloudProcessor = None # Or handle more gracefully if cloud mode is essential
-    logger.debug("CloudProcessor could not be imported. Cloud mode might be unavailable.")
+    CloudProcessor = None # Or handle more gracefully if forwarding mode is essential
+    logger.debug("CloudProcessor could not be imported. Forwarding mode might be unavailable.")
 
 try:
-    from .cloud_processor import CloudProcessor
+    from .forwarding_processor import CloudProcessor
 except ImportError:
-    CloudProcessor = None # Or handle more gracefully if cloud mode is essential
-    logger.debug("CloudProcessor could not be imported. Cloud mode might be unavailable.")
+    CloudProcessor = None # Or handle more gracefully if forwarding mode is essential
+    logger.debug("CloudProcessor could not be imported. Forwarding mode might be unavailable.")
 
 # ── Try to import TUI ────────────────────────────────────────────────────────
 try:
@@ -136,10 +136,10 @@ def setup_parser() -> argparse.ArgumentParser:
     account_parser.add_argument("--test", action="store_true", help="Test all accounts for connectivity")
     account_parser.add_argument("--import", action="store_true", dest="import_accs", help="Import accounts from gen_config.py")
     
-    # Cloud command
-    cloud_parser = subparsers.add_parser("cloud", help="Run in cloud mode for targeted channel traversal and downloading.")
+    # Forwarding command
+    cloud_parser = subparsers.add_parser("forward", help="Run in forwarding mode for targeted channel traversal and downloading.")
     cloud_parser.add_argument("--channels-file", type=str, required=True, help="Path to a file containing the initial list of channel URLs or IDs (one per line).")
-    cloud_parser.add_argument("--output-dir", type=str, required=True, help="Directory to store downloaded files and logs for the cloud mode session.")
+    cloud_parser.add_argument("--output-dir", type=str, required=True, help="Directory to store downloaded files and logs for the forwarding mode session.")
     cloud_parser.add_argument("--max-depth", type=int, default=2, help="Maximum depth to follow channel links during discovery (default: 2).")
     cloud_parser.add_argument("--min-files-gateway", type=int, default=100, help="Minimum number of files a channel must have to be considered a 'gateway' for focused downloading (default: 100).")
 
@@ -172,18 +172,18 @@ def setup_parser() -> argparse.ArgumentParser:
     dedup_group.add_argument("--disable-deduplication", action="store_false", dest="enable_deduplication", help="Disable message deduplication (overrides config if set).")
 
 
-    # Cloud command (modify existing)
+    # Forwarding command (modify existing)
     # Re-fetch cloud_parser if it was already defined to add new args
-    # Assuming cloud_parser is defined like: cloud_parser = subparsers.add_parser("cloud", ...)
+    # Assuming cloud_parser is defined like: cloud_parser = subparsers.add_parser("forward", ...)
     # For safety, let's ensure cloud_parser is accessible or re-define if necessary.
     # This code assumes cloud_parser is already part of subparsers.
-    # If not, it needs to be added: e.g. cloud_parser = subparsers.add_parser("cloud", help="Cloud mode processing")
+    # If not, it needs to be added: e.g. cloud_parser = subparsers.add_parser("forward", help="Forwarding mode processing")
     
     # Adding args to existing cloud_parser:
     # (No need to redefine cloud_parser, just add arguments to it)
     auto_invite_group = cloud_parser.add_mutually_exclusive_group()
-    auto_invite_group.add_argument("--enable-auto-invites", action="store_true", dest="auto_invite_accounts", default=None, help="Enable automatic account invitations in cloud mode (overrides config).")
-    auto_invite_group.add_argument("--disable-auto-invites", action="store_false", dest="auto_invite_accounts", help="Disable automatic account invitations in cloud mode (overrides config).")
+    auto_invite_group.add_argument("--enable-auto-invites", action="store_true", dest="auto_invite_accounts", default=None, help="Enable automatic account invitations in forwarding mode (overrides config).")
+    auto_invite_group.add_argument("--disable-auto-invites", action="store_false", dest="auto_invite_accounts", help="Disable automatic account invitations in forwarding mode (overrides config).")
 
     return parser
 
@@ -561,9 +561,9 @@ async def handle_accounts(args: argparse.Namespace) -> int:
         logger.error(f"Account management failed: {e}")
         return 1
 
-async def handle_cloud(args: argparse.Namespace) -> int:
-    """Handle cloud command"""
-    logger.info("Cloud mode invoked with the following arguments:")
+async def handle_forwarding(args: argparse.Namespace) -> int:
+    """Handle forwarding command"""
+    logger.info("Forwarding mode invoked with the following arguments:")
     logger.info(f"  Channels file: {args.channels_file}")
     logger.info(f"  Output directory: {args.output_dir}")
     logger.info(f"  Max depth: {args.max_depth}")
@@ -579,26 +579,26 @@ async def handle_cloud(args: argparse.Namespace) -> int:
     # Handle CLI override for auto_invite_accounts
     if args.auto_invite_accounts is not None: # CLI flag was used
         logger.info(f"CLI override for auto_invite_accounts: {args.auto_invite_accounts}")
-        # Ensure the 'cloud' dictionary exists in config data
-        if "cloud" not in cfg.data:
-            cfg.data["cloud"] = {}
-        cfg.data["cloud"]["auto_invite_accounts"] = args.auto_invite_accounts
+        # Ensure the 'forwarding' dictionary exists in config data
+        if "forwarding" not in cfg.data:
+            cfg.data["forwarding"] = {}
+        cfg.data["forwarding"]["auto_invite_accounts"] = args.auto_invite_accounts
         # Note: This change to cfg.data is in-memory for this run.
         # It won't be saved to spectra_config.json unless cfg.save() is called.
         # This is usually the desired behavior for CLI overrides.
 
     accounts = cfg.accounts
     if not accounts:
-        logger.error("No API accounts configured. Cannot proceed with cloud mode.")
+        logger.error("No API accounts configured. Cannot proceed with forwarding mode.")
         logger.error("Please configure accounts, e.g., by running `python gen_config.py` and then `python -m tgarchive accounts --import` or by ensuring spectra_config.json has accounts.")
         return 1
 
     selected_account = accounts[0]  # Select the first available account
-    logger.info(f"Cloud mode will use the single API account: {selected_account.get('session_name', 'N/A')}")
+    logger.info(f"Forwarding mode will use the single API account: {selected_account.get('session_name', 'N/A')}")
     logger.info(f"Account details (for verification): API ID {selected_account.get('api_id')}")
 
     if CloudProcessor is None:
-        logger.error("CloudProcessor is not available. Cannot run cloud mode. Please check for import errors.")
+        logger.error("CloudProcessor is not available. Cannot run forwarding mode. Please check for import errors.")
         return 1
 
     logger.info(f"Initializing CloudProcessor with output directory: {args.output_dir}")
@@ -615,13 +615,13 @@ async def handle_cloud(args: argparse.Namespace) -> int:
     )
 
     try:
-        logger.info("Starting cloud mode channel processing...")
+        logger.info("Starting forwarding mode channel processing...")
         await processor.process_channels()
-        logger.info("Cloud mode processing completed successfully.")
+        logger.info("Forwarding mode processing completed successfully.")
         return 0  # Success
     except Exception as e:
         # Log the full traceback for unexpected errors
-        logger.error(f"An critical error occurred during cloud mode processing: {e}", exc_info=True)
+        logger.error(f"An critical error occurred during forwarding mode processing: {e}", exc_info=True)
         return 1  # Failure
 
 
@@ -1076,8 +1076,8 @@ async def async_main(args: argparse.Namespace) -> int:
         return await handle_accounts(args)
     elif args.command == "parallel":
         return await handle_parallel(args)
-    elif args.command == "cloud":
-        return await handle_cloud(args)
+    elif args.command == "forward":
+        return await handle_forwarding(args)
 
     elif args.command == "config":
         cfg = Config(Path(args.config)) # Ensure cfg is loaded for config commands
@@ -1091,7 +1091,7 @@ async def async_main(args: argparse.Namespace) -> int:
             # parser.parse_args(['channels', '--help']) # This might be tricky to invoke correctly
             return 1
     elif args.command == "forward":
-        return await handle_forward(args)
+        return await handle_forwarding(args)
 
     else:
         # No command or unrecognized command

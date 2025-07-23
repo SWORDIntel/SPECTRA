@@ -715,6 +715,84 @@ class AttachmentForwarder:
         if not unique_channels_with_accounts:
             self.logger.warning("No channels found in account_channel_access table to process for total forward mode.")
             return
+
+    async def forward_files(self, schedule_id: int, source_id: int | str, destination_id: int | str, file_types: Optional[str], min_file_size: Optional[int], max_file_size: Optional[int], account_identifier: Optional[str] = None):
+        client = None
+        try:
+            client = await self._get_client(account_identifier)
+            source_entity = await client.get_entity(source_id)
+
+            if not source_entity:
+                raise ValueError("Could not resolve the source Telegram entity.")
+
+            async for message in client.iter_messages(source_entity):
+                if not message.media or not message.file:
+                    continue
+
+                if file_types:
+                    if message.file.mime_type not in file_types.split(','):
+                        continue
+
+                if min_file_size is not None and message.file.size < min_file_size:
+                    continue
+
+                if max_file_size is not None and message.file.size > max_file_size:
+                    continue
+
+                if await self._is_duplicate([message]):
+                    continue
+
+                self.db.add_to_file_forward_queue(schedule_id, message.id, message.file.id)
+
+        except Exception as e:
+            self.logger.error(f"Error queueing files from {source_id}: {e}")
+            raise
+        finally:
+            if client:
+                await client.disconnect()
+
+    async def process_file_forward_queue(self, account_identifier: Optional[str] = None):
+        client = None
+        try:
+            client = await self._get_client(account_identifier)
+            queue = self.db.get_file_forward_queue()
+            for queue_id, schedule_id, message_id, file_id in queue:
+                try:
+                    schedule = self.db.get_file_forward_schedule_by_id(schedule_id)
+                    if not schedule:
+                        self.db.update_file_forward_queue_status(queue_id, "error: schedule not found")
+                        continue
+
+                    source_entity = await client.get_entity(schedule.source)
+                    destination_entity = await client.get_entity(schedule.destination)
+
+                    await client.forward_messages(
+                        entity=destination_entity,
+                        messages=[message_id],
+                        from_peer=source_entity,
+                    )
+                    await self._record_forwarded([await client.get_messages(source_entity, ids=message_id)], str(source_entity.id), str(destination_entity.id))
+                    self.db.update_file_forward_queue_status(queue_id, "success")
+
+                    # Bandwidth throttling
+                    bandwidth_limit_kbps = self.config.data.get("scheduler", {}).get("bandwidth_limit_kbps", 0)
+                    if bandwidth_limit_kbps > 0:
+                        message = await client.get_messages(source_entity, ids=message_id)
+                        if message and message.file:
+                            delay = message.file.size / (bandwidth_limit_kbps * 1024)
+                            await asyncio.sleep(delay)
+
+                except Exception as e:
+                    self.db.update_file_forward_queue_status(queue_id, f"error: {e}")
+                    self.logger.error(f"Error processing queue item {queue_id}: {e}")
+        except Exception as e:
+            self.logger.error(f"Error processing file forward queue: {e}")
+            raise
+        finally:
+            if client:
+                await client.disconnect()
+            self.logger.warning("No channels found in account_channel_access table to process for total forward mode.")
+            return
         self.logger.info(f"Found {len(unique_channels_with_accounts)} unique channels to process.")
         for channel_id, accessing_account_phone in unique_channels_with_accounts:
             self.logger.info(f"--- Processing channel ID: {channel_id} using account: {accessing_account_phone} ---")

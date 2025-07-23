@@ -106,9 +106,47 @@ class SchedulerDaemon:
                         print(f"Error executing channel forward for channel {channel_id}: {e}")
                         self.notification_manager.send(f"Error executing channel forward for channel {channel_id}: {e}")
 
+            # Execute file forwarding jobs from DB
+            file_schedules = db.get_file_forward_schedules()
+            for schedule_id, source, destination, schedule, file_types, min_file_size, max_file_size, priority in file_schedules:
+                iter = croniter(schedule, now)
+                if iter.get_prev(datetime) == now.replace(second=0, microsecond=0):
+                    self.notification_manager.send(f"Starting file forward for source {source}")
+                    print(f"Executing file forward for source {source}")
+                    try:
+                        asyncio.run(scheduled_file_forward(
+                            self.config_path,
+                            db.db_path,
+                            schedule_id,
+                            source,
+                            destination,
+                            file_types,
+                            min_file_size,
+                            max_file_size
+                        ))
+                        self.notification_manager.send(f"Successfully finished file forward for source {source}")
+                    except Exception as e:
+                        print(f"Error executing file forward for source {source}: {e}")
+                        self.notification_manager.send(f"Error executing file forward for source {source}: {e}")
+
+            # Process file forwarding queue
+            self.process_file_forward_queue()
 
             time.sleep(60)  # Check every minute
         self.stop_health_check()
+
+    def process_file_forward_queue(self):
+        """
+        Processes the file forwarding queue.
+        """
+        db = SpectraDB(self.config.get("db", {}).get("path", "spectra.db"))
+        forwarder = AttachmentForwarder(config=self.config, db=db)
+        try:
+            asyncio.run(forwarder.process_file_forward_queue())
+        except Exception as e:
+            self.notification_manager.send(f"Error processing file forward queue: {e}")
+        finally:
+            asyncio.run(forwarder.close())
 
     def start_health_check(self):
         """
@@ -174,4 +212,37 @@ async def scheduled_channel_forward(config_path, db_path, schedule_id, channel_i
     finally:
         finished_at = datetime.now().isoformat()
         db.add_channel_forward_stats(schedule_id, messages_forwarded, files_forwarded, bytes_forwarded, started_at, finished_at, status)
+        await forwarder.close()
+
+async def scheduled_file_forward(config_path, db_path, schedule_id, source, destination, file_types, min_file_size, max_file_size):
+    """
+    Forwards files from a source to a destination based on a schedule.
+    """
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+
+    db = SpectraDB(db_path)
+    forwarder = AttachmentForwarder(config=config, db=db)
+
+    started_at = datetime.now().isoformat()
+    status = "success"
+    messages_forwarded = 0
+    files_forwarded = 0
+    bytes_forwarded = 0
+
+    try:
+        messages_forwarded, files_forwarded, bytes_forwarded = await forwarder.forward_files(
+            source_id=source,
+            destination_id=destination,
+            file_types=file_types,
+            min_file_size=min_file_size,
+            max_file_size=max_file_size
+        )
+    except Exception as e:
+        status = f"error: {e}"
+        raise
+    finally:
+        finished_at = datetime.now().isoformat()
+        # TODO: Add a new table for file forwarding stats
+        # db.add_file_forward_stats(schedule_id, messages_forwarded, files_forwarded, bytes_forwarded, started_at, finished_at, status)
         await forwarder.close()

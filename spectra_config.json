@@ -75,7 +75,8 @@
   "scheduler": {
     "enabled": false,
     "timezone": "UTC",
-    "state_file": "scheduler_state.json"
+    "state_file": "scheduler_state.json",
+    "bandwidth_limit_kbps": 0
   },
   "notifications": {
     "enabled": false,

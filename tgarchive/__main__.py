@@ -208,6 +208,20 @@ def setup_parser() -> argparse.ArgumentParser:
     channel_forward_parser.add_argument("--destination", required=True, help="Destination to forward to")
     channel_forward_parser.add_argument("--schedule", required=True, help="Cron-style schedule")
 
+    # File forward schedule command
+    file_forward_parser = scheduler_subparsers.add_parser("add-file-forward", help="Add a new file forwarding schedule")
+    file_forward_parser.add_argument("--source", required=True, help="Source to forward from")
+    file_forward_parser.add_argument("--destination", required=True, help="Destination to forward to")
+    file_forward_parser.add_argument("--schedule", required=True, help="Cron-style schedule")
+    file_forward_parser.add_argument("--file-types", help="Comma-separated list of file types to forward")
+    file_forward_parser.add_argument("--min-file-size", type=int, help="Minimum file size in bytes")
+    file_forward_parser.add_argument("--max-file-size", type=int, help="Maximum file size in bytes")
+    file_forward_parser.add_argument("--priority", type=int, default=0, help="Priority of the schedule")
+
+    # Report command
+    report_parser = scheduler_subparsers.add_parser("report", help="Report the status of a file forwarding schedule")
+    report_parser.add_argument("--schedule-id", required=True, type=int, help="ID of the schedule to report on")
+
     return parser
 
 # ── Command handlers ───────────────────────────────────────────────────────
@@ -1206,6 +1220,18 @@ async def handle_schedule(args: argparse.Namespace) -> int:
 
         db.add_channel_forward_schedule(args.channel_id, args.destination, args.schedule)
         logger.info(f"Added channel forwarding schedule for channel {args.channel_id}")
+    elif args.schedule_command == "add-file-forward":
+        db = SpectraDB(cfg.data.get("db", {}).get("path", "spectra.db"))
+        db.add_file_forward_schedule(args.source, args.destination, args.schedule, args.file_types, args.min_file_size, args.max_file_size, args.priority)
+        logger.info(f"Added file forwarding schedule for source {args.source}")
+    elif args.schedule_command == "report":
+        db = SpectraDB(cfg.data.get("db", {}).get("path", "spectra.db"))
+        status_list = db.get_file_forward_queue_status_by_schedule_id(args.schedule_id)
+        if not status_list:
+            print("No files found for this schedule.")
+            return 0
+        for message_id, file_id, status in status_list:
+            print(f"  - Message ID: {message_id}, File ID: {file_id}, Status: {status}")
     else:
         logger.error(f"Unknown schedule command: {args.schedule_command}")
         return 1

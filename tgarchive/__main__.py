@@ -27,6 +27,7 @@ from .discovery import (
 from .db import SpectraDB
 from .channel_utils import populate_account_channel_access
 from .forwarding import AttachmentForwarder # Added for handle_forward
+from .scheduler_service import SchedulerDaemon
 
 try:
     from .forwarding_processor import CloudProcessor
@@ -184,6 +185,22 @@ def setup_parser() -> argparse.ArgumentParser:
     auto_invite_group = cloud_parser.add_mutually_exclusive_group()
     auto_invite_group.add_argument("--enable-auto-invites", action="store_true", dest="auto_invite_accounts", default=None, help="Enable automatic account invitations in forwarding mode (overrides config).")
     auto_invite_group.add_argument("--disable-auto-invites", action="store_false", dest="auto_invite_accounts", help="Disable automatic account invitations in forwarding mode (overrides config).")
+
+    # Scheduler command
+    scheduler_parser = subparsers.add_parser("schedule", help="Manage scheduled tasks")
+    scheduler_subparsers = scheduler_parser.add_subparsers(dest="schedule_command", help="Scheduler command")
+
+    schedule_add_parser = scheduler_subparsers.add_parser("add", help="Add a new scheduled task")
+    schedule_add_parser.add_argument("--name", required=True, help="Name of the task")
+    schedule_add_parser.add_argument("--schedule", required=True, help="Cron-style schedule (e.g., '*/5 * * * *')")
+    schedule_add_parser.add_argument("--command", required=True, help="Command to execute")
+
+    scheduler_subparsers.add_parser("list", help="List all scheduled tasks")
+
+    schedule_remove_parser = scheduler_subparsers.add_parser("remove", help="Remove a scheduled task")
+    schedule_remove_parser.add_argument("--name", required=True, help="Name of the task to remove")
+
+    scheduler_subparsers.add_parser("run", help="Run the scheduler daemon")
 
     return parser
 
@@ -1092,6 +1109,8 @@ async def async_main(args: argparse.Namespace) -> int:
             return 1
     elif args.command == "forward":
         return await handle_forwarding(args)
+    elif args.command == "schedule":
+        return await handle_schedule(args)
 
     else:
         # No command or unrecognized command
@@ -1132,5 +1151,41 @@ def main() -> int:
         logger.error(f"Unhandled error: {e}")
         return 1
 
+async def handle_schedule(args: argparse.Namespace) -> int:
+    """Handle schedule command"""
+    cfg = Config(Path(args.config))
+    state_path = cfg.data.get("scheduler", {}).get("state_file", "scheduler_state.json")
+    scheduler = SchedulerDaemon(args.config, state_path)
+
+    if args.schedule_command == "add":
+        job = {
+            "name": args.name,
+            "schedule": args.schedule,
+            "command": args.command,
+        }
+        scheduler.jobs.append(job)
+        scheduler.save_jobs()
+        logger.info(f"Added job: {args.name}")
+    elif args.schedule_command == "list":
+        for job in scheduler.jobs:
+            print(f"  - {job['name']}: {job['schedule']} -> {job['command']}")
+    elif args.schedule_command == "remove":
+        scheduler.jobs = [j for j in scheduler.jobs if j['name'] != args.name]
+        scheduler.save_jobs()
+        logger.info(f"Removed job: {args.name}")
+    elif args.schedule_command == "run":
+        logger.info("Starting scheduler daemon...")
+        scheduler.start()
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            logger.info("Stopping scheduler daemon...")
+            scheduler.stop()
+    else:
+        logger.error(f"Unknown schedule command: {args.schedule_command}")
+        return 1
+    return 0
+
 if __name__ == "__main__":
-    sys.exit(main()) 
+    sys.exit(main())

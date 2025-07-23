@@ -202,6 +202,12 @@ def setup_parser() -> argparse.ArgumentParser:
 
     scheduler_subparsers.add_parser("run", help="Run the scheduler daemon")
 
+    # Channel forward schedule command
+    channel_forward_parser = scheduler_subparsers.add_parser("add-channel-forward", help="Add a new channel forwarding schedule")
+    channel_forward_parser.add_argument("--channel-id", required=True, type=int, help="ID of the channel to forward from")
+    channel_forward_parser.add_argument("--destination", required=True, help="Destination to forward to")
+    channel_forward_parser.add_argument("--schedule", required=True, help="Cron-style schedule")
+
     return parser
 
 # ── Command handlers ───────────────────────────────────────────────────────
@@ -1182,6 +1188,24 @@ async def handle_schedule(args: argparse.Namespace) -> int:
         except KeyboardInterrupt:
             logger.info("Stopping scheduler daemon...")
             scheduler.stop()
+    elif args.schedule_command == "add-channel-forward":
+        try:
+            from croniter import croniter
+            if not croniter.is_valid(args.schedule):
+                logger.error("Invalid cron schedule format.")
+                return 1
+        except ImportError:
+            logger.warning("croniter library not found. Skipping schedule validation.")
+
+        db = SpectraDB(cfg.data.get("db", {}).get("path", "spectra.db"))
+
+        existing_schedule = db.get_channel_forward_schedule_by_channel_and_destination(args.channel_id, args.destination)
+        if existing_schedule:
+            logger.error(f"A schedule for channel {args.channel_id} and destination {args.destination} already exists.")
+            return 1
+
+        db.add_channel_forward_schedule(args.channel_id, args.destination, args.schedule)
+        logger.info(f"Added channel forwarding schedule for channel {args.channel_id}")
     else:
         logger.error(f"Unknown schedule command: {args.schedule_command}")
         return 1

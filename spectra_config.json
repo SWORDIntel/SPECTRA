@@ -76,5 +76,10 @@
     "enabled": false,
     "timezone": "UTC",
     "state_file": "scheduler_state.json"
+  },
+  "notifications": {
+    "enabled": false,
+    "provider": "placeholder",
+    "config": {}
   }
 }

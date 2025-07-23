@@ -510,8 +510,15 @@ class AttachmentForwarder:
         self,
         origin_id: int | str,
         destination_id: int | str,
-        account_identifier: Optional[str] = None
-    ):
+        account_identifier: Optional[str] = None,
+        start_message_id: Optional[int] = None
+    ) -> Tuple[Optional[int], dict]:
+        stats = {
+            "messages_forwarded": 0,
+            "files_forwarded": 0,
+            "bytes_forwarded": 0,
+        }
+        new_last_message_id = None
         client = None
         try:
             client = await self._get_client(account_identifier)
@@ -527,7 +534,7 @@ class AttachmentForwarder:
 
             self.logger.info(f"Fetching all media messages from origin: {origin_id} before grouping and forwarding.")
             all_media_messages: list[TLMessage] = []
-            async for msg in client.iter_messages(origin_entity):
+            async for msg in client.iter_messages(origin_entity, min_id=start_message_id or 0):
                 if msg.media:
                     all_media_messages.append(msg)
             all_media_messages.reverse()
@@ -584,6 +591,11 @@ class AttachmentForwarder:
                         if len(message_group) > 1 and msg_in_group_idx < len(message_group) - 1:
                             await asyncio.sleep(1)
                     successfully_forwarded_main = True
+                    stats["messages_forwarded"] += 1
+                    if message.file:
+                        stats["files_forwarded"] += 1
+                        stats["bytes_forwarded"] += message.file.size
+                    new_last_message_id = message.id
                 except telethon_errors.FloodWaitError as e_flood:
                     self.logger.warning(f"Rate limit hit (main destination) while processing group (representative Msg ID: {message.id}). Waiting for {e_flood.seconds} seconds.")
                     await asyncio.sleep(e_flood.seconds + 1)
@@ -677,6 +689,7 @@ class AttachmentForwarder:
                 self.logger.info("Disconnecting Telegram client.")
                 await client.disconnect()
             self._client = None
+        return new_last_message_id, stats
 
     async def close(self):
         """Closes any active Telegram client connection."""

@@ -64,9 +64,7 @@
   "default_forwarding_destination_id": null,
   "forwarding": {
     "enable_deduplication": true,
-    "secondary_unique_destination": null
-  },
-  "cloud": {
+    "secondary_unique_destination": null,
     "auto_invite_accounts": true,
     "invitation_delays": {
       "min_seconds": 120,

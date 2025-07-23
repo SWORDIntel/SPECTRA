@@ -427,7 +427,7 @@ class CloudProcessor:
 
                 except errors.ChannelsTooMuchError:
                     logger.error(f"Account {self.selected_account.get('session_name')} is in too many channels/supergroups. Cannot join '{channel_identifier}'. Skipping.")
-                    # Consider re-queueing with a different account if multi-account is implemented for cloud mode later
+                    # Consider re-queueing with a different account if multi-account is implemented for forwarding mode later
                     continue
                 except (errors.ChannelPrivateError, errors.ChatAdminRequiredError, errors.UserBannedInChannelError) as e:
                     logger.warning(f"Cannot access '{channel_identifier}': {type(e).__name__}. It might be private, require admin rights, or user is banned. Skipping. Error: {e}")

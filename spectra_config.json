@@ -71,5 +71,10 @@
       "max_seconds": 600,
       "variance": 0.3
     }
+  },
+  "scheduler": {
+    "enabled": false,
+    "timezone": "UTC",
+    "state_file": "scheduler_state.json"
   }
 }

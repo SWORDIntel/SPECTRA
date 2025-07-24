@@ -71,5 +71,27 @@
       "max_seconds": 600,
       "variance": 0.3
     }
+  },
+  "scheduler": {
+    "enabled": false,
+    "timezone": "UTC",
+    "state_file": "scheduler_state.json",
+    "bandwidth_limit_kbps": 0
+  },
+  "notifications": {
+    "enabled": false,
+    "provider": "placeholder",
+    "config": {}
+  },
+  "file_sorter": {
+    "extension_mapping": {
+      "text": [".txt", ".md", ".json"],
+      "pdf": [".pdf"],
+      "archive": [".zip", ".rar", ".7z", ".tar", ".gz"],
+      "image": [".jpg", ".jpeg", ".png", ".gif", ".bmp"],
+      "video": [".mp4", ".mkv", ".avi", ".mov"],
+      "document": [".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"],
+      "source_code": [".py", ".js", ".java", ".c", ".cpp", ".h", ".html", ".css"]
+    }
   }
 }

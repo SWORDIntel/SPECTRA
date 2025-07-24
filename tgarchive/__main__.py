@@ -27,6 +27,7 @@ from .discovery import (
 from .db import SpectraDB
 from .channel_utils import populate_account_channel_access
 from .forwarding import AttachmentForwarder # Added for handle_forward
+from .scheduler_service import SchedulerDaemon
 
 try:
     from .forwarding_processor import CloudProcessor
@@ -184,6 +185,42 @@ def setup_parser() -> argparse.ArgumentParser:
     auto_invite_group = cloud_parser.add_mutually_exclusive_group()
     auto_invite_group.add_argument("--enable-auto-invites", action="store_true", dest="auto_invite_accounts", default=None, help="Enable automatic account invitations in forwarding mode (overrides config).")
     auto_invite_group.add_argument("--disable-auto-invites", action="store_false", dest="auto_invite_accounts", help="Disable automatic account invitations in forwarding mode (overrides config).")
+
+    # Scheduler command
+    scheduler_parser = subparsers.add_parser("schedule", help="Manage scheduled tasks")
+    scheduler_subparsers = scheduler_parser.add_subparsers(dest="schedule_command", help="Scheduler command")
+
+    schedule_add_parser = scheduler_subparsers.add_parser("add", help="Add a new scheduled task")
+    schedule_add_parser.add_argument("--name", required=True, help="Name of the task")
+    schedule_add_parser.add_argument("--schedule", required=True, help="Cron-style schedule (e.g., '*/5 * * * *')")
+    schedule_add_parser.add_argument("--command", required=True, help="Command to execute")
+
+    scheduler_subparsers.add_parser("list", help="List all scheduled tasks")
+
+    schedule_remove_parser = scheduler_subparsers.add_parser("remove", help="Remove a scheduled task")
+    schedule_remove_parser.add_argument("--name", required=True, help="Name of the task to remove")
+
+    scheduler_subparsers.add_parser("run", help="Run the scheduler daemon")
+
+    # Channel forward schedule command
+    channel_forward_parser = scheduler_subparsers.add_parser("add-channel-forward", help="Add a new channel forwarding schedule")
+    channel_forward_parser.add_argument("--channel-id", required=True, type=int, help="ID of the channel to forward from")
+    channel_forward_parser.add_argument("--destination", required=True, help="Destination to forward to")
+    channel_forward_parser.add_argument("--schedule", required=True, help="Cron-style schedule")
+
+    # File forward schedule command
+    file_forward_parser = scheduler_subparsers.add_parser("add-file-forward", help="Add a new file forwarding schedule")
+    file_forward_parser.add_argument("--source", required=True, help="Source to forward from")
+    file_forward_parser.add_argument("--destination", required=True, help="Destination to forward to")
+    file_forward_parser.add_argument("--schedule", required=True, help="Cron-style schedule")
+    file_forward_parser.add_argument("--file-types", help="Comma-separated list of file types to forward")
+    file_forward_parser.add_argument("--min-file-size", type=int, help="Minimum file size in bytes")
+    file_forward_parser.add_argument("--max-file-size", type=int, help="Maximum file size in bytes")
+    file_forward_parser.add_argument("--priority", type=int, default=0, help="Priority of the schedule")
+
+    # Report command
+    report_parser = scheduler_subparsers.add_parser("report", help="Report the status of a file forwarding schedule")
+    report_parser.add_argument("--schedule-id", required=True, type=int, help="ID of the schedule to report on")
 
     return parser
 
@@ -1092,6 +1129,8 @@ async def async_main(args: argparse.Namespace) -> int:
             return 1
     elif args.command == "forward":
         return await handle_forwarding(args)
+    elif args.command == "schedule":
+        return await handle_schedule(args)
 
     else:
         # No command or unrecognized command
@@ -1132,5 +1171,71 @@ def main() -> int:
         logger.error(f"Unhandled error: {e}")
         return 1
 
+async def handle_schedule(args: argparse.Namespace) -> int:
+    """Handle schedule command"""
+    cfg = Config(Path(args.config))
+    state_path = cfg.data.get("scheduler", {}).get("state_file", "scheduler_state.json")
+    scheduler = SchedulerDaemon(args.config, state_path)
+
+    if args.schedule_command == "add":
+        job = {
+            "name": args.name,
+            "schedule": args.schedule,
+            "command": args.command,
+        }
+        scheduler.jobs.append(job)
+        scheduler.save_jobs()
+        logger.info(f"Added job: {args.name}")
+    elif args.schedule_command == "list":
+        for job in scheduler.jobs:
+            print(f"  - {job['name']}: {job['schedule']} -> {job['command']}")
+    elif args.schedule_command == "remove":
+        scheduler.jobs = [j for j in scheduler.jobs if j['name'] != args.name]
+        scheduler.save_jobs()
+        logger.info(f"Removed job: {args.name}")
+    elif args.schedule_command == "run":
+        logger.info("Starting scheduler daemon...")
+        scheduler.start()
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            logger.info("Stopping scheduler daemon...")
+            scheduler.stop()
+    elif args.schedule_command == "add-channel-forward":
+        try:
+            from croniter import croniter
+            if not croniter.is_valid(args.schedule):
+                logger.error("Invalid cron schedule format.")
+                return 1
+        except ImportError:
+            logger.warning("croniter library not found. Skipping schedule validation.")
+
+        db = SpectraDB(cfg.data.get("db", {}).get("path", "spectra.db"))
+
+        existing_schedule = db.get_channel_forward_schedule_by_channel_and_destination(args.channel_id, args.destination)
+        if existing_schedule:
+            logger.error(f"A schedule for channel {args.channel_id} and destination {args.destination} already exists.")
+            return 1
+
+        db.add_channel_forward_schedule(args.channel_id, args.destination, args.schedule)
+        logger.info(f"Added channel forwarding schedule for channel {args.channel_id}")
+    elif args.schedule_command == "add-file-forward":
+        db = SpectraDB(cfg.data.get("db", {}).get("path", "spectra.db"))
+        db.add_file_forward_schedule(args.source, args.destination, args.schedule, args.file_types, args.min_file_size, args.max_file_size, args.priority)
+        logger.info(f"Added file forwarding schedule for source {args.source}")
+    elif args.schedule_command == "report":
+        db = SpectraDB(cfg.data.get("db", {}).get("path", "spectra.db"))
+        status_list = db.get_file_forward_queue_status_by_schedule_id(args.schedule_id)
+        if not status_list:
+            print("No files found for this schedule.")
+            return 0
+        for message_id, file_id, status in status_list:
+            print(f"  - Message ID: {message_id}, File ID: {file_id}, Status: {status}")
+    else:
+        logger.error(f"Unknown schedule command: {args.schedule_command}")
+        return 1
+    return 0
+
 if __name__ == "__main__":
-    sys.exit(main()) 
+    sys.exit(main())

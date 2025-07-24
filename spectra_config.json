@@ -82,5 +82,16 @@
     "enabled": false,
     "provider": "placeholder",
     "config": {}
+  },
+  "file_sorter": {
+    "extension_mapping": {
+      "text": [".txt", ".md", ".json"],
+      "pdf": [".pdf"],
+      "archive": [".zip", ".rar", ".7z", ".tar", ".gz"],
+      "image": [".jpg", ".jpeg", ".png", ".gif", ".bmp"],
+      "video": [".mp4", ".mkv", ".avi", ".mov"],
+      "document": [".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"],
+      "source_code": [".py", ".js", ".java", ".c", ".cpp", ".h", ".html", ".css"]
+    }
   }
 }

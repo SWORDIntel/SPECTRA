@@ -142,6 +142,22 @@ CREATE TABLE IF NOT EXISTS file_forward_queue (
     created_at          TEXT NOT NULL,
     updated_at          TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS category_to_group_mapping (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    category            TEXT NOT NULL,
+    group_id            INTEGER NOT NULL,
+    priority            INTEGER DEFAULT 0,
+    UNIQUE(category, group_id)
+);
+
+CREATE TABLE IF NOT EXISTS category_stats (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    category            TEXT NOT NULL,
+    files_count         INTEGER NOT NULL,
+    bytes_count         INTEGER NOT NULL,
+    UNIQUE(category)
+);
 """
 
 # ── Helper SQL functions ────────────────────────────────────────────────
@@ -521,6 +537,31 @@ class SpectraDB(AbstractContextManager):
     def get_file_forward_queue_status_by_schedule_id(self, schedule_id: int) -> List[Tuple[int, str, str]]:
         self.cur.execute("SELECT message_id, file_id, status FROM file_forward_queue WHERE schedule_id = ?", (schedule_id,))
         return self.cur.fetchall()
+
+    def add_category_to_group_mapping(self, category: str, group_id: int, priority: int = 0) -> None:
+        self._exec_retry(
+            "INSERT OR IGNORE INTO category_to_group_mapping(category, group_id, priority) VALUES (?, ?, ?)",
+            (category, group_id, priority),
+        )
+        self.conn.commit()
+
+    def get_group_id_for_category(self, category: str) -> Optional[int]:
+        self.cur.execute("SELECT group_id FROM category_to_group_mapping WHERE category = ? ORDER BY priority DESC", (category,))
+        row = self.cur.fetchone()
+        return row[0] if row else None
+
+    def update_category_stats(self, category: str, file_size: int) -> None:
+        self._exec_retry(
+            """
+            INSERT INTO category_stats(category, files_count, bytes_count)
+            VALUES (?, 1, ?)
+            ON CONFLICT(category) DO UPDATE SET
+                files_count = files_count + 1,
+                bytes_count = bytes_count + excluded.bytes_count;
+            """,
+            (category, file_size),
+        )
+        self.conn.commit()
 
 __all__ = [
     "SpectraDB",

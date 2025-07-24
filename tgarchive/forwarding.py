@@ -510,8 +510,15 @@ class AttachmentForwarder:
         self,
         origin_id: int | str,
         destination_id: int | str,
-        account_identifier: Optional[str] = None
-    ):
+        account_identifier: Optional[str] = None,
+        start_message_id: Optional[int] = None
+    ) -> Tuple[Optional[int], dict]:
+        stats = {
+            "messages_forwarded": 0,
+            "files_forwarded": 0,
+            "bytes_forwarded": 0,
+        }
+        new_last_message_id = None
         client = None
         try:
             client = await self._get_client(account_identifier)
@@ -527,7 +534,7 @@ class AttachmentForwarder:
 
             self.logger.info(f"Fetching all media messages from origin: {origin_id} before grouping and forwarding.")
             all_media_messages: list[TLMessage] = []
-            async for msg in client.iter_messages(origin_entity):
+            async for msg in client.iter_messages(origin_entity, min_id=start_message_id or 0):
                 if msg.media:
                     all_media_messages.append(msg)
             all_media_messages.reverse()
@@ -584,6 +591,11 @@ class AttachmentForwarder:
                         if len(message_group) > 1 and msg_in_group_idx < len(message_group) - 1:
                             await asyncio.sleep(1)
                     successfully_forwarded_main = True
+                    stats["messages_forwarded"] += 1
+                    if message.file:
+                        stats["files_forwarded"] += 1
+                        stats["bytes_forwarded"] += message.file.size
+                    new_last_message_id = message.id
                 except telethon_errors.FloodWaitError as e_flood:
                     self.logger.warning(f"Rate limit hit (main destination) while processing group (representative Msg ID: {message.id}). Waiting for {e_flood.seconds} seconds.")
                     await asyncio.sleep(e_flood.seconds + 1)
@@ -677,6 +689,7 @@ class AttachmentForwarder:
                 self.logger.info("Disconnecting Telegram client.")
                 await client.disconnect()
             self._client = None
+        return new_last_message_id, stats
 
     async def close(self):
         """Closes any active Telegram client connection."""
@@ -700,6 +713,84 @@ class AttachmentForwarder:
             self.logger.error(f"Failed to retrieve channels from database: {e_db}", exc_info=True)
             return
         if not unique_channels_with_accounts:
+            self.logger.warning("No channels found in account_channel_access table to process for total forward mode.")
+            return
+
+    async def forward_files(self, schedule_id: int, source_id: int | str, destination_id: int | str, file_types: Optional[str], min_file_size: Optional[int], max_file_size: Optional[int], account_identifier: Optional[str] = None):
+        client = None
+        try:
+            client = await self._get_client(account_identifier)
+            source_entity = await client.get_entity(source_id)
+
+            if not source_entity:
+                raise ValueError("Could not resolve the source Telegram entity.")
+
+            async for message in client.iter_messages(source_entity):
+                if not message.media or not message.file:
+                    continue
+
+                if file_types:
+                    if message.file.mime_type not in file_types.split(','):
+                        continue
+
+                if min_file_size is not None and message.file.size < min_file_size:
+                    continue
+
+                if max_file_size is not None and message.file.size > max_file_size:
+                    continue
+
+                if await self._is_duplicate([message]):
+                    continue
+
+                self.db.add_to_file_forward_queue(schedule_id, message.id, message.file.id)
+
+        except Exception as e:
+            self.logger.error(f"Error queueing files from {source_id}: {e}")
+            raise
+        finally:
+            if client:
+                await client.disconnect()
+
+    async def process_file_forward_queue(self, account_identifier: Optional[str] = None):
+        client = None
+        try:
+            client = await self._get_client(account_identifier)
+            queue = self.db.get_file_forward_queue()
+            for queue_id, schedule_id, message_id, file_id in queue:
+                try:
+                    schedule = self.db.get_file_forward_schedule_by_id(schedule_id)
+                    if not schedule:
+                        self.db.update_file_forward_queue_status(queue_id, "error: schedule not found")
+                        continue
+
+                    source_entity = await client.get_entity(schedule.source)
+                    destination_entity = await client.get_entity(schedule.destination)
+
+                    await client.forward_messages(
+                        entity=destination_entity,
+                        messages=[message_id],
+                        from_peer=source_entity,
+                    )
+                    await self._record_forwarded([await client.get_messages(source_entity, ids=message_id)], str(source_entity.id), str(destination_entity.id))
+                    self.db.update_file_forward_queue_status(queue_id, "success")
+
+                    # Bandwidth throttling
+                    bandwidth_limit_kbps = self.config.data.get("scheduler", {}).get("bandwidth_limit_kbps", 0)
+                    if bandwidth_limit_kbps > 0:
+                        message = await client.get_messages(source_entity, ids=message_id)
+                        if message and message.file:
+                            delay = message.file.size / (bandwidth_limit_kbps * 1024)
+                            await asyncio.sleep(delay)
+
+                except Exception as e:
+                    self.db.update_file_forward_queue_status(queue_id, f"error: {e}")
+                    self.logger.error(f"Error processing queue item {queue_id}: {e}")
+        except Exception as e:
+            self.logger.error(f"Error processing file forward queue: {e}")
+            raise
+        finally:
+            if client:
+                await client.disconnect()
             self.logger.warning("No channels found in account_channel_access table to process for total forward mode.")
             return
         self.logger.info(f"Found {len(unique_channels_with_accounts)} unique channels to process.")

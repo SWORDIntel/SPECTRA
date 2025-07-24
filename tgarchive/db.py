@@ -96,6 +96,68 @@ CREATE TABLE IF NOT EXISTS account_channel_access (
     last_seen            TEXT,
     PRIMARY KEY (account_phone_number, channel_id)
 );
+
+CREATE TABLE IF NOT EXISTS channel_forward_schedule (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel_id          BIGINT NOT NULL,
+    destination         TEXT NOT NULL,
+    schedule            TEXT NOT NULL,
+    last_message_id     INTEGER,
+    is_enabled          BOOLEAN DEFAULT TRUE,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS channel_forward_stats (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    schedule_id         INTEGER REFERENCES channel_forward_schedule(id),
+    messages_forwarded  INTEGER NOT NULL,
+    files_forwarded     INTEGER NOT NULL,
+    bytes_forwarded     INTEGER NOT NULL,
+    started_at          TEXT NOT NULL,
+    finished_at         TEXT NOT NULL,
+    status              TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS file_forward_schedule (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    source              TEXT NOT NULL,
+    destination         TEXT NOT NULL,
+    schedule            TEXT NOT NULL,
+    file_types          TEXT,
+    min_file_size       INTEGER,
+    max_file_size       INTEGER,
+    is_enabled          BOOLEAN DEFAULT TRUE,
+    priority            INTEGER DEFAULT 0,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS file_forward_queue (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    schedule_id         INTEGER REFERENCES file_forward_schedule(id),
+    message_id          INTEGER NOT NULL,
+    file_id             TEXT NOT NULL,
+    status              TEXT NOT NULL,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS category_to_group_mapping (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    category            TEXT NOT NULL,
+    group_id            INTEGER NOT NULL,
+    priority            INTEGER DEFAULT 0,
+    UNIQUE(category, group_id)
+);
+
+CREATE TABLE IF NOT EXISTS category_stats (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    category            TEXT NOT NULL,
+    files_count         INTEGER NOT NULL,
+    bytes_count         INTEGER NOT NULL,
+    UNIQUE(category)
+);
 """
 
 # ── Helper SQL functions ────────────────────────────────────────────────
@@ -231,7 +293,7 @@ class SpectraDB(AbstractContextManager):
                 user.last_name,
                 " ".join(user.tags),
                 user.avatar,
-                datetime.utcnow().isoformat(),
+                datetime.now(timezone.utc).isoformat(),
             ),
         )
 
@@ -332,7 +394,7 @@ class SpectraDB(AbstractContextManager):
     def save_checkpoint(self, last_id: int, *, context: str = "sync") -> None:
         self._exec_retry(
             "INSERT INTO checkpoints(last_message_id, checkpoint_time, context) VALUES (?, ?, ?)",
-            (last_id, datetime.utcnow().isoformat(), context),
+            (last_id, datetime.now(timezone.utc).isoformat(), context),
         )
         self.conn.commit()
         logger.info("Checkpoint saved (%s – %s)", last_id, context)
@@ -393,6 +455,113 @@ class SpectraDB(AbstractContextManager):
                 fh.write(",".join(map(lambda x: "" if x is None else str(x), row)) + "\n")
         logger.info("Exported %d rows from %s to %s", len(rows), table, dst)
         return len(rows)
+
+    def add_channel_forward_schedule(self, channel_id: int, destination: str, schedule: str) -> None:
+        self._exec_retry(
+            """
+            INSERT INTO channel_forward_schedule(channel_id, destination, schedule, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (channel_id, destination, schedule, datetime.now(timezone.utc).isoformat(), datetime.now(timezone.utc).isoformat()),
+        )
+        self.conn.commit()
+
+    def get_channel_forward_schedules(self) -> List[Tuple[int, int, str, str, int]]:
+        self.cur.execute("SELECT id, channel_id, destination, schedule, last_message_id FROM channel_forward_schedule WHERE is_enabled = TRUE")
+        return self.cur.fetchall()
+
+    def get_channel_forward_schedule_by_channel_and_destination(self, channel_id: int, destination: str) -> Optional[Tuple[int, int, str, str, int]]:
+        self.cur.execute("SELECT id, channel_id, destination, schedule, last_message_id FROM channel_forward_schedule WHERE channel_id = ? AND destination = ?", (channel_id, destination))
+        return self.cur.fetchone()
+
+    def update_channel_forward_schedule_checkpoint(self, schedule_id: int, last_message_id: int) -> None:
+        self._exec_retry(
+            "UPDATE channel_forward_schedule SET last_message_id = ?, updated_at = ? WHERE id = ?",
+            (last_message_id, datetime.now(timezone.utc).isoformat(), schedule_id),
+        )
+        self.conn.commit()
+
+    def add_channel_forward_stats(self, schedule_id: int, messages_forwarded: int, files_forwarded: int, bytes_forwarded: int, started_at: str, finished_at: str, status: str) -> None:
+        self._exec_retry(
+            """
+            INSERT INTO channel_forward_stats(schedule_id, messages_forwarded, files_forwarded, bytes_forwarded, started_at, finished_at, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (schedule_id, messages_forwarded, files_forwarded, bytes_forwarded, started_at, finished_at, status),
+        )
+        self.conn.commit()
+
+    def add_file_forward_schedule(self, source: str, destination: str, schedule: str, file_types: Optional[str], min_file_size: Optional[int], max_file_size: Optional[int], priority: int) -> None:
+        self._exec_retry(
+            """
+            INSERT INTO file_forward_schedule(source, destination, schedule, file_types, min_file_size, max_file_size, priority, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (source, destination, schedule, file_types, min_file_size, max_file_size, priority, datetime.now(timezone.utc).isoformat(), datetime.now(timezone.utc).isoformat()),
+        )
+        self.conn.commit()
+
+    def get_file_forward_schedules(self) -> List[Tuple[int, str, str, str, Optional[str], Optional[int], Optional[int], int]]:
+        self.cur.execute("SELECT id, source, destination, schedule, file_types, min_file_size, max_file_size, priority FROM file_forward_schedule WHERE is_enabled = TRUE ORDER BY priority DESC")
+        return self.cur.fetchall()
+
+    def get_file_forward_schedule_by_id(self, schedule_id: int) -> Optional[NamedTuple]:
+        self.cur.execute("SELECT id, source, destination, schedule, file_types, min_file_size, max_file_size, priority FROM file_forward_schedule WHERE id = ?", (schedule_id,))
+        row = self.cur.fetchone()
+        if row:
+            FileForwardSchedule = namedtuple("FileForwardSchedule", ["id", "source", "destination", "schedule", "file_types", "min_file_size", "max_file_size", "priority"])
+            return FileForwardSchedule(*row)
+        return None
+
+    def add_to_file_forward_queue(self, schedule_id: int, message_id: int, file_id: str) -> None:
+        self._exec_retry(
+            """
+            INSERT INTO file_forward_queue(schedule_id, message_id, file_id, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (schedule_id, message_id, file_id, "pending", datetime.now(timezone.utc).isoformat(), datetime.now(timezone.utc).isoformat()),
+        )
+        self.conn.commit()
+
+    def get_file_forward_queue(self) -> List[Tuple[int, int, int, str]]:
+        self.cur.execute("SELECT id, schedule_id, message_id, file_id FROM file_forward_queue WHERE status = 'pending' ORDER BY id")
+        return self.cur.fetchall()
+
+    def update_file_forward_queue_status(self, queue_id: int, status: str) -> None:
+        self._exec_retry(
+            "UPDATE file_forward_queue SET status = ?, updated_at = ? WHERE id = ?",
+            (status, datetime.now(timezone.utc).isoformat(), queue_id),
+        )
+        self.conn.commit()
+
+    def get_file_forward_queue_status_by_schedule_id(self, schedule_id: int) -> List[Tuple[int, str, str]]:
+        self.cur.execute("SELECT message_id, file_id, status FROM file_forward_queue WHERE schedule_id = ?", (schedule_id,))
+        return self.cur.fetchall()
+
+    def add_category_to_group_mapping(self, category: str, group_id: int, priority: int = 0) -> None:
+        self._exec_retry(
+            "INSERT OR IGNORE INTO category_to_group_mapping(category, group_id, priority) VALUES (?, ?, ?)",
+            (category, group_id, priority),
+        )
+        self.conn.commit()
+
+    def get_group_id_for_category(self, category: str) -> Optional[int]:
+        self.cur.execute("SELECT group_id FROM category_to_group_mapping WHERE category = ? ORDER BY priority DESC", (category,))
+        row = self.cur.fetchone()
+        return row[0] if row else None
+
+    def update_category_stats(self, category: str, file_size: int) -> None:
+        self._exec_retry(
+            """
+            INSERT INTO category_stats(category, files_count, bytes_count)
+            VALUES (?, 1, ?)
+            ON CONFLICT(category) DO UPDATE SET
+                files_count = files_count + 1,
+                bytes_count = bytes_count + excluded.bytes_count;
+            """,
+            (category, file_size),
+        )
+        self.conn.commit()
 
 __all__ = [
     "SpectraDB",

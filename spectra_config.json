@@ -92,6 +92,12 @@
       "video": [".mp4", ".mkv", ".avi", ".mov"],
       "document": [".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"],
       "source_code": [".py", ".js", ".java", ".c", ".cpp", ".h", ".html", ".css"]
+    },
+    "group_naming_template": "SPECTRA-{category}",
+    "group_description_template": "A group for {category} files.",
+    "group_creation_rate_limit_seconds": 60,
+    "group_privacy": {
+      "is_public": false
     }
   }
 }

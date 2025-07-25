@@ -69,6 +69,14 @@ class GroupManager:
         self.group_metadata_cache[category] = group_id
         return group_id
 
+    def initialize_default_sorting_groups(self):
+        """
+        Initializes the default sorting groups from the configuration.
+        """
+        default_groups = self.config.get("file_sorter", {}).get("default_sorting_groups", {})
+        for group_name, template in default_groups.items():
+            self.db.add_sorting_group(group_name, template)
+
     async def add_user_to_group(self, group_id, user_id):
         """
         Adds a user to a group.

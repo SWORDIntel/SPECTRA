@@ -98,6 +98,16 @@
     "group_creation_rate_limit_seconds": 60,
     "group_privacy": {
       "is_public": false
+    },
+    "default_sorting_groups": {
+      "text_files": "SPECTRA-Text-Files",
+      "pdf_files": "SPECTRA-PDF-Files",
+      "archive_files": "SPECTRA-Archive-Files",
+      "image_files": "SPECTRA-Image-Files",
+      "video_files": "SPECTRA-Video-Files",
+      "document_files": "SPECTRA-Document-Files",
+      "source_code_files": "SPECTRA-Source-Code-Files",
+      "miscellaneous_files": "SPECTRA-Miscellaneous-Files"
     }
   }
 }

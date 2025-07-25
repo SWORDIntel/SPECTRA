@@ -158,6 +158,14 @@ CREATE TABLE IF NOT EXISTS category_stats (
     bytes_count         INTEGER NOT NULL,
     UNIQUE(category)
 );
+
+CREATE TABLE IF NOT EXISTS sorting_groups (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_name          TEXT NOT NULL,
+    template            TEXT NOT NULL,
+    is_enabled          BOOLEAN DEFAULT TRUE,
+    UNIQUE(group_name)
+);
 """
 
 # ── Helper SQL functions ────────────────────────────────────────────────
@@ -562,6 +570,18 @@ class SpectraDB(AbstractContextManager):
             (category, file_size),
         )
         self.conn.commit()
+
+    def add_sorting_group(self, group_name: str, template: str) -> None:
+        self._exec_retry(
+            "INSERT OR IGNORE INTO sorting_groups(group_name, template) VALUES (?, ?)",
+            (group_name, template),
+        )
+        self.conn.commit()
+
+    def get_sorting_group_template(self, group_name: str) -> Optional[str]:
+        self.cur.execute("SELECT template FROM sorting_groups WHERE group_name = ?", (group_name,))
+        row = self.cur.fetchone()
+        return row[0] if row else None
 
 __all__ = [
     "SpectraDB",

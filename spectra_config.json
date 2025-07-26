@@ -109,5 +109,12 @@
       "source_code_files": "SPECTRA-Source-Code-Files",
       "miscellaneous_files": "SPECTRA-Miscellaneous-Files"
     }
+  },
+  "attribution": {
+    "template": "Forwarded from {source_channel_name} (ID: {source_channel_id}) by {sender_name} (ID: {sender_id}) at {timestamp} (Message ID: {message_id})",
+    "timestamp_format": "%Y-%m-%d %H:%M:%S",
+    "preserve_message_id": true,
+    "style": "text",
+    "disable_attribution_for_groups": []
   }
 }

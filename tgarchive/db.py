@@ -187,6 +187,13 @@ CREATE TABLE IF NOT EXISTS sorting_audit_log (
     created_at          TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS attribution_stats (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_channel_id   BIGINT NOT NULL,
+    attributions_count  INTEGER NOT NULL,
+    UNIQUE(source_channel_id)
+);
+
 CREATE TABLE IF NOT EXISTS migration_progress (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     source              TEXT NOT NULL,
@@ -650,6 +657,18 @@ class SpectraDB(AbstractContextManager):
     def get_migration_report(self, migration_id: int) -> Optional[Tuple[str, str, int, str, str, str]]:
         self.cur.execute("SELECT source, destination, last_message_id, status, created_at, updated_at FROM migration_progress WHERE id = ?", (migration_id,))
         return self.cur.fetchone()
+
+    def update_attribution_stats(self, source_channel_id: int) -> None:
+        self._exec_retry(
+            """
+            INSERT INTO attribution_stats(source_channel_id, attributions_count)
+            VALUES (?, 1)
+            ON CONFLICT(source_channel_id) DO UPDATE SET
+                attributions_count = attributions_count + 1;
+            """,
+            (source_channel_id,),
+        )
+        self.conn.commit()
 
 __all__ = [
     "SpectraDB",

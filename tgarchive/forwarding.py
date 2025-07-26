@@ -19,6 +19,7 @@ from telethon.errors import RPCError, ChannelPrivateError, UserDeactivatedError,
 # Local application imports
 from tgarchive.db import SpectraDB
 from tgarchive.config_models import Config, DEFAULT_CFG # Import from new location
+from tgarchive.attribution import AttributionFormatter
 
 logger = logging.getLogger("tgarchive.forwarding")
 
@@ -120,6 +121,8 @@ class AttachmentForwarder:
                 self.logger.warning("Deduplication is enabled, but no database is configured. Deduplication will be in-memory only for this session.")
         else:
             self.logger.info("Deduplication is DISABLED.")
+
+        self.attribution_formatter = AttributionFormatter(self.config)
 
     def _init_dedup_table(self):
         """Create deduplication tracking table if it doesn't exist."""
@@ -561,12 +564,26 @@ class AttachmentForwarder:
                     for msg_in_group_idx, current_message_in_group in enumerate(message_group):
                         self.logger.info(f"Forwarding item {msg_in_group_idx + 1}/{len(message_group)} (Msg ID: {current_message_in_group.id}) of current group.")
                         if self.prepend_origin_info and not self.destination_topic_id:
+                            if destination_entity.id in self.config.get("attribution", {}).get("disable_attribution_for_groups", []):
+                                attribution = ""
+                            else:
+                                sender = await current_message_in_group.get_sender()
+                                sender_name = getattr(sender, 'username', f"{getattr(sender, 'first_name', '')} {getattr(sender, 'last_name', '')}".strip())
+                                attribution = self.attribution_formatter.format_attribution(
+                                message=current_message_in_group,
+                                source_channel_name=getattr(origin_entity, 'title', f"ID: {origin_entity.id}"),
+                                source_channel_id=origin_entity.id,
+                                sender_name=sender_name,
+                                sender_id=sender.id,
+                                timestamp=current_message_in_group.date
+                            )
+                            self.db.update_attribution_stats(origin_entity.id)
                             origin_title = getattr(origin_entity, 'title', f"ID: {origin_entity.id}")
                             group_info_header = ""
                             if len(message_group) > 1:
                                 group_info_header = f"[Group item {msg_in_group_idx+1}/{len(message_group)}] "
                             header = f"{group_info_header}[Forwarded from {origin_title} (ID: {origin_entity.id})]\n"
-                            message_content = header + (current_message_in_group.text or "")
+                            message_content = attribution + "\n\n" + (current_message_in_group.text or "")
                             if client.session.filename != str(Config().path.parent / (account_identifier or self.config.accounts[0].get("session_name"))):
                                  await self.close()
                                  client = await self._get_client(account_identifier)

@@ -1,0 +1,14 @@
+[Unit]
+Description=SPECTRA Scheduler Service
+After=network.target
+
+[Service]
+Type=simple
+User=your_user
+Group=your_group
+WorkingDirectory=/path/to/SPECTRA
+ExecStart=/path/to/SPECTRA/.venv/bin/python -m tgarchive schedule --run
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -17,7 +17,7 @@ SPECTRA is an advanced framework for Telegram data collection, network discovery
 - 🗄️ **SQL database storage** for all discovered groups, relationships, and archive metadata
 - ⚡ **Parallel processing** leveraging multiple accounts and proxies simultaneously
 - 🖥️ **Modern TUI** (npyscreen) and CLI, both using the same modular backend
-- ☁️ **Cloud Mode:** Traverse a series of channels, discover related channels, and download text/archive files with specific rules, using a single API key.
+- ☁️ **Forwarding Mode:** Traverse a series of channels, discover related channels, and download text/archive files with specific rules, using a single API key.
 - 🛡️ **Red team/OPSEC features**: account/proxy rotation, SQL audit trail, sidecar metadata, persistent state
 
 ## Installation
@@ -151,25 +151,25 @@ python -m tgarchive batch --file groups.txt --parallel --max-workers 4
 python -m tgarchive discover --seeds-file seeds.txt --parallel --max-workers 4
 ```
 
-### Cloud Mode
+### Forwarding Mode
 
 This mode is designed for automated traversal and targeted downloading from an initial set of seed channels. It uses a single API key to explore channels, discover new ones through links in messages (up to a defined depth), and download specific file types (text and common archives) into an organized output directory.
 
 **Command Structure:**
 ```bash
-python -m tgarchive cloud --channels-file <path_to_channels.txt> --output-dir <path_to_output_directory> [options]
+python -m tgarchive forward --channels-file <path_to_channels.txt> --output-dir <path_to_output_directory> [options]
 ```
 
 **Arguments:**
 
 *   `--channels-file PATH`: Required. Path to a text file containing the initial list of seed channel URLs or IDs (one per line).
-*   `--output-dir PATH`: Required. Directory where downloaded files (in `text_files/` and `archive_files/` subfolders) and the `cloud_download_log.csv` will be stored.
+*   `--output-dir PATH`: Required. Directory where downloaded files (in `text_files/` and `archive_files/` subfolders) and the `forward_download_log.csv` will be stored.
 *   `--max-depth INT`: Optional. Maximum depth to follow channel links during discovery. Default is 2.
 *   `--min-files-gateway INT`: Optional. Minimum number of files a channel should ideally have to be considered a 'gateway' for focused downloading (Note: current implementation downloads from all accessible discovered channels; this option is for future refinement). Default is 100.
 
 **API Key Usage:**
 
-Cloud mode is designed to use a single API key (specifically, the first account configured in your `spectra_config.json` or imported from `gen_config.py`) for all its operations. This is to avoid potentially joining the same channel with multiple accounts, which might be undesirable for certain operational goals.
+Forwarding mode is designed to use a single API key (specifically, the first account configured in your `spectra_config.json` or imported from `gen_config.py`) for all its operations. This is to avoid potentially joining the same channel with multiple accounts, which might be undesirable for certain operational goals.
 
 **Output Structure:**
 
@@ -177,25 +177,25 @@ In the specified output directory, you will find:
 
 *   `text_files/`: Contains downloaded plain text files.
 *   `archive_files/`: Contains downloaded archive files (e.g., .zip, .rar) along with their metadata in `.json` sidecar files (e.g., `example.zip.json`).
-*   `cloud_download_log.csv`: A CSV log detailing every downloaded file, its source channel, message ID, timestamp, and other metadata.
+*   `forward_download_log.csv`: A CSV log detailing every downloaded file, its source channel, message ID, timestamp, and other metadata.
 
-**Running Long Cloud Sessions:**
+**Running Long Forwarding Sessions:**
 
-For extended cloud mode operations, it is highly recommended to use a terminal multiplexer like `screen` or `tmux` to ensure the process continues running even if your connection drops.
+For extended forwarding mode operations, it is highly recommended to use a terminal multiplexer like `screen` or `tmux` to ensure the process continues running even if your connection drops.
 
 Example using `screen`:
-1. Start a new screen session: `screen -S spectra_cloud_session`
-2. Run the command: `python -m tgarchive cloud --channels-file your_seeds.txt --output-dir ./cloud_output`
+1. Start a new screen session: `screen -S spectra_forward_session`
+2. Run the command: `python -m tgarchive forward --channels-file your_seeds.txt --output-dir ./forward_output`
 3. Detach from the session: Press `Ctrl+A` then `D`.
-4. To reattach later: `screen -r spectra_cloud_session`
+4. To reattach later: `screen -r spectra_forward_session`
 
 SPECTRA will not install `screen` or `tmux` for you. Please install them using your system's package manager if needed (e.g., `sudo apt install screen`).
 
 ---
 
-## Enhanced Forwarding & Cloud Operations
+## Enhanced Forwarding & Forwarding Operations
 
-SPECTRA now includes advanced capabilities for message deduplication during forwarding and an automated account invitation system for channels discovered in Cloud Mode.
+SPECTRA now includes advanced capabilities for message deduplication during forwarding and an automated account invitation system for channels discovered in Forwarding Mode.
 
 ### Deduplication Forwarding
 
@@ -252,24 +252,24 @@ To forward messages from `@news_source` to `@my_archive`, skip duplicates, and s
     python -m tgarchive forward --origin @news_source --destination @my_archive --enable-deduplication --secondary-unique-destination @special_uniques
     ```
 
-### Cloud Mode: Automated Account Invitations
+### Forwarding Mode: Automated Account Invitations
 
-When operating in Cloud Mode, SPECTRA can now automatically invite other configured accounts to join newly discovered and accessible public channels. This helps distribute channel membership across your available accounts.
+When operating in Forwarding Mode, SPECTRA can now automatically invite other configured accounts to join newly discovered and accessible public channels. This helps distribute channel membership across your available accounts.
 
 **Overview:**
 
-*   After the primary Cloud Mode account successfully accesses/joins a new channel, that channel is added to an invitation queue.
-*   Other accounts configured in `spectra_config.json` (excluding the primary Cloud Mode account) will be gradually invited to join these queued channels.
+*   After the primary Forwarding Mode account successfully accesses/joins a new channel, that channel is added to an invitation queue.
+*   Other accounts configured in `spectra_config.json` (excluding the primary Forwarding Mode account) will be gradually invited to join these queued channels.
 *   Invitations are processed with randomized delays to simulate natural user behavior and respect Telegram's rate limits.
-*   The system tracks successful and failed invitations in a state file (`invitation_state.json` in your cloud output directory) to avoid re-processing and to allow resumability.
+*   The system tracks successful and failed invitations in a state file (`invitation_state.json` in your forward output directory) to avoid re-processing and to allow resumability.
 
 **Configuration (`spectra_config.json`):**
 
-Add or modify the `cloud` section in your `spectra_config.json`:
+Add or modify the `forwarding` section in your `spectra_config.json`:
 
 ```json
 {
-  "cloud": {
+  "forwarding": {
     "auto_invite_accounts": true,
     "invitation_delays": {
       "min_seconds": 120,
@@ -277,7 +277,7 @@ Add or modify the `cloud` section in your `spectra_config.json`:
       "variance": 0.3
     }
   }
-  // ... other cloud settings ...
+  // ... other forwarding settings ...
 }
 ```
 
@@ -287,31 +287,31 @@ Add or modify the `cloud` section in your `spectra_config.json`:
     *   `max_seconds` (integer): Maximum base delay.
     *   `variance` (float, 0.0 to 1.0): Percentage of random variance applied to the base delay. For example, 0.3 means +/- 30%.
 
-**CLI Flags for `tgarchive cloud`:**
+**CLI Flags for `tgarchive forward`:**
 
-*   `--enable-auto-invites` / `--disable-auto-invites`: Overrides the `auto_invite_accounts` setting from `spectra_config.json` for the current cloud session.
-    *   Example: `python -m tgarchive cloud --channels-file seeds.txt --output-dir ./cloud_out --disable-auto-invites`
+*   `--enable-auto-invites` / `--disable-auto-invites`: Overrides the `auto_invite_accounts` setting from `spectra_config.json` for the current forward session.
+    *   Example: `python -m tgarchive forward --channels-file seeds.txt --output-dir ./forward_out --disable-auto-invites`
 
 **Usage Example:**
 
-To run Cloud Mode, discover channels, and have your other accounts automatically invited:
+To run Forwarding Mode, discover channels, and have your other accounts automatically invited:
 
-1.  Ensure your `spectra_config.json` has multiple accounts configured and the `cloud` section is set up (or use defaults):
+1.  Ensure your `spectra_config.json` has multiple accounts configured and the `forwarding` section is set up (or use defaults):
     ```json
     "accounts": [
-      {"session_name": "main_cloud_acc", "api_id": 123, "api_hash": "abc"},
+      {"session_name": "main_forward_acc", "api_id": 123, "api_hash": "abc"},
       {"session_name": "invitee_acc1", "api_id": 456, "api_hash": "def"},
       {"session_name": "invitee_acc2", "api_id": 789, "api_hash": "ghi"}
     ],
-    "cloud": {
+    "forwarding": {
       "auto_invite_accounts": true
     }
     ```
-2.  Run the Cloud Mode command (the first account, `main_cloud_acc`, will be used for discovery):
+2.  Run the Forwarding Mode command (the first account, `main_forward_acc`, will be used for discovery):
     ```bash
-    python -m tgarchive cloud --channels-file initial_seeds.txt --output-dir ./my_cloud_data
+    python -m tgarchive forward --channels-file initial_seeds.txt --output-dir ./my_forward_data
     ```
-    As `main_cloud_acc` discovers and joins new channels, `invitee_acc1` and `invitee_acc2` will be queued and then invited to join them after randomized delays.
+    As `main_forward_acc` discovers and joins new channels, `invitee_acc1` and `invitee_acc2` will be queued and then invited to join them after randomized delays.
 
 ---
 

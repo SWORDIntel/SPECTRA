@@ -756,15 +756,18 @@ class AttachmentForwarder:
         try:
             client = await self._get_client(account_identifier)
             queue = self.db.get_file_forward_queue()
-            for queue_id, schedule_id, message_id, file_id in queue:
+            for queue_id, schedule_id, message_id, file_id, destination in queue:
                 try:
-                    schedule = self.db.get_file_forward_schedule_by_id(schedule_id)
-                    if not schedule:
-                        self.db.update_file_forward_queue_status(queue_id, "error: schedule not found")
-                        continue
+                    if destination:
+                        destination_entity = await client.get_entity(destination)
+                    else:
+                        schedule = self.db.get_file_forward_schedule_by_id(schedule_id)
+                        if not schedule:
+                            self.db.update_file_forward_queue_status(queue_id, "error: schedule not found")
+                            continue
+                        destination_entity = await client.get_entity(schedule.destination)
 
                     source_entity = await client.get_entity(schedule.source)
-                    destination_entity = await client.get_entity(schedule.destination)
 
                     await client.forward_messages(
                         entity=destination_entity,

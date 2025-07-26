@@ -20,7 +20,7 @@ class TestFileForwardingScheduler(unittest.TestCase):
         self.db.add_file_forward_schedule("source", "dest", "* * * * *", None, None, None, 0)
         schedules = self.db.get_file_forward_schedules()
         schedule_id = schedules[0][0]
-        self.db.add_to_file_forward_queue(schedule_id, 123, "file_id")
+        self.db.add_to_file_forward_queue(schedule_id, 123, "file_id", 456)
         queue = self.db.get_file_forward_queue()
         self.assertEqual(len(queue), 1)
         self.assertEqual(queue[0][2], 123)
@@ -29,7 +29,7 @@ class TestFileForwardingScheduler(unittest.TestCase):
         self.db.add_file_forward_schedule("source", "dest", "* * * * *", None, None, None, 0)
         schedules = self.db.get_file_forward_schedules()
         schedule_id = schedules[0][0]
-        self.db.add_to_file_forward_queue(schedule_id, 123, "file_id")
+        self.db.add_to_file_forward_queue(schedule_id, 123, "file_id", 456)
         queue = self.db.get_file_forward_queue()
         queue_id = queue[0][0]
         self.db.update_file_forward_queue_status(queue_id, "success")

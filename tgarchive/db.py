@@ -135,9 +135,10 @@ CREATE TABLE IF NOT EXISTS file_forward_schedule (
 
 CREATE TABLE IF NOT EXISTS file_forward_queue (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    schedule_id         INTEGER REFERENCES file_forward_schedule(id),
+    schedule_id         INTEGER REFERENCES file_forward_schedule(id) ON DELETE SET NULL,
     message_id          INTEGER NOT NULL,
     file_id             TEXT NOT NULL,
+    destination         INTEGER,
     status              TEXT NOT NULL,
     created_at          TEXT NOT NULL,
     updated_at          TEXT NOT NULL
@@ -165,6 +166,32 @@ CREATE TABLE IF NOT EXISTS sorting_groups (
     template            TEXT NOT NULL,
     is_enabled          BOOLEAN DEFAULT TRUE,
     UNIQUE(group_name)
+);
+
+CREATE TABLE IF NOT EXISTS sorting_stats (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    source              TEXT NOT NULL,
+    files_sorted        INTEGER NOT NULL,
+    bytes_sorted        INTEGER NOT NULL,
+    started_at          TEXT NOT NULL,
+    finished_at         TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sorting_audit_log (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    source              TEXT NOT NULL,
+    message_id          INTEGER NOT NULL,
+    file_id             TEXT NOT NULL,
+    category            TEXT NOT NULL,
+    group_id            INTEGER NOT NULL,
+    created_at          TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS attribution_stats (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_channel_id   BIGINT NOT NULL,
+    attributions_count  INTEGER NOT NULL,
+    UNIQUE(source_channel_id)
 );
 
 CREATE TABLE IF NOT EXISTS migration_progress (
@@ -531,18 +558,18 @@ class SpectraDB(AbstractContextManager):
             return FileForwardSchedule(*row)
         return None
 
-    def add_to_file_forward_queue(self, schedule_id: int, message_id: int, file_id: str) -> None:
+    def add_to_file_forward_queue(self, schedule_id: Optional[int], message_id: int, file_id: str, destination: int) -> None:
         self._exec_retry(
             """
-            INSERT INTO file_forward_queue(schedule_id, message_id, file_id, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO file_forward_queue(schedule_id, message_id, file_id, status, created_at, updated_at, destination)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (schedule_id, message_id, file_id, "pending", datetime.now(timezone.utc).isoformat(), datetime.now(timezone.utc).isoformat()),
+            (schedule_id, message_id, file_id, "pending", datetime.now(timezone.utc).isoformat(), datetime.now(timezone.utc).isoformat(), destination),
         )
         self.conn.commit()
 
-    def get_file_forward_queue(self) -> List[Tuple[int, int, int, str]]:
-        self.cur.execute("SELECT id, schedule_id, message_id, file_id FROM file_forward_queue WHERE status = 'pending' ORDER BY id")
+    def get_file_forward_queue(self) -> List[Tuple[int, int, int, str, int]]:
+        self.cur.execute("SELECT id, schedule_id, message_id, file_id, destination FROM file_forward_queue WHERE status = 'pending' ORDER BY id")
         return self.cur.fetchall()
 
     def update_file_forward_queue_status(self, queue_id: int, status: str) -> None:
@@ -593,6 +620,20 @@ class SpectraDB(AbstractContextManager):
         row = self.cur.fetchone()
         return row[0] if row else None
 
+    def add_sorting_stats(self, source: str, files_sorted: int, bytes_sorted: int, started_at: str, finished_at: str) -> None:
+        self._exec_retry(
+            "INSERT INTO sorting_stats(source, files_sorted, bytes_sorted, started_at, finished_at) VALUES (?, ?, ?, ?, ?)",
+            (source, files_sorted, bytes_sorted, started_at, finished_at),
+        )
+        self.conn.commit()
+
+    def add_sorting_audit_log(self, source: str, message_id: int, file_id: str, category: str, group_id: int) -> None:
+        self._exec_retry(
+            "INSERT INTO sorting_audit_log(source, message_id, file_id, category, group_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (source, message_id, file_id, category, group_id, datetime.now(timezone.utc).isoformat()),
+        )
+        self.conn.commit()
+
     def add_migration_progress(self, source: str, destination: str, status: str) -> int:
         self._exec_retry(
             "INSERT INTO migration_progress(source, destination, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
@@ -616,6 +657,18 @@ class SpectraDB(AbstractContextManager):
     def get_migration_report(self, migration_id: int) -> Optional[Tuple[str, str, int, str, str, str]]:
         self.cur.execute("SELECT source, destination, last_message_id, status, created_at, updated_at FROM migration_progress WHERE id = ?", (migration_id,))
         return self.cur.fetchone()
+
+    def update_attribution_stats(self, source_channel_id: int) -> None:
+        self._exec_retry(
+            """
+            INSERT INTO attribution_stats(source_channel_id, attributions_count)
+            VALUES (?, 1)
+            ON CONFLICT(source_channel_id) DO UPDATE SET
+                attributions_count = attributions_count + 1;
+            """,
+            (source_channel_id,),
+        )
+        self.conn.commit()
 
 __all__ = [
     "SpectraDB",

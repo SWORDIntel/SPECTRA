@@ -19,6 +19,7 @@ from telethon.errors import RPCError, ChannelPrivateError, UserDeactivatedError,
 # Local application imports
 from tgarchive.db import SpectraDB
 from tgarchive.config_models import Config, DEFAULT_CFG # Import from new location
+from tgarchive.attribution import AttributionFormatter
 
 logger = logging.getLogger("tgarchive.forwarding")
 
@@ -120,6 +121,8 @@ class AttachmentForwarder:
                 self.logger.warning("Deduplication is enabled, but no database is configured. Deduplication will be in-memory only for this session.")
         else:
             self.logger.info("Deduplication is DISABLED.")
+
+        self.attribution_formatter = AttributionFormatter(self.config)
 
     def _init_dedup_table(self):
         """Create deduplication tracking table if it doesn't exist."""
@@ -561,12 +564,26 @@ class AttachmentForwarder:
                     for msg_in_group_idx, current_message_in_group in enumerate(message_group):
                         self.logger.info(f"Forwarding item {msg_in_group_idx + 1}/{len(message_group)} (Msg ID: {current_message_in_group.id}) of current group.")
                         if self.prepend_origin_info and not self.destination_topic_id:
+                            if destination_entity.id in self.config.get("attribution", {}).get("disable_attribution_for_groups", []):
+                                attribution = ""
+                            else:
+                                sender = await current_message_in_group.get_sender()
+                                sender_name = getattr(sender, 'username', f"{getattr(sender, 'first_name', '')} {getattr(sender, 'last_name', '')}".strip())
+                                attribution = self.attribution_formatter.format_attribution(
+                                message=current_message_in_group,
+                                source_channel_name=getattr(origin_entity, 'title', f"ID: {origin_entity.id}"),
+                                source_channel_id=origin_entity.id,
+                                sender_name=sender_name,
+                                sender_id=sender.id,
+                                timestamp=current_message_in_group.date
+                            )
+                            self.db.update_attribution_stats(origin_entity.id)
                             origin_title = getattr(origin_entity, 'title', f"ID: {origin_entity.id}")
                             group_info_header = ""
                             if len(message_group) > 1:
                                 group_info_header = f"[Group item {msg_in_group_idx+1}/{len(message_group)}] "
                             header = f"{group_info_header}[Forwarded from {origin_title} (ID: {origin_entity.id})]\n"
-                            message_content = header + (current_message_in_group.text or "")
+                            message_content = attribution + "\n\n" + (current_message_in_group.text or "")
                             if client.session.filename != str(Config().path.parent / (account_identifier or self.config.accounts[0].get("session_name"))):
                                  await self.close()
                                  client = await self._get_client(account_identifier)
@@ -716,14 +733,36 @@ class AttachmentForwarder:
             self.logger.warning("No channels found in account_channel_access table to process for total forward mode.")
             return
 
+        self.logger.info(f"Found {len(unique_channels_with_accounts)} unique channels to process.")
+        for channel_id, accessing_account_phone in unique_channels_with_accounts:
+            self.logger.info(f"--- Processing channel ID: {channel_id} using account: {accessing_account_phone} ---")
+            try:
+                await self.close() 
+                await self.forward_messages(
+                    origin_id=channel_id,
+                    destination_id=destination_id,
+                    account_identifier=accessing_account_phone
+                )
+                self.logger.info(f"--- Finished processing channel ID: {channel_id} ---")
+            except Exception as e_fwd_all:
+                self.logger.error(f"Failed to forward messages for channel ID {channel_id} using account {accessing_account_phone}: {e_fwd_all}", exc_info=True)
+                await self.close() 
+                self.logger.info(f"Continuing to the next channel after error with channel ID: {channel_id}.")
+                continue
+        self.logger.info("'Total Forward Mode' completed.")
+
     async def forward_files(self, schedule_id: int, source_id: int | str, destination_id: int | str, file_types: Optional[str], min_file_size: Optional[int], max_file_size: Optional[int], account_identifier: Optional[str] = None):
         client = None
         try:
             client = await self._get_client(account_identifier)
             source_entity = await client.get_entity(source_id)
+            destination_entity = await client.get_entity(destination_id)
 
             if not source_entity:
                 raise ValueError("Could not resolve the source Telegram entity.")
+
+            # Get the numeric ID of the destination entity
+            dest_numeric_id = destination_entity.id if hasattr(destination_entity, 'id') else None
 
             async for message in client.iter_messages(source_entity):
                 if not message.media or not message.file:
@@ -742,7 +781,7 @@ class AttachmentForwarder:
                 if await self._is_duplicate([message]):
                     continue
 
-                self.db.add_to_file_forward_queue(schedule_id, message.id, message.file.id)
+                self.db.add_to_file_forward_queue(schedule_id, message.id, message.file.id, dest_numeric_id)
 
         except Exception as e:
             self.logger.error(f"Error queueing files from {source_id}: {e}")
@@ -756,15 +795,19 @@ class AttachmentForwarder:
         try:
             client = await self._get_client(account_identifier)
             queue = self.db.get_file_forward_queue()
-            for queue_id, schedule_id, message_id, file_id in queue:
+            for queue_id, schedule_id, message_id, file_id, destination in queue:
                 try:
                     schedule = self.db.get_file_forward_schedule_by_id(schedule_id)
                     if not schedule:
                         self.db.update_file_forward_queue_status(queue_id, "error: schedule not found")
                         continue
+                        
+                    if destination:
+                        destination_entity = await client.get_entity(destination)
+                    else:
+                        destination_entity = await client.get_entity(schedule.destination)
 
                     source_entity = await client.get_entity(schedule.source)
-                    destination_entity = await client.get_entity(schedule.destination)
 
                     await client.forward_messages(
                         entity=destination_entity,
@@ -791,22 +834,3 @@ class AttachmentForwarder:
         finally:
             if client:
                 await client.disconnect()
-            self.logger.warning("No channels found in account_channel_access table to process for total forward mode.")
-            return
-        self.logger.info(f"Found {len(unique_channels_with_accounts)} unique channels to process.")
-        for channel_id, accessing_account_phone in unique_channels_with_accounts:
-            self.logger.info(f"--- Processing channel ID: {channel_id} using account: {accessing_account_phone} ---")
-            try:
-                await self.close() 
-                await self.forward_messages(
-                    origin_id=channel_id,
-                    destination_id=destination_id,
-                    account_identifier=accessing_account_phone
-                )
-                self.logger.info(f"--- Finished processing channel ID: {channel_id} ---")
-            except Exception as e_fwd_all:
-                self.logger.error(f"Failed to forward messages for channel ID {channel_id} using account {accessing_account_phone}: {e_fwd_all}", exc_info=True)
-                await self.close() 
-                self.logger.info(f"Continuing to the next channel after error with channel ID: {channel_id}.")
-                continue
-        self.logger.info("'Total Forward Mode' completed.")

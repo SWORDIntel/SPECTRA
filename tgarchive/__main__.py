@@ -27,18 +27,20 @@ from .discovery import (
 from .db import SpectraDB
 from .channel_utils import populate_account_channel_access
 from .forwarding import AttachmentForwarder # Added for handle_forward
+from .scheduler_service import SchedulerDaemon
+from .mass_migration import MassMigrationManager
 
 try:
-    from .cloud_processor import CloudProcessor
+    from .forwarding_processor import CloudProcessor
 except ImportError:
-    CloudProcessor = None # Or handle more gracefully if cloud mode is essential
-    logger.debug("CloudProcessor could not be imported. Cloud mode might be unavailable.")
+    CloudProcessor = None # Or handle more gracefully if forwarding mode is essential
+    logger.debug("CloudProcessor could not be imported. Forwarding mode might be unavailable.")
 
 try:
-    from .cloud_processor import CloudProcessor
+    from .forwarding_processor import CloudProcessor
 except ImportError:
-    CloudProcessor = None # Or handle more gracefully if cloud mode is essential
-    logger.debug("CloudProcessor could not be imported. Cloud mode might be unavailable.")
+    CloudProcessor = None # Or handle more gracefully if forwarding mode is essential
+    logger.debug("CloudProcessor could not be imported. Forwarding mode might be unavailable.")
 
 # ── Try to import TUI ────────────────────────────────────────────────────────
 try:
@@ -136,10 +138,10 @@ def setup_parser() -> argparse.ArgumentParser:
     account_parser.add_argument("--test", action="store_true", help="Test all accounts for connectivity")
     account_parser.add_argument("--import", action="store_true", dest="import_accs", help="Import accounts from gen_config.py")
     
-    # Cloud command
-    cloud_parser = subparsers.add_parser("cloud", help="Run in cloud mode for targeted channel traversal and downloading.")
+    # Forwarding command
+    cloud_parser = subparsers.add_parser("forward", help="Run in forwarding mode for targeted channel traversal and downloading.")
     cloud_parser.add_argument("--channels-file", type=str, required=True, help="Path to a file containing the initial list of channel URLs or IDs (one per line).")
-    cloud_parser.add_argument("--output-dir", type=str, required=True, help="Directory to store downloaded files and logs for the cloud mode session.")
+    cloud_parser.add_argument("--output-dir", type=str, required=True, help="Directory to store downloaded files and logs for the forwarding mode session.")
     cloud_parser.add_argument("--max-depth", type=int, default=2, help="Maximum depth to follow channel links during discovery (default: 2).")
     cloud_parser.add_argument("--min-files-gateway", type=int, default=100, help="Minimum number of files a channel must have to be considered a 'gateway' for focused downloading (default: 100).")
 
@@ -172,18 +174,69 @@ def setup_parser() -> argparse.ArgumentParser:
     dedup_group.add_argument("--disable-deduplication", action="store_false", dest="enable_deduplication", help="Disable message deduplication (overrides config if set).")
 
 
-    # Cloud command (modify existing)
+    # Forwarding command (modify existing)
     # Re-fetch cloud_parser if it was already defined to add new args
-    # Assuming cloud_parser is defined like: cloud_parser = subparsers.add_parser("cloud", ...)
+    # Assuming cloud_parser is defined like: cloud_parser = subparsers.add_parser("forward", ...)
     # For safety, let's ensure cloud_parser is accessible or re-define if necessary.
     # This code assumes cloud_parser is already part of subparsers.
-    # If not, it needs to be added: e.g. cloud_parser = subparsers.add_parser("cloud", help="Cloud mode processing")
+    # If not, it needs to be added: e.g. cloud_parser = subparsers.add_parser("forward", help="Forwarding mode processing")
     
     # Adding args to existing cloud_parser:
     # (No need to redefine cloud_parser, just add arguments to it)
     auto_invite_group = cloud_parser.add_mutually_exclusive_group()
-    auto_invite_group.add_argument("--enable-auto-invites", action="store_true", dest="auto_invite_accounts", default=None, help="Enable automatic account invitations in cloud mode (overrides config).")
-    auto_invite_group.add_argument("--disable-auto-invites", action="store_false", dest="auto_invite_accounts", help="Disable automatic account invitations in cloud mode (overrides config).")
+    auto_invite_group.add_argument("--enable-auto-invites", action="store_true", dest="auto_invite_accounts", default=None, help="Enable automatic account invitations in forwarding mode (overrides config).")
+    auto_invite_group.add_argument("--disable-auto-invites", action="store_false", dest="auto_invite_accounts", help="Disable automatic account invitations in forwarding mode (overrides config).")
+
+    # Scheduler command
+    scheduler_parser = subparsers.add_parser("schedule", help="Manage scheduled tasks")
+    scheduler_subparsers = scheduler_parser.add_subparsers(dest="schedule_command", help="Scheduler command")
+
+    schedule_add_parser = scheduler_subparsers.add_parser("add", help="Add a new scheduled task")
+    schedule_add_parser.add_argument("--name", required=True, help="Name of the task")
+    schedule_add_parser.add_argument("--schedule", required=True, help="Cron-style schedule (e.g., '*/5 * * * *')")
+    schedule_add_parser.add_argument("--command", required=True, help="Command to execute")
+
+    scheduler_subparsers.add_parser("list", help="List all scheduled tasks")
+
+    schedule_remove_parser = scheduler_subparsers.add_parser("remove", help="Remove a scheduled task")
+    schedule_remove_parser.add_argument("--name", required=True, help="Name of the task to remove")
+
+    scheduler_subparsers.add_parser("run", help="Run the scheduler daemon")
+
+    # Channel forward schedule command
+    channel_forward_parser = scheduler_subparsers.add_parser("add-channel-forward", help="Add a new channel forwarding schedule")
+    channel_forward_parser.add_argument("--channel-id", required=True, type=int, help="ID of the channel to forward from")
+    channel_forward_parser.add_argument("--destination", required=True, help="Destination to forward to")
+    channel_forward_parser.add_argument("--schedule", required=True, help="Cron-style schedule")
+
+    # File forward schedule command
+    file_forward_parser = scheduler_subparsers.add_parser("add-file-forward", help="Add a new file forwarding schedule")
+    file_forward_parser.add_argument("--source", required=True, help="Source to forward from")
+    file_forward_parser.add_argument("--destination", required=True, help="Destination to forward to")
+    file_forward_parser.add_argument("--schedule", required=True, help="Cron-style schedule")
+    file_forward_parser.add_argument("--file-types", help="Comma-separated list of file types to forward")
+    file_forward_parser.add_argument("--min-file-size", type=int, help="Minimum file size in bytes")
+    file_forward_parser.add_argument("--max-file-size", type=int, help="Maximum file size in bytes")
+    file_forward_parser.add_argument("--priority", type=int, default=0, help="Priority of the schedule")
+
+    # Report command
+    report_parser = scheduler_subparsers.add_parser("report", help="Report the status of a file forwarding schedule")
+    report_parser.add_argument("--schedule-id", required=True, type=int, help="ID of the schedule to report on")
+
+    # Migrate command
+    migrate_parser = subparsers.add_parser("migrate", help="Perform a one-time migration")
+    migrate_parser.add_argument("--source", required=True, help="Source to migrate from")
+    migrate_parser.add_argument("--destination", required=True, help="Destination to migrate to")
+    migrate_parser.add_argument("--dry-run", action="store_true", help="Perform a dry run without actually migrating any files")
+    migrate_parser.add_argument("--parallel", action="store_true", help="Use parallel processing for the migration")
+
+    # Migration report command
+    migrate_report_parser = subparsers.add_parser("migrate-report", help="Generate a report for a migration")
+    migrate_report_parser.add_argument("--migration-id", required=True, type=int, help="ID of the migration to report on")
+
+    # Rollback command
+    rollback_parser = subparsers.add_parser("rollback", help="Roll back a migration")
+    rollback_parser.add_argument("--migration-id", required=True, type=int, help="ID of the migration to roll back")
 
     return parser
 
@@ -561,9 +614,9 @@ async def handle_accounts(args: argparse.Namespace) -> int:
         logger.error(f"Account management failed: {e}")
         return 1
 
-async def handle_cloud(args: argparse.Namespace) -> int:
-    """Handle cloud command"""
-    logger.info("Cloud mode invoked with the following arguments:")
+async def handle_forwarding(args: argparse.Namespace) -> int:
+    """Handle forwarding command"""
+    logger.info("Forwarding mode invoked with the following arguments:")
     logger.info(f"  Channels file: {args.channels_file}")
     logger.info(f"  Output directory: {args.output_dir}")
     logger.info(f"  Max depth: {args.max_depth}")
@@ -579,26 +632,26 @@ async def handle_cloud(args: argparse.Namespace) -> int:
     # Handle CLI override for auto_invite_accounts
     if args.auto_invite_accounts is not None: # CLI flag was used
         logger.info(f"CLI override for auto_invite_accounts: {args.auto_invite_accounts}")
-        # Ensure the 'cloud' dictionary exists in config data
-        if "cloud" not in cfg.data:
-            cfg.data["cloud"] = {}
-        cfg.data["cloud"]["auto_invite_accounts"] = args.auto_invite_accounts
+        # Ensure the 'forwarding' dictionary exists in config data
+        if "forwarding" not in cfg.data:
+            cfg.data["forwarding"] = {}
+        cfg.data["forwarding"]["auto_invite_accounts"] = args.auto_invite_accounts
         # Note: This change to cfg.data is in-memory for this run.
         # It won't be saved to spectra_config.json unless cfg.save() is called.
         # This is usually the desired behavior for CLI overrides.
 
     accounts = cfg.accounts
     if not accounts:
-        logger.error("No API accounts configured. Cannot proceed with cloud mode.")
+        logger.error("No API accounts configured. Cannot proceed with forwarding mode.")
         logger.error("Please configure accounts, e.g., by running `python gen_config.py` and then `python -m tgarchive accounts --import` or by ensuring spectra_config.json has accounts.")
         return 1
 
     selected_account = accounts[0]  # Select the first available account
-    logger.info(f"Cloud mode will use the single API account: {selected_account.get('session_name', 'N/A')}")
+    logger.info(f"Forwarding mode will use the single API account: {selected_account.get('session_name', 'N/A')}")
     logger.info(f"Account details (for verification): API ID {selected_account.get('api_id')}")
 
     if CloudProcessor is None:
-        logger.error("CloudProcessor is not available. Cannot run cloud mode. Please check for import errors.")
+        logger.error("CloudProcessor is not available. Cannot run forwarding mode. Please check for import errors.")
         return 1
 
     logger.info(f"Initializing CloudProcessor with output directory: {args.output_dir}")
@@ -615,13 +668,13 @@ async def handle_cloud(args: argparse.Namespace) -> int:
     )
 
     try:
-        logger.info("Starting cloud mode channel processing...")
+        logger.info("Starting forwarding mode channel processing...")
         await processor.process_channels()
-        logger.info("Cloud mode processing completed successfully.")
+        logger.info("Forwarding mode processing completed successfully.")
         return 0  # Success
     except Exception as e:
         # Log the full traceback for unexpected errors
-        logger.error(f"An critical error occurred during cloud mode processing: {e}", exc_info=True)
+        logger.error(f"An critical error occurred during forwarding mode processing: {e}", exc_info=True)
         return 1  # Failure
 
 
@@ -1076,8 +1129,8 @@ async def async_main(args: argparse.Namespace) -> int:
         return await handle_accounts(args)
     elif args.command == "parallel":
         return await handle_parallel(args)
-    elif args.command == "cloud":
-        return await handle_cloud(args)
+    elif args.command == "forward":
+        return await handle_forwarding(args)
 
     elif args.command == "config":
         cfg = Config(Path(args.config)) # Ensure cfg is loaded for config commands
@@ -1091,7 +1144,15 @@ async def async_main(args: argparse.Namespace) -> int:
             # parser.parse_args(['channels', '--help']) # This might be tricky to invoke correctly
             return 1
     elif args.command == "forward":
-        return await handle_forward(args)
+        return await handle_forwarding(args)
+    elif args.command == "schedule":
+        return await handle_schedule(args)
+    elif args.command == "migrate":
+        return await handle_migrate(args)
+    elif args.command == "rollback":
+        return await handle_rollback(args)
+    elif args.command == "migrate-report":
+        return await handle_migrate_report(args)
 
     else:
         # No command or unrecognized command
@@ -1132,5 +1193,117 @@ def main() -> int:
         logger.error(f"Unhandled error: {e}")
         return 1
 
+async def handle_schedule(args: argparse.Namespace) -> int:
+    """Handle schedule command"""
+    cfg = Config(Path(args.config))
+    state_path = cfg.data.get("scheduler", {}).get("state_file", "scheduler_state.json")
+    scheduler = SchedulerDaemon(args.config, state_path)
+
+    if args.schedule_command == "add":
+        job = {
+            "name": args.name,
+            "schedule": args.schedule,
+            "command": args.command,
+        }
+        scheduler.jobs.append(job)
+        scheduler.save_jobs()
+        logger.info(f"Added job: {args.name}")
+    elif args.schedule_command == "list":
+        for job in scheduler.jobs:
+            print(f"  - {job['name']}: {job['schedule']} -> {job['command']}")
+    elif args.schedule_command == "remove":
+        scheduler.jobs = [j for j in scheduler.jobs if j['name'] != args.name]
+        scheduler.save_jobs()
+        logger.info(f"Removed job: {args.name}")
+    elif args.schedule_command == "run":
+        logger.info("Starting scheduler daemon...")
+        scheduler.start()
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            logger.info("Stopping scheduler daemon...")
+            scheduler.stop()
+    elif args.schedule_command == "add-channel-forward":
+        try:
+            from croniter import croniter
+            if not croniter.is_valid(args.schedule):
+                logger.error("Invalid cron schedule format.")
+                return 1
+        except ImportError:
+            logger.warning("croniter library not found. Skipping schedule validation.")
+
+        db = SpectraDB(cfg.data.get("db", {}).get("path", "spectra.db"))
+
+        existing_schedule = db.get_channel_forward_schedule_by_channel_and_destination(args.channel_id, args.destination)
+        if existing_schedule:
+            logger.error(f"A schedule for channel {args.channel_id} and destination {args.destination} already exists.")
+            return 1
+
+        db.add_channel_forward_schedule(args.channel_id, args.destination, args.schedule)
+        logger.info(f"Added channel forwarding schedule for channel {args.channel_id}")
+    elif args.schedule_command == "add-file-forward":
+        db = SpectraDB(cfg.data.get("db", {}).get("path", "spectra.db"))
+        db.add_file_forward_schedule(args.source, args.destination, args.schedule, args.file_types, args.min_file_size, args.max_file_size, args.priority)
+        logger.info(f"Added file forwarding schedule for source {args.source}")
+    elif args.schedule_command == "report":
+        db = SpectraDB(cfg.data.get("db", {}).get("path", "spectra.db"))
+        status_list = db.get_file_forward_queue_status_by_schedule_id(args.schedule_id)
+        if not status_list:
+            print("No files found for this schedule.")
+            return 0
+        for message_id, file_id, status in status_list:
+            print(f"  - Message ID: {message_id}, File ID: {file_id}, Status: {status}")
+    else:
+        logger.error(f"Unknown schedule command: {args.schedule_command}")
+        return 1
+    return 0
+
+async def handle_migrate(args: argparse.Namespace) -> int:
+    """Handle migrate command"""
+    cfg = Config(Path(args.config))
+    db = SpectraDB(cfg.data.get("db", {}).get("path", "spectra.db"))
+
+    # This is a placeholder for getting the client.
+    # A proper implementation would get the client from the GroupManager or a similar class.
+    from telethon import TelegramClient
+    client = TelegramClient('anon', 12345, 'hash')
+
+    manager = MassMigrationManager(cfg, db, client)
+    await manager.one_time_migration(args.source, args.destination, args.dry_run, args.parallel)
+    return 0
+
+async def handle_rollback(args: argparse.Namespace) -> int:
+    """Handle rollback command"""
+    cfg = Config(Path(args.config))
+    db = SpectraDB(cfg.data.get("db", {}).get("path", "spectra.db"))
+
+    # This is a placeholder for getting the client.
+    # A proper implementation would get the client from the GroupManager or a similar class.
+    from telethon import TelegramClient
+    client = TelegramClient('anon', 12345, 'hash')
+
+    manager = MassMigrationManager(cfg, db, client)
+    manager.rollback_migration(args.migration_id)
+    return 0
+
+async def handle_migrate_report(args: argparse.Namespace) -> int:
+    """Handle migrate-report command"""
+    db = SpectraDB(Config(Path(args.config)).data.get("db", {}).get("path", "spectra.db"))
+    report = db.get_migration_report(args.migration_id)
+    if not report:
+        print(f"No migration found with ID: {args.migration_id}")
+        return 1
+
+    source, destination, last_message_id, status, created_at, updated_at = report
+    print(f"Migration Report for ID: {args.migration_id}")
+    print(f"  Source: {source}")
+    print(f"  Destination: {destination}")
+    print(f"  Status: {status}")
+    print(f"  Last Message ID: {last_message_id}")
+    print(f"  Started At: {created_at}")
+    print(f"  Last Updated At: {updated_at}")
+    return 0
+
 if __name__ == "__main__":
-    sys.exit(main()) 
+    sys.exit(main())

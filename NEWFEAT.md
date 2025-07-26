@@ -1,7 +1,7 @@
 JULES TASK LIST: SPECTRA Forwarding & Scheduling System
 Core Forwarding Mode Tasks (Renamed from Cloud Mode)
 
-Rename all instances of "cloud mode" to "forwarding mode" in codebase
+Rename all instances of "forwarding mode" to "forwarding mode" in codebase
 Update cloud_processor.py to forwarding_processor.py
 Modify CLI commands from tgarchive cloud to tgarchive forward
 Update documentation to reflect forwarding mode terminology

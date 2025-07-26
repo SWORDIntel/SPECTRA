@@ -6,21 +6,22 @@ from tgarchive.sorting_forwarder import SortingForwarder
 from tgarchive.file_sorter import FileTypeSorter
 from tgarchive.group_manager import GroupManager
 from tgarchive.db import SpectraDB
+from tgarchive.config_models import Config
 
 class TestSortingForwarder(unittest.TestCase):
     def setUp(self):
-        self.config = {
+        self.config = Config(data={
             "file_sorter": {
                 "extension_mapping": {
                     "text": [".txt"]
                 }
             }
-        }
+        })
         self.db_path = "test.db"
         self.db = SpectraDB(self.db_path)
         self.client = AsyncMock()
-        self.sorter = FileTypeSorter(self.config)
-        self.group_manager = GroupManager(self.config, self.db, self.client)
+        self.sorter = FileTypeSorter(self.config.data)
+        self.group_manager = GroupManager(self.config.data, self.db, self.client)
         self.forwarder = SortingForwarder(self.config, self.db, self.client, self.sorter, self.group_manager)
 
     def tearDown(self):

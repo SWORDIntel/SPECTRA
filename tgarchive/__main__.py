@@ -28,6 +28,7 @@ from .db import SpectraDB
 from .channel_utils import populate_account_channel_access
 from .forwarding import AttachmentForwarder # Added for handle_forward
 from .scheduler_service import SchedulerDaemon
+from .mass_migration import MassMigrationManager
 
 try:
     from .forwarding_processor import CloudProcessor
@@ -221,6 +222,21 @@ def setup_parser() -> argparse.ArgumentParser:
     # Report command
     report_parser = scheduler_subparsers.add_parser("report", help="Report the status of a file forwarding schedule")
     report_parser.add_argument("--schedule-id", required=True, type=int, help="ID of the schedule to report on")
+
+    # Migrate command
+    migrate_parser = subparsers.add_parser("migrate", help="Perform a one-time migration")
+    migrate_parser.add_argument("--source", required=True, help="Source to migrate from")
+    migrate_parser.add_argument("--destination", required=True, help="Destination to migrate to")
+    migrate_parser.add_argument("--dry-run", action="store_true", help="Perform a dry run without actually migrating any files")
+    migrate_parser.add_argument("--parallel", action="store_true", help="Use parallel processing for the migration")
+
+    # Migration report command
+    migrate_report_parser = subparsers.add_parser("migrate-report", help="Generate a report for a migration")
+    migrate_report_parser.add_argument("--migration-id", required=True, type=int, help="ID of the migration to report on")
+
+    # Rollback command
+    rollback_parser = subparsers.add_parser("rollback", help="Roll back a migration")
+    rollback_parser.add_argument("--migration-id", required=True, type=int, help="ID of the migration to roll back")
 
     return parser
 
@@ -1131,6 +1147,12 @@ async def async_main(args: argparse.Namespace) -> int:
         return await handle_forwarding(args)
     elif args.command == "schedule":
         return await handle_schedule(args)
+    elif args.command == "migrate":
+        return await handle_migrate(args)
+    elif args.command == "rollback":
+        return await handle_rollback(args)
+    elif args.command == "migrate-report":
+        return await handle_migrate_report(args)
 
     else:
         # No command or unrecognized command
@@ -1235,6 +1257,52 @@ async def handle_schedule(args: argparse.Namespace) -> int:
     else:
         logger.error(f"Unknown schedule command: {args.schedule_command}")
         return 1
+    return 0
+
+async def handle_migrate(args: argparse.Namespace) -> int:
+    """Handle migrate command"""
+    cfg = Config(Path(args.config))
+    db = SpectraDB(cfg.data.get("db", {}).get("path", "spectra.db"))
+
+    # This is a placeholder for getting the client.
+    # A proper implementation would get the client from the GroupManager or a similar class.
+    from telethon import TelegramClient
+    client = TelegramClient('anon', 12345, 'hash')
+
+    manager = MassMigrationManager(cfg, db, client)
+    await manager.one_time_migration(args.source, args.destination, args.dry_run, args.parallel)
+    return 0
+
+async def handle_rollback(args: argparse.Namespace) -> int:
+    """Handle rollback command"""
+    cfg = Config(Path(args.config))
+    db = SpectraDB(cfg.data.get("db", {}).get("path", "spectra.db"))
+
+    # This is a placeholder for getting the client.
+    # A proper implementation would get the client from the GroupManager or a similar class.
+    from telethon import TelegramClient
+    client = TelegramClient('anon', 12345, 'hash')
+
+    manager = MassMigrationManager(cfg, db, client)
+    manager.rollback_migration(args.migration_id)
+    return 0
+
+async def handle_migrate_report(args: argparse.Namespace) -> int:
+    """Handle migrate-report command"""
+    db = SpectraDB(Config(Path(args.config)).data.get("db", {}).get("path", "spectra.db"))
+    report = db.get_migration_report(args.migration_id)
+    if not report:
+        print(f"No migration found with ID: {args.migration_id}")
+        return 1
+
+    source, destination, last_message_id, status, created_at, updated_at = report
+    print(f"Migration Report for ID: {args.migration_id}")
+    print(f"  Source: {source}")
+    print(f"  Destination: {destination}")
+    print(f"  Status: {status}")
+    print(f"  Last Message ID: {last_message_id}")
+    print(f"  Started At: {created_at}")
+    print(f"  Last Updated At: {updated_at}")
     return 0
 
 if __name__ == "__main__":

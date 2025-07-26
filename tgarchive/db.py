@@ -166,6 +166,16 @@ CREATE TABLE IF NOT EXISTS sorting_groups (
     is_enabled          BOOLEAN DEFAULT TRUE,
     UNIQUE(group_name)
 );
+
+CREATE TABLE IF NOT EXISTS migration_progress (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    source              TEXT NOT NULL,
+    destination         TEXT NOT NULL,
+    last_message_id     INTEGER,
+    status              TEXT NOT NULL,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
 """
 
 # ── Helper SQL functions ────────────────────────────────────────────────
@@ -582,6 +592,30 @@ class SpectraDB(AbstractContextManager):
         self.cur.execute("SELECT template FROM sorting_groups WHERE group_name = ?", (group_name,))
         row = self.cur.fetchone()
         return row[0] if row else None
+
+    def add_migration_progress(self, source: str, destination: str, status: str) -> int:
+        self._exec_retry(
+            "INSERT INTO migration_progress(source, destination, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            (source, destination, status, datetime.now(timezone.utc).isoformat(), datetime.now(timezone.utc).isoformat()),
+        )
+        self.conn.commit()
+        return self.cur.lastrowid
+
+    def update_migration_progress(self, migration_id: int, last_message_id: int, status: str) -> None:
+        self._exec_retry(
+            "UPDATE migration_progress SET last_message_id = ?, status = ?, updated_at = ? WHERE id = ?",
+            (last_message_id, status, datetime.now(timezone.utc).isoformat(), migration_id),
+        )
+        self.conn.commit()
+
+    def get_migration_progress(self, source: str, destination: str) -> Optional[Tuple[int, int]]:
+        self.cur.execute("SELECT id, last_message_id FROM migration_progress WHERE source = ? AND destination = ?", (source, destination))
+        row = self.cur.fetchone()
+        return row if row else None
+
+    def get_migration_report(self, migration_id: int) -> Optional[Tuple[str, str, int, str, str, str]]:
+        self.cur.execute("SELECT source, destination, last_message_id, status, created_at, updated_at FROM migration_progress WHERE id = ?", (migration_id,))
+        return self.cur.fetchone()
 
 __all__ = [
     "SpectraDB",

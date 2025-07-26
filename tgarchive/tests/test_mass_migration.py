@@ -4,10 +4,11 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 from tgarchive.mass_migration import MassMigrationManager
 from tgarchive.db import SpectraDB
+from tgarchive.config_models import Config
 
 class TestMassMigration(unittest.TestCase):
     def setUp(self):
-        self.config = {}
+        self.config = Config(data={})
         self.db_path = "test.db"
         self.db = SpectraDB(self.db_path)
         self.client = AsyncMock()

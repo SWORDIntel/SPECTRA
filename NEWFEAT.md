@@ -111,18 +111,18 @@
 [x] Add sorting preview mode
 [x] Create sorting audit log
 
-Attribution System
+[x] Attribution System
 
-Create AttributionFormatter class
-Implement attribution template system
-Add source channel information extraction
-Create timestamp formatting options
-Implement message ID preservation
-Add original sender attribution
-Create attribution style configuration
-Implement attribution caching
-Add attribution disable option per group
-Create attribution statistics
+[x] Create AttributionFormatter class
+[x] Implement attribution template system
+[x] Add source channel information extraction
+[x] Create timestamp formatting options
+[x] Implement message ID preservation
+[x] Add original sender attribution
+[x] Create attribution style configuration
+[x] Implement attribution caching
+[x] Add attribution disable option per group
+[x] Create attribution statistics
 
 Configuration Management
 

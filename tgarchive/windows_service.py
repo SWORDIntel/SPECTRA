@@ -3,6 +3,7 @@ import win32service
 import win32event
 import servicemanager
 import socket
+import winreg
 from tgarchive.scheduler_service import SchedulerDaemon
 
 class SpectraSchedulerService(win32serviceutil.ServiceFramework):
@@ -28,9 +29,11 @@ class SpectraSchedulerService(win32serviceutil.ServiceFramework):
         self.main()
 
     def main(self):
-        # TODO: Get config path from registry or a fixed location
-        config_path = "spectra_config.json"
-        state_path = "scheduler_state.json"
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\SPECTRA", 0, winreg.KEY_READ)
+        config_path = winreg.QueryValueEx(key, "ConfigPath")[0]
+        state_path = winreg.QueryValueEx(key, "StatePath")[0]
+        winreg.CloseKey(key)
+
         self.scheduler = SchedulerDaemon(config_path, state_path)
         self.scheduler.start()
         win32event.WaitForSingleObject(self.hWaitStop, win32event.INFINITE)

@@ -232,17 +232,17 @@ async def scheduled_file_forward(config_path, db_path, schedule_id, source, dest
 
     try:
         messages_forwarded, files_forwarded, bytes_forwarded = await forwarder.forward_files(
-            source_id=source,
-            destination_id=destination,
-            file_types=file_types,
-            min_file_size=min_file_size,
-            max_file_size=max_file_size
+            schedule_id,
+            source,
+            destination,
+            file_types,
+            min_file_size,
+            max_file_size
         )
     except Exception as e:
         status = f"error: {e}"
         raise
     finally:
         finished_at = datetime.now().isoformat()
-        # TODO: Add a new table for file forwarding stats
-        # db.add_file_forward_stats(schedule_id, messages_forwarded, files_forwarded, bytes_forwarded, started_at, finished_at, status)
+        db.add_file_forward_stats(schedule_id, files_forwarded, bytes_forwarded, started_at, finished_at, status)
         await forwarder.close()

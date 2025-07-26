@@ -194,6 +194,16 @@ CREATE TABLE IF NOT EXISTS attribution_stats (
     UNIQUE(source_channel_id)
 );
 
+CREATE TABLE IF NOT EXISTS file_forward_stats (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    schedule_id         INTEGER REFERENCES file_forward_schedule(id),
+    files_forwarded     INTEGER NOT NULL,
+    bytes_forwarded     INTEGER NOT NULL,
+    started_at          TEXT NOT NULL,
+    finished_at         TEXT NOT NULL,
+    status              TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS migration_progress (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     source              TEXT NOT NULL,
@@ -667,6 +677,16 @@ class SpectraDB(AbstractContextManager):
                 attributions_count = attributions_count + 1;
             """,
             (source_channel_id,),
+        )
+        self.conn.commit()
+
+    def add_file_forward_stats(self, schedule_id: int, files_forwarded: int, bytes_forwarded: int, started_at: str, finished_at: str, status: str) -> None:
+        self._exec_retry(
+            """
+            INSERT INTO file_forward_stats(schedule_id, files_forwarded, bytes_forwarded, started_at, finished_at, status)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (schedule_id, files_forwarded, bytes_forwarded, started_at, finished_at, status),
         )
         self.conn.commit()
 

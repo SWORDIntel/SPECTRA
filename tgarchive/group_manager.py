@@ -50,7 +50,7 @@ class GroupManager:
             self.db.add_category_to_group_mapping(category, group_id)
             return group_id
         except Exception as e:
-            self.logger.error(f"Error creating group for category {category}: {e}")
+            logger.error(f"Error creating group for category {category}: {e}")
             return None
 
     async def check_or_create_group(self, category):

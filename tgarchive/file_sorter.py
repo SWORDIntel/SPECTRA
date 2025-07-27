@@ -7,6 +7,9 @@ This module contains the FileTypeSorter class for sorting files by type.
 
 import magic
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 class FileTypeSorter:
     """
@@ -28,18 +31,20 @@ class FileTypeSorter:
                 category = cat
                 break
 
+        # If the category is still unknown, try to determine it using python-magic
         if category == "unknown":
             try:
                 mime = magic.from_file(file_path, mime=True)
                 category = mime.split('/')[0]
             except Exception as e:
-                print(f"Error getting MIME type for {file_path}: {e}")
+                logger.error(f"Error getting MIME type for {file_path}: {e}")
 
+        # Update statistics in the database
         if db:
             try:
                 file_size = os.path.getsize(file_path)
                 db.update_category_stats(category, file_size)
             except Exception as e:
-                print(f"Error updating category stats for {file_path}: {e}")
+                logger.error(f"Error updating category stats for {file_path}: {e}")
 
         return category

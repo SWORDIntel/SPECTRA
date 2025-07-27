@@ -30,42 +30,48 @@ class SortingForwarder(AttachmentForwarder):
         files_sorted = 0
         bytes_sorted = 0
 
-        try:
-            async for message in self.client.iter_messages(source):
-                if not message.file:
-                    continue
+        import tempfile
+        import os
 
-                files_sorted += 1
-                bytes_sorted += message.file.size
+        with tempfile.TemporaryDirectory() as tmpdir:
+            try:
+                async for message in self.client.iter_messages(source):
+                    if not message.file:
+                        continue
 
-                # This is a placeholder for downloading the file.
-                # A proper implementation would download the file to a temporary location.
-                file_path = f"/tmp/{message.file.name}"
-                with open(file_path, "w") as f:
-                    f.write("dummy content")
+                    files_sorted += 1
+                    bytes_sorted += message.file.size
 
-                if file_path in self.sorting_cache:
-                    category = self.sorting_cache[file_path]
-                else:
-                    category = self.sorter.get_file_category(file_path, self.db)
-                    self.sorting_cache[file_path] = category
+                    file_path = os.path.join(tmpdir, message.file.name)
 
-                group_id = await self.group_manager.check_or_create_group(category)
+                    try:
+                        await self.client.download_media(message.media, file=file_path)
+                    except Exception as e:
+                        logger.error(f"Failed to download {message.file.name}: {e}")
+                        continue
 
-                if preview:
-                    print(f"DRY RUN: Would queue file {message.file.name} for group {group_id}")
-                    continue
+                    if file_path in self.sorting_cache:
+                        category = self.sorting_cache[file_path]
+                    else:
+                        category = self.sorter.get_file_category(file_path, self.db)
+                        self.sorting_cache[file_path] = category
 
-                self.db.add_to_file_forward_queue(
-                    schedule_id=None,
-                    message_id=message.id,
-                    file_id=message.file.id,
-                    destination=group_id
-                )
-                self.db.add_sorting_audit_log(str(source), message.id, message.file.id, category, group_id)
+                    group_id = await self.group_manager.check_or_create_group(category)
 
-        except Exception as e:
-            logger.error(f"Error sorting files from {source}: {e}")
-        finally:
-            finished_at = datetime.now().isoformat()
-            self.db.add_sorting_stats(str(source), files_sorted, bytes_sorted, started_at, finished_at)
+                    if preview:
+                        print(f"DRY RUN: Would queue file {message.file.name} for group {group_id}")
+                        continue
+
+                    self.db.add_to_file_forward_queue(
+                        schedule_id=None,
+                        message_id=message.id,
+                        file_id=message.file.id,
+                        destination=group_id
+                    )
+                    self.db.add_sorting_audit_log(str(source), message.id, message.file.id, category, group_id)
+
+            except Exception as e:
+                logger.error(f"Error sorting files from {source}: {e}")
+            finally:
+                finished_at = datetime.now().isoformat()
+                self.db.add_sorting_stats(str(source), files_sorted, bytes_sorted, started_at, finished_at)

@@ -10,6 +10,7 @@ from tgarchive.deduplication import (
     compare_fuzzy_hashes,
     is_exact_match,
     find_near_duplicates,
+    get_minhash,
 )
 
 class TestDeduplication(unittest.TestCase):
@@ -60,6 +61,39 @@ class TestDeduplication(unittest.TestCase):
         duplicates = find_near_duplicates(self.db, "3:abc:xyz")
         self.assertEqual(len(duplicates), 1)
         self.assertEqual(duplicates[0][0], 1)
+
+    def test_get_minhash(self):
+        from datasketch import MinHash
+        m1 = get_minhash(self.test_file)
+        self.assertIsInstance(m1, MinHash)
+
+    def test_get_file_hashes_cache(self):
+        from tgarchive.deduplication import get_file_hashes
+
+        self.db.cur.fetchone.return_value = ("hash1", "hash2", "hash3")
+
+        # Call the function twice
+        get_file_hashes(self.db, 1)
+        get_file_hashes(self.db, 1)
+
+        # Check that the database was only called once
+        self.db.cur.execute.assert_called_once()
+
+    def test_get_ngrams(self):
+        from tgarchive.deduplication import get_ngrams
+        ngrams = get_ngrams("test", n=3)
+        self.assertEqual(ngrams, ["tes", "est"])
+
+    @patch("PIL.Image.open")
+    def test_get_exif_data(self, mock_open):
+        from tgarchive.deduplication import get_exif_data
+
+        mock_image = Mock()
+        mock_image._getexif.return_value = {271: "Make", 272: "Model"}
+        mock_open.return_value.__enter__.return_value = mock_image
+
+        exif_data = get_exif_data("test.jpg")
+        self.assertEqual(exif_data, {"Make": "Make", "Model": "Model"})
 
 if __name__ == "__main__":
     unittest.main()

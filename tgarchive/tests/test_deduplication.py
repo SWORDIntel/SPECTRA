@@ -67,5 +67,17 @@ class TestDeduplication(unittest.TestCase):
         m1 = get_minhash(self.test_file)
         self.assertIsInstance(m1, MinHash)
 
+    def test_get_file_hashes_cache(self):
+        from tgarchive.deduplication import get_file_hashes
+
+        self.db.cur.fetchone.return_value = ("hash1", "hash2", "hash3")
+
+        # Call the function twice
+        get_file_hashes(self.db, 1)
+        get_file_hashes(self.db, 1)
+
+        # Check that the database was only called once
+        self.db.cur.execute.assert_called_once()
+
 if __name__ == "__main__":
     unittest.main()

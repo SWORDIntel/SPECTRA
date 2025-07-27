@@ -63,3 +63,47 @@ def find_near_duplicates(db, fuzzy_hash, threshold=85):
         if similarity >= threshold:
             duplicates.append((file_id, similarity))
     return duplicates
+
+class ChannelScanner:
+    """
+    Scans a channel for files and generates hashes for them.
+    """
+    def __init__(self, db, client):
+        self.db = db
+        self.client = client
+
+    async def scan_channel(self, channel, rate_limit_seconds=1):
+        """
+        Scans a channel for files, generates hashes, and stores them in the database.
+        """
+        import tempfile
+        import os
+        import asyncio
+
+        async for message in self.client.iter_messages(channel):
+            if not message.file:
+                continue
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                file_path = os.path.join(tmpdir, message.file.name)
+                try:
+                    await self.client.download_media(message.media, file=file_path)
+                except Exception as e:
+                    print(f"Failed to download {message.file.name}: {e}")
+                    continue
+
+                sha256_hash = get_sha256_hash(file_path)
+                if is_exact_match(self.db, sha256_hash):
+                    continue
+
+                perceptual_hash = get_perceptual_hash(file_path)
+                fuzzy_hash = get_fuzzy_hash(file_path)
+
+                self.db.add_file_hash(
+                    file_id=message.file.id,
+                    sha256_hash=sha256_hash,
+                    perceptual_hash=perceptual_hash,
+                    fuzzy_hash=fuzzy_hash,
+                )
+
+            await asyncio.sleep(rate_limit_seconds)

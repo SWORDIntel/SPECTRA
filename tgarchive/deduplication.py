@@ -9,6 +9,15 @@ import hashlib
 import imagehash
 import ssdeep
 from PIL import Image
+from functools import lru_cache
+
+@lru_cache(maxsize=1024)
+def get_file_hashes(db, file_id):
+    """
+    Gets the hashes for a file from the database.
+    """
+    db.cur.execute("SELECT sha256_hash, perceptual_hash, fuzzy_hash FROM file_hashes WHERE file_id = ?", (file_id,))
+    return db.cur.fetchone()
 
 def get_sha256_hash(file_path):
     """
@@ -45,24 +54,94 @@ def compare_fuzzy_hashes(hash1, hash2):
     """
     return ssdeep.compare(hash1, hash2)
 
-def is_exact_match(db, sha256_hash):
+def is_exact_match(db, sha256_hash, channel_id=None):
     """
     Checks if an exact match for a file exists in the database.
     """
-    db.cur.execute("SELECT file_id FROM file_hashes WHERE sha256_hash = ?", (sha256_hash,))
+    if channel_id:
+        sql = """
+            SELECT f.file_id
+            FROM file_hashes f
+            JOIN channel_file_inventory c ON f.file_id = c.file_id
+            WHERE f.sha256_hash = ? AND c.channel_id = ?
+        """
+        params = (sha256_hash, channel_id)
+    else:
+        sql = "SELECT file_id FROM file_hashes WHERE sha256_hash = ?"
+        params = (sha256_hash,)
+    db.cur.execute(sql, params)
     return db.cur.fetchone() is not None
 
-def find_near_duplicates(db, fuzzy_hash, threshold=85):
+def find_near_duplicates(db, fuzzy_hash, threshold=85, channel_id=None):
     """
     Finds near-duplicates for a file in the database.
     """
-    db.cur.execute("SELECT file_id, fuzzy_hash FROM file_hashes WHERE fuzzy_hash IS NOT NULL")
+    if channel_id:
+        sql = """
+            SELECT f.file_id, f.fuzzy_hash
+            FROM file_hashes f
+            JOIN channel_file_inventory c ON f.file_id = c.file_id
+            WHERE f.fuzzy_hash IS NOT NULL AND c.channel_id = ?
+        """
+        params = (channel_id,)
+    else:
+        sql = "SELECT file_id, fuzzy_hash FROM file_hashes WHERE fuzzy_hash IS NOT NULL"
+        params = ()
+    db.cur.execute(sql, params)
     duplicates = []
     for file_id, other_fuzzy_hash in db.cur.fetchall():
         similarity = compare_fuzzy_hashes(fuzzy_hash, other_fuzzy_hash)
         if similarity >= threshold:
             duplicates.append((file_id, similarity))
     return duplicates
+
+def get_channel_id_for_file(db, file_id):
+    """
+    Gets the channel ID for a file.
+    """
+    db.cur.execute("SELECT channel_id FROM channel_file_inventory WHERE file_id = ?", (file_id,))
+    row = db.cur.fetchone()
+    return row[0] if row else None
+
+def get_minhash(file_path, num_perm=128):
+    """
+    Generates a MinHash for a file.
+    """
+    from datasketch import MinHash
+
+    with open(file_path, "r") as f:
+        content = f.read()
+
+    m = MinHash(num_perm=num_perm)
+    for d in content.split():
+        m.update(d.encode('utf8'))
+    return m
+
+def get_ngrams(text, n=3):
+    """
+    Generates n-grams for a text.
+    """
+    return [text[i:i+n] for i in range(len(text)-n+1)]
+
+def get_exif_data(file_path):
+    """
+    Extracts EXIF data from an image file.
+    """
+    from PIL import Image
+    from PIL.ExifTags import TAGS
+
+    try:
+        with Image.open(file_path) as img:
+            exif_data = {}
+            if hasattr(img, '_getexif'):
+                exif = img._getexif()
+                if exif:
+                    for tag, value in exif.items():
+                        decoded = TAGS.get(tag, tag)
+                        exif_data[decoded] = value
+            return exif_data
+    except Exception:
+        return None
 
 class ChannelScanner:
     """

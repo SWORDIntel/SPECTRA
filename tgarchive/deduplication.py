@@ -9,6 +9,15 @@ import hashlib
 import imagehash
 import ssdeep
 from PIL import Image
+from functools import lru_cache
+
+@lru_cache(maxsize=1024)
+def get_file_hashes(db, file_id):
+    """
+    Gets the hashes for a file from the database.
+    """
+    db.cur.execute("SELECT sha256_hash, perceptual_hash, fuzzy_hash FROM file_hashes WHERE file_id = ?", (file_id,))
+    return db.cur.fetchone()
 
 def get_sha256_hash(file_path):
     """

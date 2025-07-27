@@ -10,6 +10,7 @@ from tgarchive.deduplication import (
     compare_fuzzy_hashes,
     is_exact_match,
     find_near_duplicates,
+    get_minhash,
 )
 
 class TestDeduplication(unittest.TestCase):
@@ -60,6 +61,11 @@ class TestDeduplication(unittest.TestCase):
         duplicates = find_near_duplicates(self.db, "3:abc:xyz")
         self.assertEqual(len(duplicates), 1)
         self.assertEqual(duplicates[0][0], 1)
+
+    def test_get_minhash(self):
+        from datasketch import MinHash
+        m1 = get_minhash(self.test_file)
+        self.assertIsInstance(m1, MinHash)
 
 if __name__ == "__main__":
     unittest.main()

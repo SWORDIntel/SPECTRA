@@ -79,5 +79,21 @@ class TestDeduplication(unittest.TestCase):
         # Check that the database was only called once
         self.db.cur.execute.assert_called_once()
 
+    def test_get_ngrams(self):
+        from tgarchive.deduplication import get_ngrams
+        ngrams = get_ngrams("test", n=3)
+        self.assertEqual(ngrams, ["tes", "est"])
+
+    @patch("PIL.Image.open")
+    def test_get_exif_data(self, mock_open):
+        from tgarchive.deduplication import get_exif_data
+
+        mock_image = Mock()
+        mock_image._getexif.return_value = {271: "Make", 272: "Model"}
+        mock_open.return_value.__enter__.return_value = mock_image
+
+        exif_data = get_exif_data("test.jpg")
+        self.assertEqual(exif_data, {"Make": "Make", "Model": "Model"})
+
 if __name__ == "__main__":
     unittest.main()

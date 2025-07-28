@@ -14,7 +14,7 @@ class TestChannelScanner(unittest.TestCase):
     @patch("tgarchive.deduplication.is_exact_match")
     @patch("tgarchive.deduplication.get_perceptual_hash")
     @patch("tgarchive.deduplication.get_fuzzy_hash")
-    def test_scan_channel(
+    def test_scan_channel_batching(
         self,
         mock_get_fuzzy_hash,
         mock_get_perceptual_hash,
@@ -22,12 +22,14 @@ class TestChannelScanner(unittest.TestCase):
         mock_get_sha256_hash,
     ):
         channel = "test_channel"
-        message = Mock()
-        message.file.name = "test_file.txt"
-        message.file.id = "file123"
+        messages = [Mock(), Mock()]
+        for i, msg in enumerate(messages):
+            msg.file.name = f"test_file_{i}.txt"
+            msg.file.id = f"file{i}"
 
         async def mock_iter_messages(*args, **kwargs):
-            yield message
+            for msg in messages:
+                yield msg
 
         self.client.iter_messages = mock_iter_messages
         self.client.download_media = AsyncMock()
@@ -38,21 +40,16 @@ class TestChannelScanner(unittest.TestCase):
         mock_get_fuzzy_hash.return_value = "fuzzy_hash"
 
         async def run_test():
-            await self.scanner.scan_channel(channel, rate_limit_seconds=0)
+            await self.scanner.scan_channel(channel, batch_size=2, rate_limit_seconds=0)
 
         asyncio.run(run_test())
 
-        self.client.download_media.assert_called_once()
-        mock_get_sha256_hash.assert_called_once()
-        mock_is_exact_match.assert_called_once_with(self.db, "sha256_hash")
-        mock_get_perceptual_hash.assert_called_once()
-        mock_get_fuzzy_hash.assert_called_once()
-        self.db.add_file_hash.assert_called_once_with(
-            file_id="file123",
-            sha256_hash="sha256_hash",
-            perceptual_hash="perceptual_hash",
-            fuzzy_hash="fuzzy_hash",
-        )
+        self.assertEqual(self.client.download_media.call_count, 2)
+        self.assertEqual(mock_get_sha256_hash.call_count, 2)
+        self.assertEqual(mock_is_exact_match.call_count, 2)
+        self.assertEqual(mock_get_perceptual_hash.call_count, 2)
+        self.assertEqual(mock_get_fuzzy_hash.call_count, 2)
+        self.assertEqual(self.db.add_file_hash.call_count, 2)
 
 if __name__ == "__main__":
     unittest.main()

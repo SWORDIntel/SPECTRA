@@ -5,12 +5,10 @@ from __future__ import annotations
 
 import logging
 import asyncio # Added for asyncio.sleep
-import sqlite3 # For handling specific DB errors
 from typing import Optional, Set, List, Tuple # Added List, Tuple
 import hashlib # Added for deduplication
 import re # For filename grouping
 import os
-import tempfile
 from datetime import datetime, timezone, timedelta # Added for deduplication timestamp, timedelta for time grouping
 
 # Third-party imports
@@ -23,7 +21,6 @@ from telethon.errors import RPCError, ChannelPrivateError, UserDeactivatedError,
 from tgarchive.db import SpectraDB
 from tgarchive.config_models import Config, DEFAULT_CFG # Import from new location
 from tgarchive.attribution import AttributionFormatter
-from tgarchive.deduplication import get_sha256_hash
 
 logger = logging.getLogger("tgarchive.forwarding")
 
@@ -81,6 +78,18 @@ class AttachmentForwarder:
 
         # Regex to capture base, part identifier (and number within), and full extension (including multi-part like .tar.gz)
         # Group 1: base_name
+        # Group 2: full part string (e.g., _part1, _1, (1))
+        # Group 1: base_name
+        # Group 2: full part string (e.g., _part1, _1, (1), .part1, .1)
+        # Groups for part numbers:
+        #   3: for _part(\d+)
+        #   4: for _(\d+)
+        #   5: for \s\((\d+)\)
+        #   7: for \.part(\d+) (note: group 6 is the start of this pattern)
+        # Simplified Regex:
+        # Group 1: base_name (non-greedy)
+        # Group 2: part_separator_and_identifier (e.g., "_part", ".part", "_", ".", " (")
+        # Group 1: base_name
         # Group 2: full part string (e.g., _part1, _1, (1), .part1, .1)
         # Groups for part numbers within Group 2's alternatives:
         #   3: for _part(\d+)
@@ -107,8 +116,8 @@ class AttachmentForwarder:
             if self.secondary_unique_destination:
                 self.logger.info(f"Unique messages will be forwarded to secondary destination: {self.secondary_unique_destination}")
             if self.db:
-                # The deduplication tables are now part of the main schema in db.py
-                self._load_existing_hashes()
+                self._init_dedup_table()
+                self._load_existing_hashes() # Load hashes from DB into memory
             else:
                 self.logger.warning("Deduplication is enabled, but no database is configured. Deduplication will be in-memory only for this session.")
         else:
@@ -116,136 +125,152 @@ class AttachmentForwarder:
 
         self.attribution_formatter = AttributionFormatter(self.config.data)
 
-    def _load_existing_hashes(self):
-        """Load existing SHA256 hashes from the file_hashes table."""
+    def _init_dedup_table(self):
+        """Create deduplication tracking table if it doesn't exist."""
         if not self.db:
-            self.logger.warning("Database not available, cannot load hashes.")
+            self.logger.error("Database not available, cannot initialize dedup table.")
             return
         try:
-            # Note: This loads all SHA256 hashes into memory. For very large databases,
-            # this might need to be optimized (e.g., bloom filter, selective loading).
-            cursor = self.db.conn.execute("SELECT sha256_hash FROM file_hashes WHERE sha256_hash IS NOT NULL")
+            self.db.conn.execute("""
+                CREATE TABLE IF NOT EXISTS forwarded_messages (
+                    hash TEXT PRIMARY KEY,
+                    origin_id TEXT,
+                    destination_id TEXT,
+                    message_id INTEGER,
+                    forwarded_at TEXT,
+                    content_preview TEXT
+                )
+            """)
+            self.db.conn.commit()
+            self.logger.info("Deduplication table 'forwarded_messages' initialized successfully.")
+        except Exception as e:
+            self.logger.error(f"Failed to create/ensure dedup table 'forwarded_messages': {e}", exc_info=True)
+
+    def _load_existing_hashes(self):
+        """Load existing message hashes from the database into the in-memory set."""
+        if not self.db:
+            self.logger.warning("Database not available, cannot load existing hashes for deduplication.")
+            return
+        try:
+            cursor = self.db.conn.execute("SELECT hash FROM forwarded_messages")
             count = 0
             for row in cursor:
                 self.message_hashes.add(row[0])
                 count += 1
-            self.logger.info(f"Loaded {count} existing file content hashes (SHA256) into memory.")
-        except sqlite3.OperationalError as e:
-            self.logger.warning(f"Could not load existing hashes from 'file_hashes' table. It might not exist if this is the first run. Error: {e}")
+            self.logger.info(f"Loaded {count} existing message hashes into memory for deduplication.")
         except Exception as e:
-            self.logger.error(f"Error loading existing file hashes: {e}", exc_info=True)
+            self.logger.error(f"Failed to load existing message hashes from database: {e}", exc_info=True)
 
-    async def _is_duplicate(self, message_group: List[TLMessage], client: TelegramClient) -> bool:
-        """
-        Check if any file in a message group is a duplicate based on its content hash.
-        This involves downloading each file to compute its hash.
-        """
+    async def _compute_message_hash(self, message: TLMessage) -> str:
+        """Compute a unique hash for message content (text and media)."""
+        content_parts = []
+
+        # Add message text
+        if message.text:
+            content_parts.append(message.text)
+
+        # Add media identifiers (if media exists)
+        if message.media:
+            if message.file:
+                max_size_to_hash_mb = self.config.data.get("forwarding", {}).get("deduplication", {}).get("max_size_to_hash_mb", 30)
+                if message.file.size > max_size_to_hash_mb * 1024 * 1024:
+                    content_parts.append(f"filename:{message.file.name}")
+                else:
+                    file_path = f"/tmp/{message.file.id}"
+                    await self._client.download_media(message.media, file_path)
+                    with open(file_path, "rb") as f:
+                        content_parts.append(hashlib.sha256(f.read()).hexdigest())
+                    os.remove(file_path)
+            else:
+                # General media attributes
+                if hasattr(message.media, 'id'): # Common for Photo, Document
+                    content_parts.append(f"media_id:{message.media.id}")
+                if hasattr(message.media, 'access_hash'): # Common for Photo, Document
+                    content_parts.append(f"media_hash:{message.media.access_hash}")
+                if isinstance(message.media, types.MessageMediaWebPage) and hasattr(message.media.webpage, 'url'):
+                     content_parts.append(f"webpage_url:{message.media.webpage.url}")
+
+        if not content_parts and message.media:
+            content_parts.append(f"media_type:{type(message.media).__name__}")
+
+        if not content_parts and not message.text:
+             content_parts.append(f"message_obj_id:{message.id}")
+
+        content_string = "|".join(sorted(str(p) for p in content_parts))
+        return hashlib.sha256(content_string.encode('utf-8')).hexdigest()
+
+    async def _compute_group_hash(self, message_group: List[TLMessage]) -> str:
+        """Computes a hash for an entire group of messages."""
+        if not message_group:
+            return ""
+
+        individual_hashes = sorted([await self._compute_message_hash(msg) for msg in message_group])
+        combined_hash_input = "|".join(individual_hashes)
+        return hashlib.sha256(combined_hash_input.encode('utf-8')).hexdigest()
+
+    async def _is_duplicate(self, message_group: List[TLMessage]) -> bool:
+        """Check if a message group has been forwarded before using its combined hash."""
         if not self.enable_deduplication or not message_group:
             return False
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            for message in message_group:
-                if not message.file:
-                    continue  # Skip messages without files
+        group_hash = await self._compute_group_hash(message_group)
+        representative_msg_id = message_group[0].id
 
-                # Define a temporary path for the downloaded file
-                file_path = os.path.join(tmpdir, str(message.file.id))
+        if group_hash in self.message_hashes:
+            self.logger.info(f"Message group starting with ID {representative_msg_id} (group hash: {group_hash[:8]}...) found in memory cache as duplicate.")
+            return True
 
-                try:
-                    self.logger.debug(f"Downloading file from Msg ID {message.id} for hash computation.")
-                    await client.download_media(message.media, file=file_path)
-                except Exception as e:
-                    self.logger.error(f"Failed to download file for hashing (Msg ID: {message.id}): {e}", exc_info=True)
-                    # If download fails, we cannot determine if it's a duplicate.
-                    # For safety, treat as not a duplicate and continue checking other files.
-                    continue
+        if self.db:
+            try:
+                result = self.db.conn.execute(
+                    "SELECT 1 FROM forwarded_messages WHERE hash = ?",
+                    (group_hash,)
+                ).fetchone()
 
-                if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
-                    self.logger.warning(f"File for hashing (Msg ID: {message.id}) was not downloaded correctly or is empty. Skipping duplicate check for this file.")
-                    continue
-
-                # Compute the content hash
-                sha256_hash = get_sha256_hash(file_path)
-                self.logger.debug(f"Computed SHA256 hash for file in Msg ID {message.id}: {sha256_hash[:10]}...")
-
-                # 1. Check in-memory cache of hashes for this session
-                if sha256_hash in self.message_hashes:
-                    self.logger.info(f"Duplicate file found (Msg ID {message.id}, SHA256: {sha256_hash[:10]}...) via in-memory cache.")
+                if result:
+                    self.message_hashes.add(group_hash)
+                    self.logger.info(f"Message group starting with ID {representative_msg_id} (group hash: {group_hash[:8]}...) found in DB as duplicate.")
                     return True
-
-                # 2. Check database for the hash
-                if self.db:
-                    try:
-                        result = self.db.conn.execute(
-                            "SELECT 1 FROM file_hashes WHERE sha256_hash = ?",
-                            (sha256_hash,)
-                        ).fetchone()
-
-                        if result:
-                            self.logger.info(f"Duplicate file found (Msg ID {message.id}, SHA256: {sha256_hash[:10]}...) via database.")
-                            self.message_hashes.add(sha256_hash)  # Add to cache to speed up future checks
-                            return True
-                    except sqlite3.OperationalError as e:
-                        # This can happen if the table doesn't exist on the first run.
-                        self.logger.warning(f"Could not check for duplicates in 'file_hashes' table, it might not exist yet. Error: {e}")
-                    except Exception as e:
-                        self.logger.error(f"Error checking for duplicate file in DB (hash {sha256_hash[:10]}...): {e}", exc_info=True)
-
+            except Exception as e:
+                self.logger.error(f"Error checking duplicate group in DB for hash {group_hash[:8]}...: {e}", exc_info=True)
         return False
 
-    async def _record_forwarded(self, message_group: List[TLMessage], origin_id: int, dest_id: str, client: TelegramClient):
-        """
-        Record that files in a message group were forwarded by storing their content hashes.
-        """
+    async def _record_forwarded(self, message_group: List[TLMessage], origin_id: str, dest_id: str):
+        """Record that a message group was forwarded by storing its combined hash."""
         if not self.enable_deduplication or not self.db or not message_group:
             return
 
-        # Using a single temp directory for all downloads in the group
-        with tempfile.TemporaryDirectory() as tmpdir:
-            for message in message_group:
-                if not message.file:
-                    continue
+        group_hash = await self._compute_group_hash(message_group)
+        self.message_hashes.add(group_hash)
 
-                # To avoid re-downloading, this process could be optimized by passing hashes
-                # from the duplicate check phase. However, for robustness and simplicity,
-                # we re-acquire the hash here.
-                file_path = os.path.join(tmpdir, str(message.file.id))
-                try:
-                    await client.download_media(message.media, file=file_path)
-                except Exception as e:
-                    self.logger.error(f"Failed to download file for recording hash (Msg ID: {message.id}): {e}", exc_info=True)
-                    continue
+        representative_message = message_group[0]
+        content_preview = f"Group of {len(message_group)} file(s)."
+        if len(message_group) == 1:
+            if representative_message.text:
+                content_preview = (representative_message.text[:100] + '...') if len(representative_message.text) > 100 else representative_message.text
+            elif representative_message.file and representative_message.file.name:
+                content_preview = f"File: {getattr(representative_message.file, 'name', 'N/A')}"
+        else:
+            if representative_message.file and representative_message.file.name:
+                 content_preview += f" Starts with: {getattr(representative_message.file, 'name', 'N/A')}"
 
-                if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
-                    self.logger.warning(f"File for recording hash (Msg ID: {message.id}) not downloaded correctly or empty. Skipping.")
-                    continue
-
-                sha256_hash = get_sha256_hash(file_path)
-
-                # Add hash to in-memory cache to prevent re-processing in the same session
-                self.message_hashes.add(sha256_hash)
-
-                try:
-                    # Record the hash in the file_hashes table
-                    # Note: This assumes the media item is already in the 'media' table.
-                    # A more robust implementation might upsert the media item here.
-                    self.db.add_file_hash(
-                        file_id=message.file.id,
-                        sha256_hash=sha256_hash,
-                        perceptual_hash=None,  # Placeholder for future implementation
-                        fuzzy_hash=None       # Placeholder for future implementation
-                    )
-
-                    # Record the file's appearance in the source channel
-                    self.db.add_channel_file_inventory(
-                        channel_id=origin_id,
-                        file_id=message.file.id,
-                        message_id=message.id,
-                        topic_id=getattr(message, 'reply_to_top_id', None) # General topic ID if available
-                    )
-                    self.logger.info(f"Recorded forwarded file (Msg ID {message.id}, SHA256: {sha256_hash[:10]}...) to database.")
-                except Exception as e:
-                    self.logger.error(f"Failed to record forwarded file hash for Msg ID {message.id} to DB: {e}", exc_info=True)
+        try:
+            self.db.conn.execute("""
+                INSERT OR IGNORE INTO forwarded_messages
+                (hash, origin_id, destination_id, message_id, forwarded_at, content_preview)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                group_hash,
+                str(origin_id),
+                str(dest_id),
+                representative_message.id,
+                datetime.now(timezone.utc).isoformat(),
+                content_preview
+            ))
+            self.db.conn.commit()
+            self.logger.info(f"Recorded forwarded message group (representative ID {representative_message.id}, group hash {group_hash[:8]}...) to DB.")
+        except Exception as e:
+            self.logger.error(f"Failed to record forwarded message group (group hash {group_hash[:8]}...) to DB: {e}", exc_info=True)
 
     async def _get_client(self, account_identifier: Optional[str] = None) -> TelegramClient:
         selected_account = None
@@ -265,7 +290,7 @@ class AttachmentForwarder:
         session_name = selected_account.get("session_name")
         api_id = selected_account.get("api_id")
         api_hash = selected_account.get("api_hash")
-        
+
         if not all([session_name, api_id, api_hash]):
             raise ValueError(f"Account {session_name or 'Unknown'} is missing critical configuration (session_name, api_id, or api_hash).")
 
@@ -300,10 +325,10 @@ class AttachmentForwarder:
                 self.logger.warning(f"Proxy configuration is incomplete (missing {e}). Proceeding without proxy.")
             except ImportError:
                 self.logger.warning("PySocks library not found. Proceeding without proxy.")
-        
+
         client_path = str(Config().path.parent / session_name)
         self._client = TelegramClient(client_path, api_id, api_hash, proxy=proxy)
-        
+
         self.logger.info(f"Connecting to Telegram with account: {session_name}")
         try:
             await self._client.connect()
@@ -311,12 +336,12 @@ class AttachmentForwarder:
             self.logger.error(f"Failed to connect to Telegram for account {session_name}: {e}")
             self._client = None
             raise
-            
+
         if not await self._client.is_user_authorized():
             await self._client.disconnect()
             self._client = None
             raise ValueError(f"Account {session_name} is not authorized. Please check credentials or run authorization process.")
-        
+
         self.logger.info(f"Successfully connected and authorized as {session_name}.")
         return self._client
 
@@ -456,11 +481,11 @@ class AttachmentForwarder:
 
     def _group_by_filename(self, messages: List[TLMessage]) -> List[List[TLMessage]]:
         if not messages: return []
-        candidate_keyed_groups: dict[Tuple[int, str, str], list[TLMessage]] = {}
+        candidate_keyed_groups: dict[Tuple[str, str], list[TLMessage]] = {}
         lone_messages: list[TLMessage] = []
         for msg in messages:
             filename = getattr(msg.file, 'name', None)
-            if not msg.sender_id or not filename :
+            if not filename :
                 lone_messages.append(msg)
                 continue
             parsed_info = self._parse_filename_for_grouping(filename)
@@ -468,7 +493,7 @@ class AttachmentForwarder:
                 lone_messages.append(msg)
                 continue
             base_name, _, _, extension = parsed_info
-            key = (msg.sender_id, base_name.lower(), extension.lower())
+            key = (base_name.lower(), extension.lower())
             if key not in candidate_keyed_groups:
                 candidate_keyed_groups[key] = []
             candidate_keyed_groups[key].append(msg)
@@ -533,12 +558,12 @@ class AttachmentForwarder:
                 message = representative_message
                 self.logger.debug(f"Processing Group {group_idx + 1}/{len(message_groups)}, Representative Msg ID: {message.id} from {origin_id}. Items in group: {len(message_group)}")
 
-                if await self._is_duplicate(message_group, client):
-                    self.logger.info(f"Message group starting with ID: {representative_message.id} (from {origin_id}) contains a duplicate file. Skipping forwarding of the entire group.")
+                if await self._is_duplicate(message_group):
+                    self.logger.info(f"Message group starting with ID: {representative_message.id} (from {origin_id}) is a duplicate. Skipping forwarding.")
                     continue
                 self.logger.info(f"Group (representative Msg ID: {message.id}) has media. Attempting to forward to {destination_id}.")
                 successfully_forwarded_main = False
-                main_reply_to_arg = self.destination_topic_id 
+                main_reply_to_arg = self.destination_topic_id
                 try:
                     for msg_in_group_idx, current_message_in_group in enumerate(message_group):
                         self.logger.info(f"Forwarding item {msg_in_group_idx + 1}/{len(message_group)} (Msg ID: {current_message_in_group.id}) of current group.")
@@ -599,15 +624,15 @@ class AttachmentForwarder:
                     continue
                 except (ChannelPrivateError, ChatAdminRequiredError, UserBannedInChannelError) as e_perm:
                     self.logger.error(f"Permission error forwarding Message Group (representative Msg ID: {message.id}) to main destination: {e_perm}")
-                    continue 
+                    continue
                 except RPCError as rpc_error:
                     self.logger.error(f"RPCError forwarding Message Group (representative Msg ID: {message.id}) to main destination: {rpc_error}")
-                    continue 
+                    continue
                 except Exception as e_fwd:
                     self.logger.exception(f"Unexpected error forwarding Message Group (representative Msg ID: {message.id}) to main destination: {e_fwd}")
                     continue
                 if successfully_forwarded_main:
-                    await self._record_forwarded(message_group, origin_entity.id, str(destination_entity.id), client)
+                    await self._record_forwarded(message_group, str(origin_entity.id), str(destination_entity.id))
                     if self.secondary_unique_destination:
                         self.logger.info(f"Attempting to forward unique Message Group (representative Msg ID: {message.id}) to secondary destination: {self.secondary_unique_destination}")
                         try:
@@ -711,23 +736,6 @@ class AttachmentForwarder:
         if not unique_channels_with_accounts:
             self.logger.warning("No channels found in account_channel_access table to process for total forward mode.")
             return
-        self.logger.info(f"Found {len(unique_channels_with_accounts)} unique channels to process.")
-        for channel_id, accessing_account_phone in unique_channels_with_accounts:
-            self.logger.info(f"--- Processing channel ID: {channel_id} using account: {accessing_account_phone} ---")
-            try:
-                await self.close()
-                await self.forward_messages(
-                    origin_id=channel_id,
-                    destination_id=destination_id,
-                    account_identifier=accessing_account_phone
-                )
-                self.logger.info(f"--- Finished processing channel ID: {channel_id} ---")
-            except Exception as e_fwd_all:
-                self.logger.error(f"Failed to forward messages for channel ID {channel_id} using account {accessing_account_phone}: {e_fwd_all}", exc_info=True)
-                await self.close()
-                self.logger.info(f"Continuing to the next channel after error with channel ID: {channel_id}.")
-                continue
-        self.logger.info("'Total Forward Mode' completed.")
 
     async def forward_files(self, schedule_id: int, source_id: int | str, destination_id: int | str, file_types: Optional[str], min_file_size: Optional[int], max_file_size: Optional[int], account_identifier: Optional[str] = None):
         client = None
@@ -752,7 +760,7 @@ class AttachmentForwarder:
                 if max_file_size is not None and message.file.size > max_file_size:
                     continue
 
-                if await self._is_duplicate([message], client):
+                if await self._is_duplicate([message]):
                     continue
 
                 self.db.add_to_file_forward_queue(schedule_id, message.id, message.file.id)
@@ -787,7 +795,7 @@ class AttachmentForwarder:
                         messages=[message_id],
                         from_peer=source_entity,
                     )
-                    await self._record_forwarded([await client.get_messages(source_entity, ids=message_id)], str(source_entity.id), str(destination_entity.id), client)
+                    await self._record_forwarded([await client.get_messages(source_entity, ids=message_id)], str(source_entity.id), str(destination_entity.id))
                     self.db.update_file_forward_queue_status(queue_id, "success")
 
                     # Bandwidth throttling
@@ -807,3 +815,22 @@ class AttachmentForwarder:
         finally:
             if client:
                 await client.disconnect()
+            self.logger.warning("No channels found in account_channel_access table to process for total forward mode.")
+            return
+        self.logger.info(f"Found {len(unique_channels_with_accounts)} unique channels to process.")
+        for channel_id, accessing_account_phone in unique_channels_with_accounts:
+            self.logger.info(f"--- Processing channel ID: {channel_id} using account: {accessing_account_phone} ---")
+            try:
+                await self.close()
+                await self.forward_messages(
+                    origin_id=channel_id,
+                    destination_id=destination_id,
+                    account_identifier=accessing_account_phone
+                )
+                self.logger.info(f"--- Finished processing channel ID: {channel_id} ---")
+            except Exception as e_fwd_all:
+                self.logger.error(f"Failed to forward messages for channel ID {channel_id} using account {accessing_account_phone}: {e_fwd_all}", exc_info=True)
+                await self.close()
+                self.logger.info(f"Continuing to the next channel after error with channel ID: {channel_id}.")
+                continue
+        self.logger.info("'Total Forward Mode' completed.")

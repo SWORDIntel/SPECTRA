@@ -996,6 +996,9 @@ class DownloadUsersForm(npyscreen.Form):
 
         self.server_id = self.add(npyscreen.TitleText, name="Server ID:")
         self.output_file = self.add(npyscreen.TitleText, name="Output File:", value="users.csv")
+        self.output_format = self.add(npyscreen.TitleSelectOne, name="Output Format:", values=["csv", "json", "sqlite"], max_height=3, value=[0])
+        self.rotate_ip = self.add(npyscreen.Checkbox, name="Rotate IP on Flood Wait", value=False)
+        self.rate_limit_delay = self.add(npyscreen.TitleSlider, out_of=10, name="Rate Limit Delay (s)", value=1)
 
         self.add(npyscreen.ButtonPress, name="Start Download", when_pressed_function=self.start_download)
         self.status = self.add(StatusMessages, name="Status Messages", max_height=8)
@@ -1007,6 +1010,9 @@ class DownloadUsersForm(npyscreen.Form):
         """Start the user download process"""
         server_id = self.server_id.value.strip()
         output_file = self.output_file.value.strip()
+        output_format = self.output_format.values[self.output_format.value[0]]
+        rotate_ip = self.rotate_ip.value
+        rate_limit_delay = self.rate_limit_delay.value
 
         if not server_id:
             self.status.add_message("Please enter a server ID", "ERROR")
@@ -1017,7 +1023,7 @@ class DownloadUsersForm(npyscreen.Form):
             return
 
         if npyscreen.notify_yes_no(
-            f"Start downloading users from server {server_id} to {output_file}?",
+            f"Start downloading users from server {server_id} to {output_file} in {output_format} format?",
             title="Confirm Download"
         ):
             self.status.add_message(f"Starting user download from server {server_id}...")
@@ -1035,7 +1041,7 @@ class DownloadUsersForm(npyscreen.Form):
 
             async def downloader():
                 await client.connect()
-                await get_server_users(client, int(server_id), output_file)
+                await get_server_users(client, int(server_id), output_file, output_format, rotate_ip, rate_limit_delay)
                 await client.disconnect()
 
             AsyncRunner.run_in_thread(

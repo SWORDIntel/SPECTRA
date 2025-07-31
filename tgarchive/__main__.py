@@ -244,6 +244,7 @@ def setup_parser() -> argparse.ArgumentParser:
     download_users_parser = subparsers.add_parser("download-users", help="Download user list from a server")
     download_users_parser.add_argument("--server-id", required=True, type=int, help="ID of the server to download users from")
     download_users_parser.add_argument("--output-file", required=True, help="Path to the output file")
+    download_users_parser.add_argument("--output-format", default="csv", choices=["csv", "json", "sqlite"], help="Output format")
 
     return parser
 
@@ -1338,7 +1339,7 @@ async def handle_download_users(args: argparse.Namespace) -> int:
     await client.connect()
 
     try:
-        await get_server_users(client, args.server_id, args.output_file)
+        await get_server_users(client, args.server_id, args.output_file, args.output_format)
         return 0
     except Exception as e:
         logger.error(f"Failed to download users: {e}")

@@ -213,42 +213,6 @@ CREATE TABLE IF NOT EXISTS migration_progress (
     created_at          TEXT NOT NULL,
     updated_at          TEXT NOT NULL
 );
-
-CREATE TABLE IF NOT EXISTS file_hashes (
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    file_id             INTEGER REFERENCES media(id) ON DELETE CASCADE,
-    sha256_hash         TEXT,
-    perceptual_hash     TEXT,
-    fuzzy_hash          TEXT,
-    created_at          TEXT NOT NULL,
-    UNIQUE(file_id)
-);
-CREATE INDEX IF NOT EXISTS idx_file_hashes_sha256 ON file_hashes(sha256_hash);
-CREATE INDEX IF NOT EXISTS idx_file_hashes_perceptual ON file_hashes(perceptual_hash);
-CREATE INDEX IF NOT EXISTS idx_file_hashes_fuzzy ON file_hashes(fuzzy_hash);
-
-CREATE TABLE IF NOT EXISTS channel_file_inventory (
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    channel_id          INTEGER NOT NULL,
-    file_id             INTEGER NOT NULL,
-    message_id          INTEGER NOT NULL,
-    topic_id            INTEGER,
-    created_at          TEXT NOT NULL,
-    UNIQUE(channel_id, file_id, message_id)
-);
-
-CREATE TABLE IF NOT EXISTS topic_file_mapping (
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    topic_id            INTEGER NOT NULL,
-    file_id             INTEGER NOT NULL,
-    message_id          INTEGER NOT NULL,
-    created_at          TEXT NOT NULL,
-    UNIQUE(topic_id, file_id, message_id)
-);
-CREATE INDEX IF NOT EXISTS idx_channel_file_inventory_channel_id ON channel_file_inventory(channel_id);
-CREATE INDEX IF NOT EXISTS idx_channel_file_inventory_file_id ON channel_file_inventory(file_id);
-CREATE INDEX IF NOT EXISTS idx_topic_file_mapping_topic_id ON topic_file_mapping(topic_id);
-CREATE INDEX IF NOT EXISTS idx_topic_file_mapping_file_id ON topic_file_mapping(file_id);
 """
 
 # ── Helper SQL functions ────────────────────────────────────────────────
@@ -723,16 +687,6 @@ class SpectraDB(AbstractContextManager):
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             (schedule_id, files_forwarded, bytes_forwarded, started_at, finished_at, status),
-        )
-        self.conn.commit()
-
-    def add_file_hash(self, file_id: int, sha256_hash: Optional[str], perceptual_hash: Optional[str], fuzzy_hash: Optional[str]) -> None:
-        self._exec_retry(
-            """
-            INSERT INTO file_hashes(file_id, sha256_hash, perceptual_hash, fuzzy_hash, created_at)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (file_id, sha256_hash, perceptual_hash, fuzzy_hash, datetime.now(timezone.utc).isoformat()),
         )
         self.conn.commit()
 

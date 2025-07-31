@@ -690,6 +690,30 @@ class SpectraDB(AbstractContextManager):
         )
         self.conn.commit()
 
+    def add_file_hash(self, file_id: int, sha256_hash: Optional[str], perceptual_hash: Optional[str], fuzzy_hash: Optional[str]) -> None:
+        self._exec_retry(
+            """
+            INSERT INTO file_hashes(file_id, sha256_hash, perceptual_hash, fuzzy_hash, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (file_id, sha256_hash, perceptual_hash, fuzzy_hash, datetime.now(timezone.utc).isoformat()),
+        )
+        self.conn.commit()
+
+    def add_channel_file_inventory(self, channel_id: int, file_id: int, message_id: int, topic_id: Optional[int]) -> None:
+        """
+        Records an entry in the channel_file_inventory table.
+        Uses INSERT OR IGNORE to avoid errors on duplicate entries.
+        """
+        self._exec_retry(
+            """
+            INSERT OR IGNORE INTO channel_file_inventory(channel_id, file_id, message_id, topic_id, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (channel_id, file_id, message_id, topic_id, datetime.now(timezone.utc).isoformat())
+        )
+        self.conn.commit()
+        
 __all__ = [
     "SpectraDB",
     "User",

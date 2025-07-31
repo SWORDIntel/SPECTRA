@@ -149,6 +149,13 @@ python -m tgarchive batch --file groups.txt --parallel --max-workers 4
 
 # Run discovery in parallel
 python -m tgarchive discover --seeds-file seeds.txt --parallel --max-workers 4
+
+### Download Users
+
+```bash
+# Download all users from a server
+python -m tgarchive download-users --server-id 123456789 --output-file users.csv
+```
 ```
 
 ### Forwarding Mode
@@ -190,6 +197,10 @@ Example using `screen`:
 4. To reattach later: `screen -r spectra_forward_session`
 
 SPECTRA will not install `screen` or `tmux` for you. Please install them using your system's package manager if needed (e.g., `sudo apt install screen`).
+
+### Headless Server Operation
+
+SPECTRA can be run on a headless server. When a headless environment is detected, SPECTRA will print a message to the console with instructions on how to use a terminal multiplexer like `screen` or `tmux` to ensure that the application continues to run even if the SSH session is closed.
 
 ---
 

@@ -736,6 +736,20 @@ class SpectraDB(AbstractContextManager):
         )
         self.conn.commit()
 
+    def add_channel_file_inventory(self, channel_id: int, file_id: int, message_id: int, topic_id: Optional[int]) -> None:
+        """
+        Records an entry in the channel_file_inventory table.
+        Uses INSERT OR IGNORE to avoid errors on duplicate entries.
+        """
+        self._exec_retry(
+            """
+            INSERT OR IGNORE INTO channel_file_inventory(channel_id, file_id, message_id, topic_id, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (channel_id, file_id, message_id, topic_id, datetime.now(timezone.utc).isoformat())
+        )
+        self.conn.commit()
+
 __all__ = [
     "SpectraDB",
     "User",

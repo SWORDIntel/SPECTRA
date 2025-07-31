@@ -238,6 +238,13 @@ def setup_parser() -> argparse.ArgumentParser:
     rollback_parser = subparsers.add_parser("rollback", help="Roll back a migration")
     rollback_parser.add_argument("--migration-id", required=True, type=int, help="ID of the migration to roll back")
 
+    # Download users command
+    download_users_parser = subparsers.add_parser("download-users", help="Download user list from a server")
+    download_users_parser.add_argument("--server-id", required=True, type=int, help="ID of the server to download users from")
+    download_users_parser.add_argument("--output-file", required=True, help="Path to the output file")
+    download_users_parser.add_argument("--output-format", default="csv", choices=["csv", "json", "sqlite"], help="Output format")
+    download_users_parser.add_argument("--rotate-ip", action="store_true", help="Enable IP rotation on flood wait errors")
+    download_users_parser.add_argument("--rate-limit-delay", type=int, default=1, help="Delay in seconds between requests")
     return parser
 
 # ── Command handlers ───────────────────────────────────────────────────────
@@ -1305,5 +1312,29 @@ async def handle_migrate_report(args: argparse.Namespace) -> int:
     print(f"  Last Updated At: {updated_at}")
     return 0
 
+async def handle_download_users(args: argparse.Namespace) -> int:
+    """Handle download-users command"""
+    cfg = Config(Path(args.config))
+    if args.import_accounts:
+        cfg = enhance_config_with_gen_accounts(cfg)
+
+    from telethon import TelegramClient
+    account = cfg.auto_select_account()
+    if not account:
+        logger.error("No account available for this operation.")
+        return 1
+
+    client = TelegramClient(account['session_name'], account['api_id'], account['api_hash'])
+    await client.connect()
+
+    try:
+        await get_server_users(client, args.server_id, args.output_file, args.output_format, args.rotate_ip, args.rate_limit_delay)
+        return 0
+    except Exception as e:
+        logger.error(f"Failed to download users: {e}")
+        return 1
+    finally:
+        await client.disconnect()
+        
 if __name__ == "__main__":
     sys.exit(main())

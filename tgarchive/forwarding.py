@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import logging
 import asyncio # Added for asyncio.sleep
+import sqlite3 # For handling specific DB errors
 from typing import Optional, Set, List, Tuple # Added List, Tuple
 import hashlib # Added for deduplication
 import re # For filename grouping
+import os
+import tempfile
 from datetime import datetime, timezone, timedelta # Added for deduplication timestamp, timedelta for time grouping
 
 # Third-party imports
@@ -20,6 +23,7 @@ from telethon.errors import RPCError, ChannelPrivateError, UserDeactivatedError,
 from tgarchive.db import SpectraDB
 from tgarchive.config_models import Config, DEFAULT_CFG # Import from new location
 from tgarchive.attribution import AttributionFormatter
+from tgarchive.deduplication import get_sha256_hash
 
 logger = logging.getLogger("tgarchive.forwarding")
 
@@ -115,8 +119,8 @@ class AttachmentForwarder:
             if self.secondary_unique_destination:
                 self.logger.info(f"Unique messages will be forwarded to secondary destination: {self.secondary_unique_destination}")
             if self.db:
-                self._init_dedup_table()
-                self._load_existing_hashes() # Load hashes from DB into memory
+                # The deduplication tables are now part of the main schema in db.py
+                self._load_existing_hashes()
             else:
                 self.logger.warning("Deduplication is enabled, but no database is configured. Deduplication will be in-memory only for this session.")
         else:
@@ -124,149 +128,136 @@ class AttachmentForwarder:
 
         self.attribution_formatter = AttributionFormatter(self.config.data)
 
-    def _init_dedup_table(self):
-        """Create deduplication tracking table if it doesn't exist."""
-        if not self.db:
-            self.logger.error("Database not available, cannot initialize dedup table.")
-            return
-        try:
-            self.db.conn.execute("""
-                CREATE TABLE IF NOT EXISTS forwarded_messages (
-                    hash TEXT PRIMARY KEY,
-                    origin_id TEXT,
-                    destination_id TEXT,
-                    message_id INTEGER,
-                    forwarded_at TEXT,
-                    content_preview TEXT
-                )
-            """)
-            self.db.conn.commit()
-            self.logger.info("Deduplication table 'forwarded_messages' initialized successfully.")
-        except Exception as e:
-            self.logger.error(f"Failed to create/ensure dedup table 'forwarded_messages': {e}", exc_info=True)
-
     def _load_existing_hashes(self):
-        """Load existing message hashes from the database into the in-memory set."""
+        """Load existing SHA256 hashes from the file_hashes table."""
         if not self.db:
-            self.logger.warning("Database not available, cannot load existing hashes for deduplication.")
+            self.logger.warning("Database not available, cannot load hashes.")
             return
         try:
-            cursor = self.db.conn.execute("SELECT hash FROM forwarded_messages")
+            # Note: This loads all SHA256 hashes into memory. For very large databases,
+            # this might need to be optimized (e.g., bloom filter, selective loading).
+            cursor = self.db.conn.execute("SELECT sha256_hash FROM file_hashes WHERE sha256_hash IS NOT NULL")
             count = 0
             for row in cursor:
                 self.message_hashes.add(row[0])
                 count += 1
-            self.logger.info(f"Loaded {count} existing message hashes into memory for deduplication.")
+            self.logger.info(f"Loaded {count} existing file content hashes (SHA256) into memory.")
+        except sqlite3.OperationalError as e:
+            self.logger.warning(f"Could not load existing hashes from 'file_hashes' table. It might not exist if this is the first run. Error: {e}")
         except Exception as e:
-            self.logger.error(f"Failed to load existing message hashes from database: {e}", exc_info=True)
+            self.logger.error(f"Error loading existing file hashes: {e}", exc_info=True)
 
-    def _compute_message_hash(self, message: TLMessage) -> str:
-        """Compute a unique hash for message content (text and media)."""
-        content_parts = []
-
-        # Add message text
-        if message.text:
-            content_parts.append(message.text)
-
-        # Add media identifiers (if media exists)
-        if message.media:
-            # General media attributes
-            if hasattr(message.media, 'id'): # Common for Photo, Document
-                content_parts.append(f"media_id:{message.media.id}")
-            if hasattr(message.media, 'access_hash'): # Common for Photo, Document
-                content_parts.append(f"media_hash:{message.media.access_hash}")
-
-            # Specific file attributes if message.file exists (for documents, videos, photos etc.)
-            if message.file:
-                if hasattr(message.file, 'id') and message.file.id is not None: # Ensure ID is not None
-                    content_parts.append(f"file_id:{message.file.id}")
-                if hasattr(message.file, 'size') and message.file.size is not None:
-                    content_parts.append(f"file_size:{message.file.size}")
-
-            if isinstance(message.media, types.MessageMediaWebPage) and hasattr(message.media.webpage, 'url'):
-                 content_parts.append(f"webpage_url:{message.media.webpage.url}")
-
-        if not content_parts and message.media:
-            content_parts.append(f"media_type:{type(message.media).__name__}")
-
-        if not content_parts and not message.text:
-             content_parts.append(f"message_obj_id:{message.id}")
-
-        content_string = "|".join(sorted(str(p) for p in content_parts))
-        return hashlib.sha256(content_string.encode('utf-8')).hexdigest()
-
-    def _compute_group_hash(self, message_group: List[TLMessage]) -> str:
-        """Computes a hash for an entire group of messages."""
-        if not message_group:
-            return ""
-
-        individual_hashes = sorted([self._compute_message_hash(msg) for msg in message_group])
-        combined_hash_input = "|".join(individual_hashes)
-        return hashlib.sha256(combined_hash_input.encode('utf-8')).hexdigest()
-
-    async def _is_duplicate(self, message_group: List[TLMessage]) -> bool:
-        """Check if a message group has been forwarded before using its combined hash."""
+    async def _is_duplicate(self, message_group: List[TLMessage], client: TelegramClient) -> bool:
+        """
+        Check if any file in a message group is a duplicate based on its content hash.
+        This involves downloading each file to compute its hash.
+        """
         if not self.enable_deduplication or not message_group:
             return False
 
-        group_hash = self._compute_group_hash(message_group)
-        representative_msg_id = message_group[0].id
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for message in message_group:
+                if not message.file:
+                    continue  # Skip messages without files
 
-        if group_hash in self.message_hashes:
-            self.logger.info(f"Message group starting with ID {representative_msg_id} (group hash: {group_hash[:8]}...) found in memory cache as duplicate.")
-            return True
+                # Define a temporary path for the downloaded file
+                file_path = os.path.join(tmpdir, str(message.file.id))
 
-        if self.db:
-            try:
-                result = self.db.conn.execute(
-                    "SELECT 1 FROM forwarded_messages WHERE hash = ?",
-                    (group_hash,)
-                ).fetchone()
+                try:
+                    self.logger.debug(f"Downloading file from Msg ID {message.id} for hash computation.")
+                    await client.download_media(message.media, file=file_path)
+                except Exception as e:
+                    self.logger.error(f"Failed to download file for hashing (Msg ID: {message.id}): {e}", exc_info=True)
+                    # If download fails, we cannot determine if it's a duplicate.
+                    # For safety, treat as not a duplicate and continue checking other files.
+                    continue
 
-                if result:
-                    self.message_hashes.add(group_hash)
-                    self.logger.info(f"Message group starting with ID {representative_msg_id} (group hash: {group_hash[:8]}...) found in DB as duplicate.")
+                if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
+                    self.logger.warning(f"File for hashing (Msg ID: {message.id}) was not downloaded correctly or is empty. Skipping duplicate check for this file.")
+                    continue
+
+                # Compute the content hash
+                sha256_hash = get_sha256_hash(file_path)
+                self.logger.debug(f"Computed SHA256 hash for file in Msg ID {message.id}: {sha256_hash[:10]}...")
+
+                # 1. Check in-memory cache of hashes for this session
+                if sha256_hash in self.message_hashes:
+                    self.logger.info(f"Duplicate file found (Msg ID {message.id}, SHA256: {sha256_hash[:10]}...) via in-memory cache.")
                     return True
-            except Exception as e:
-                self.logger.error(f"Error checking duplicate group in DB for hash {group_hash[:8]}...: {e}", exc_info=True)
+
+                # 2. Check database for the hash
+                if self.db:
+                    try:
+                        result = self.db.conn.execute(
+                            "SELECT 1 FROM file_hashes WHERE sha256_hash = ?",
+                            (sha256_hash,)
+                        ).fetchone()
+
+                        if result:
+                            self.logger.info(f"Duplicate file found (Msg ID {message.id}, SHA256: {sha256_hash[:10]}...) via database.")
+                            self.message_hashes.add(sha256_hash)  # Add to cache to speed up future checks
+                            return True
+                    except sqlite3.OperationalError as e:
+                        # This can happen if the table doesn't exist on the first run.
+                        self.logger.warning(f"Could not check for duplicates in 'file_hashes' table, it might not exist yet. Error: {e}")
+                    except Exception as e:
+                        self.logger.error(f"Error checking for duplicate file in DB (hash {sha256_hash[:10]}...): {e}", exc_info=True)
+
         return False
 
-    async def _record_forwarded(self, message_group: List[TLMessage], origin_id: str, dest_id: str):
-        """Record that a message group was forwarded by storing its combined hash."""
+    async def _record_forwarded(self, message_group: List[TLMessage], origin_id: int, dest_id: str, client: TelegramClient):
+        """
+        Record that files in a message group were forwarded by storing their content hashes.
+        """
         if not self.enable_deduplication or not self.db or not message_group:
             return
 
-        group_hash = self._compute_group_hash(message_group)
-        self.message_hashes.add(group_hash)
+        # Using a single temp directory for all downloads in the group
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for message in message_group:
+                if not message.file:
+                    continue
 
-        representative_message = message_group[0]
-        content_preview = f"Group of {len(message_group)} file(s)."
-        if len(message_group) == 1:
-            if representative_message.text:
-                content_preview = (representative_message.text[:100] + '...') if len(representative_message.text) > 100 else representative_message.text
-            elif representative_message.file and representative_message.file.name:
-                content_preview = f"File: {getattr(representative_message.file, 'name', 'N/A')}"
-        else:
-            if representative_message.file and representative_message.file.name:
-                 content_preview += f" Starts with: {getattr(representative_message.file, 'name', 'N/A')}"
+                # To avoid re-downloading, this process could be optimized by passing hashes
+                # from the duplicate check phase. However, for robustness and simplicity,
+                # we re-acquire the hash here.
+                file_path = os.path.join(tmpdir, str(message.file.id))
+                try:
+                    await client.download_media(message.media, file=file_path)
+                except Exception as e:
+                    self.logger.error(f"Failed to download file for recording hash (Msg ID: {message.id}): {e}", exc_info=True)
+                    continue
 
-        try:
-            self.db.conn.execute("""
-                INSERT OR IGNORE INTO forwarded_messages
-                (hash, origin_id, destination_id, message_id, forwarded_at, content_preview)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (
-                group_hash,
-                str(origin_id),
-                str(dest_id),
-                representative_message.id,
-                datetime.now(timezone.utc).isoformat(),
-                content_preview
-            ))
-            self.db.conn.commit()
-            self.logger.info(f"Recorded forwarded message group (representative ID {representative_message.id}, group hash {group_hash[:8]}...) to DB.")
-        except Exception as e:
-            self.logger.error(f"Failed to record forwarded message group (group hash {group_hash[:8]}...) to DB: {e}", exc_info=True)
+                if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
+                    self.logger.warning(f"File for recording hash (Msg ID: {message.id}) not downloaded correctly or empty. Skipping.")
+                    continue
+
+                sha256_hash = get_sha256_hash(file_path)
+
+                # Add hash to in-memory cache to prevent re-processing in the same session
+                self.message_hashes.add(sha256_hash)
+
+                try:
+                    # Record the hash in the file_hashes table
+                    # Note: This assumes the media item is already in the 'media' table.
+                    # A more robust implementation might upsert the media item here.
+                    self.db.add_file_hash(
+                        file_id=message.file.id,
+                        sha256_hash=sha256_hash,
+                        perceptual_hash=None,  # Placeholder for future implementation
+                        fuzzy_hash=None       # Placeholder for future implementation
+                    )
+
+                    # Record the file's appearance in the source channel
+                    self.db.add_channel_file_inventory(
+                        channel_id=origin_id,
+                        file_id=message.file.id,
+                        message_id=message.id,
+                        topic_id=getattr(message, 'reply_to_top_id', None) # General topic ID if available
+                    )
+                    self.logger.info(f"Recorded forwarded file (Msg ID {message.id}, SHA256: {sha256_hash[:10]}...) to database.")
+                except Exception as e:
+                    self.logger.error(f"Failed to record forwarded file hash for Msg ID {message.id} to DB: {e}", exc_info=True)
 
     async def _get_client(self, account_identifier: Optional[str] = None) -> TelegramClient:
         selected_account = None
@@ -554,8 +545,8 @@ class AttachmentForwarder:
                 message = representative_message
                 self.logger.debug(f"Processing Group {group_idx + 1}/{len(message_groups)}, Representative Msg ID: {message.id} from {origin_id}. Items in group: {len(message_group)}")
 
-                if await self._is_duplicate(message_group):
-                    self.logger.info(f"Message group starting with ID: {representative_message.id} (from {origin_id}) is a duplicate. Skipping forwarding.")
+                if await self._is_duplicate(message_group, client):
+                    self.logger.info(f"Message group starting with ID: {representative_message.id} (from {origin_id}) contains a duplicate file. Skipping forwarding of the entire group.")
                     continue
                 self.logger.info(f"Group (representative Msg ID: {message.id}) has media. Attempting to forward to {destination_id}.")
                 successfully_forwarded_main = False
@@ -628,7 +619,7 @@ class AttachmentForwarder:
                     self.logger.exception(f"Unexpected error forwarding Message Group (representative Msg ID: {message.id}) to main destination: {e_fwd}")
                     continue
                 if successfully_forwarded_main:
-                    await self._record_forwarded(message_group, str(origin_entity.id), str(destination_entity.id))
+                    await self._record_forwarded(message_group, origin_entity.id, str(destination_entity.id), client)
                     if self.secondary_unique_destination:
                         self.logger.info(f"Attempting to forward unique Message Group (representative Msg ID: {message.id}) to secondary destination: {self.secondary_unique_destination}")
                         try:

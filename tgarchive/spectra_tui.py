@@ -32,6 +32,7 @@ from .db import SpectraDB
 from .channel_utils import populate_account_channel_access
 from .forwarding import AttachmentForwarder
 from .forms import VPSConfigForm # Import the new form
+from .user_operations import get_server_users
 
 # ── Global Config ──────────────────────────────────────────────────────────
 TZ = timezone.utc
@@ -980,6 +981,73 @@ class SelectiveForwardForm(npyscreen.Form):
         self.parentApp.switchForm("FORWARDING")
 
 
+# ── Download Users Form ────────────────────────────────────────────────────
+class DownloadUsersForm(npyscreen.Form):
+    """Form for downloading users from a server"""
+
+    def create(self):
+        self.name = "SPECTRA User Downloader"
+        self.manager = self.parentApp.manager
+        self.config = self.manager.config
+
+        self.add(npyscreen.FixedText, value=TITLE)
+        self.add(npyscreen.FixedText, value="Download All Users from a Server")
+        self.add(npyscreen.FixedText, value="")
+
+        self.server_id = self.add(npyscreen.TitleText, name="Server ID:")
+        self.output_file = self.add(npyscreen.TitleText, name="Output File:", value="users.csv")
+
+        self.add(npyscreen.ButtonPress, name="Start Download", when_pressed_function=self.start_download)
+        self.status = self.add(StatusMessages, name="Status Messages", max_height=8)
+        self.add(npyscreen.ButtonPress, name="Back to Main Menu", when_pressed_function=self.back_to_main)
+
+        self.status.add_message("User Downloader ready. Enter a server ID to begin.")
+
+    def start_download(self):
+        """Start the user download process"""
+        server_id = self.server_id.value.strip()
+        output_file = self.output_file.value.strip()
+
+        if not server_id:
+            self.status.add_message("Please enter a server ID", "ERROR")
+            return
+
+        if not output_file:
+            self.status.add_message("Please enter an output file path", "ERROR")
+            return
+
+        if npyscreen.notify_yes_no(
+            f"Start downloading users from server {server_id} to {output_file}?",
+            title="Confirm Download"
+        ):
+            self.status.add_message(f"Starting user download from server {server_id}...")
+
+            def download_callback(_):
+                self.status.add_message(f"User download from server {server_id} complete.")
+
+            from telethon import TelegramClient
+            account = self.config.auto_select_account()
+            if not account:
+                self.status.add_message("No account available for this operation.", "ERROR")
+                return
+
+            client = TelegramClient(account['session_name'], account['api_id'], account['api_hash'])
+
+            async def downloader():
+                await client.connect()
+                await get_server_users(client, int(server_id), output_file)
+                await client.disconnect()
+
+            AsyncRunner.run_in_thread(
+                downloader(),
+                callback=download_callback
+            )
+
+    def back_to_main(self):
+        """Return to the main menu"""
+        self.parentApp.switchForm("MAIN")
+
+
 # ── Main Menu Form ─────────────────────────────────────────────────────────
 class MainMenuForm(npyscreen.Form):
     """Main menu form for the application"""
@@ -998,9 +1066,10 @@ class MainMenuForm(npyscreen.Form):
         self.add(npyscreen.ButtonPress, name="3. Network Analysis", when_pressed_function=self.graph_form)
         self.add(npyscreen.ButtonPress, name="4. Forwarding Utilities", when_pressed_function=self.forwarding_form) # New menu item
         self.add(npyscreen.ButtonPress, name="5. Account Management", when_pressed_function=self.account_form) # Adjusted number
-        self.add(npyscreen.ButtonPress, name="6. Settings (VPS Config)", when_pressed_function=self.vps_config_form) # Adjusted number and function
-        self.add(npyscreen.ButtonPress, name="7. Help & About", when_pressed_function=self.help_form) # Adjusted number
-        self.add(npyscreen.ButtonPress, name="8. Exit", when_pressed_function=self.exit_app) # Adjusted number
+        self.add(npyscreen.ButtonPress, name="6. Settings (VPS Config)", when_pressed_function=self.vps_config_form)
+        self.add(npyscreen.ButtonPress, name="7. Download Users", when_pressed_function=self.download_users_form)
+        self.add(npyscreen.ButtonPress, name="8. Help & About", when_pressed_function=self.help_form)
+        self.add(npyscreen.ButtonPress, name="9. Exit", when_pressed_function=self.exit_app)
         
         # Status
         self.add(npyscreen.FixedText, value="")
@@ -1045,6 +1114,10 @@ class MainMenuForm(npyscreen.Form):
     def vps_config_form(self):
         """Switch to VPS Configuration form"""
         self.parentApp.switchForm("VPS_CONFIG")
+
+    def download_users_form(self):
+        """Switch to download users form"""
+        self.parentApp.switchForm("DOWNLOAD_USERS")
     
     def help_form(self):
         """Show help and about information"""
@@ -1102,6 +1175,7 @@ class SpectraApp(npyscreen.NPSAppManaged):
         self.addForm("DISCOVERY", DiscoveryForm, name="SPECTRA Group Discovery")
         self.addForm("GRAPH", GraphExplorerForm, name="SPECTRA Network Explorer")
         self.addForm("VPS_CONFIG", VPSConfigForm, name="VPS Configuration") # Add new form
+        self.addForm("DOWNLOAD_USERS", DownloadUsersForm, name="SPECTRA User Downloader")
     
     def setup_manager(self):
         """Initialize the integrated manager"""

@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -29,6 +30,7 @@ from .channel_utils import populate_account_channel_access
 from .forwarding import AttachmentForwarder # Added for handle_forward
 from .scheduler_service import SchedulerDaemon
 from .mass_migration import MassMigrationManager
+from .user_operations import get_server_users
 
 try:
     from .forwarding_processor import CloudProcessor
@@ -237,6 +239,11 @@ def setup_parser() -> argparse.ArgumentParser:
     # Rollback command
     rollback_parser = subparsers.add_parser("rollback", help="Roll back a migration")
     rollback_parser.add_argument("--migration-id", required=True, type=int, help="ID of the migration to roll back")
+
+    # Download users command
+    download_users_parser = subparsers.add_parser("download-users", help="Download user list from a server")
+    download_users_parser.add_argument("--server-id", required=True, type=int, help="ID of the server to download users from")
+    download_users_parser.add_argument("--output-file", required=True, help="Path to the output file")
 
     return parser
 
@@ -1153,6 +1160,8 @@ async def async_main(args: argparse.Namespace) -> int:
         return await handle_rollback(args)
     elif args.command == "migrate-report":
         return await handle_migrate_report(args)
+    elif args.command == "download-users":
+        return await handle_download_users(args)
 
     else:
         # No command or unrecognized command
@@ -1176,6 +1185,14 @@ async def async_main(args: argparse.Namespace) -> int:
 
 def main() -> int:
     """Command-line entry point"""
+    # Headless server detection
+    if not os.environ.get("DISPLAY"):
+        logger.info("No display environment detected (headless server).")
+        logger.info("For long-running tasks, it is recommended to use a terminal multiplexer like 'screen' or 'tmux'.")
+        logger.info("Example using screen: screen -S spectra_session")
+        logger.info("To detach: Ctrl+A then D")
+        logger.info("To reattach: screen -r spectra_session")
+
     parser = setup_parser()
     args = parser.parse_args()
     
@@ -1304,6 +1321,30 @@ async def handle_migrate_report(args: argparse.Namespace) -> int:
     print(f"  Started At: {created_at}")
     print(f"  Last Updated At: {updated_at}")
     return 0
+
+async def handle_download_users(args: argparse.Namespace) -> int:
+    """Handle download-users command"""
+    cfg = Config(Path(args.config))
+    if args.import_accounts:
+        cfg = enhance_config_with_gen_accounts(cfg)
+
+    from telethon import TelegramClient
+    account = cfg.auto_select_account()
+    if not account:
+        logger.error("No account available for this operation.")
+        return 1
+
+    client = TelegramClient(account['session_name'], account['api_id'], account['api_hash'])
+    await client.connect()
+
+    try:
+        await get_server_users(client, args.server_id, args.output_file)
+        return 0
+    except Exception as e:
+        logger.error(f"Failed to download users: {e}")
+        return 1
+    finally:
+        await client.disconnect()
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -290,7 +290,7 @@ class AttachmentForwarder:
         session_name = selected_account.get("session_name")
         api_id = selected_account.get("api_id")
         api_hash = selected_account.get("api_hash")
-        
+
         if not all([session_name, api_id, api_hash]):
             raise ValueError(f"Account {session_name or 'Unknown'} is missing critical configuration (session_name, api_id, or api_hash).")
 
@@ -325,10 +325,10 @@ class AttachmentForwarder:
                 self.logger.warning(f"Proxy configuration is incomplete (missing {e}). Proceeding without proxy.")
             except ImportError:
                 self.logger.warning("PySocks library not found. Proceeding without proxy.")
-        
+
         client_path = str(Config().path.parent / session_name)
         self._client = TelegramClient(client_path, api_id, api_hash, proxy=proxy)
-        
+
         self.logger.info(f"Connecting to Telegram with account: {session_name}")
         try:
             await self._client.connect()
@@ -336,12 +336,12 @@ class AttachmentForwarder:
             self.logger.error(f"Failed to connect to Telegram for account {session_name}: {e}")
             self._client = None
             raise
-            
+
         if not await self._client.is_user_authorized():
             await self._client.disconnect()
             self._client = None
             raise ValueError(f"Account {session_name} is not authorized. Please check credentials or run authorization process.")
-        
+
         self.logger.info(f"Successfully connected and authorized as {session_name}.")
         return self._client
 
@@ -481,11 +481,11 @@ class AttachmentForwarder:
 
     def _group_by_filename(self, messages: List[TLMessage]) -> List[List[TLMessage]]:
         if not messages: return []
-        candidate_keyed_groups: dict[Tuple[int, str, str], list[TLMessage]] = {}
+        candidate_keyed_groups: dict[Tuple[str, str], list[TLMessage]] = {}
         lone_messages: list[TLMessage] = []
         for msg in messages:
             filename = getattr(msg.file, 'name', None)
-            if not msg.sender_id or not filename :
+            if not filename :
                 lone_messages.append(msg)
                 continue
             parsed_info = self._parse_filename_for_grouping(filename)
@@ -493,7 +493,7 @@ class AttachmentForwarder:
                 lone_messages.append(msg)
                 continue
             base_name, _, _, extension = parsed_info
-            key = (msg.sender_id, base_name.lower(), extension.lower())
+            key = (base_name.lower(), extension.lower())
             if key not in candidate_keyed_groups:
                 candidate_keyed_groups[key] = []
             candidate_keyed_groups[key].append(msg)
@@ -563,7 +563,7 @@ class AttachmentForwarder:
                     continue
                 self.logger.info(f"Group (representative Msg ID: {message.id}) has media. Attempting to forward to {destination_id}.")
                 successfully_forwarded_main = False
-                main_reply_to_arg = self.destination_topic_id 
+                main_reply_to_arg = self.destination_topic_id
                 try:
                     for msg_in_group_idx, current_message_in_group in enumerate(message_group):
                         self.logger.info(f"Forwarding item {msg_in_group_idx + 1}/{len(message_group)} (Msg ID: {current_message_in_group.id}) of current group.")
@@ -624,10 +624,10 @@ class AttachmentForwarder:
                     continue
                 except (ChannelPrivateError, ChatAdminRequiredError, UserBannedInChannelError) as e_perm:
                     self.logger.error(f"Permission error forwarding Message Group (representative Msg ID: {message.id}) to main destination: {e_perm}")
-                    continue 
+                    continue
                 except RPCError as rpc_error:
                     self.logger.error(f"RPCError forwarding Message Group (representative Msg ID: {message.id}) to main destination: {rpc_error}")
-                    continue 
+                    continue
                 except Exception as e_fwd:
                     self.logger.exception(f"Unexpected error forwarding Message Group (representative Msg ID: {message.id}) to main destination: {e_fwd}")
                     continue

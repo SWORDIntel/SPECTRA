@@ -76,7 +76,10 @@
     "enabled": false,
     "timezone": "UTC",
     "state_file": "scheduler_state.json",
-    "bandwidth_limit_kbps": 0
+    "bandwidth_limit_kbps": 0,
+    "schedule_check_interval_seconds": 60,
+    "max_concurrent_forwards": 4,
+    "error_retry_attempts": 3
   },
   "notifications": {
     "enabled": false,
@@ -99,6 +102,8 @@
     "group_privacy": {
       "is_public": false
     },
+    "sorting_enabled": true,
+    "group_creation_enabled": true,
     "default_sorting_groups": {
       "text_files": "SPECTRA-Text-Files",
       "pdf_files": "SPECTRA-PDF-Files",
@@ -116,5 +121,11 @@
     "preserve_message_id": true,
     "style": "text",
     "disable_attribution_for_groups": []
+  },
+  "forwarding_mode": {
+    "enabled": false
+  },
+  "migration_mode": {
+    "use_parallel": false
   }
 }

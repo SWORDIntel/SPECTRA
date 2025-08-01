@@ -1,8 +1,10 @@
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, AsyncMock
 from datetime import datetime, timezone, timedelta # Added timezone
 from pathlib import Path # Import Path
 
+import asyncio
+from tgarchive.forwarding.forwarder import AttachmentForwarder
 from tgarchive.forwarding.grouping import MessageGrouper
 from tgarchive.config_models import Config
 
@@ -232,6 +234,51 @@ class TestAttachmentForwarderGrouping(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestAttachmentForwarderAttribution(unittest.TestCase):
+
+    def setUp(self):
+        mock_path = MagicMock(spec=Path)
+        mock_path.exists.return_value = False
+        self.config = Config(path=mock_path)
+        self.db = MagicMock()
+
+    def test_forward_with_attribution_disabled(self):
+        asyncio.run(self._test_forward_with_attribution_disabled())
+
+    async def _test_forward_with_attribution_disabled(self):
+        self.config.data["forwarding"]["forward_with_attribution"] = False
+        forwarder = AttachmentForwarder(config=self.config, db=self.db)
+
+        client = MagicMock()
+        client.get_entity = AsyncMock()
+        client.iter_messages = MagicMock()
+        client.send_message = AsyncMock()
+        client.forward_messages = AsyncMock()
+
+        # Mock the client manager to return our mock client
+        forwarder.client_manager.get_client = AsyncMock(return_value=client)
+
+        # Mock get_sender
+        sender = MockSender(id=123)
+        message = MockMessage(id=1, date=datetime.now(timezone.utc), sender_id=123, filename="test.txt", text="test message")
+
+        async def get_sender_async():
+            return sender
+
+        message.get_sender = get_sender_async
+
+        # Make iter_messages return our single message
+        async def message_generator():
+            yield message
+        client.iter_messages.return_value = message_generator()
+
+        await forwarder.forward_messages(origin_id="origin", destination_id="dest")
+
+        # Since forward_with_attribution is false, it should use forward_messages
+        client.send_message.assert_not_called()
+        client.forward_messages.assert_called_once()
 
 # Need to import re in forwarding.py
 # Need to import List, Tuple, timedelta in forwarding.py

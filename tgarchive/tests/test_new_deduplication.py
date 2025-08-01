@@ -4,7 +4,7 @@ import os
 import tempfile
 from unittest.mock import MagicMock, AsyncMock
 
-from tgarchive.forwarding import AttachmentForwarder
+from tgarchive.forwarding.deduplication import Deduplicator
 from tgarchive.config_models import Config
 from tgarchive.tests.test_forwarding_grouping import MockMessage
 
@@ -26,8 +26,8 @@ class TestNewDeduplication(unittest.TestCase):
         # Mock DB
         self.db = MagicMock()
 
-        # Forwarder instance
-        self.forwarder = AttachmentForwarder(config=self.config, db=self.db)
+        # Deduplicator instance
+        self.deduplicator = Deduplicator(db=self.db, enable_deduplication=True)
 
         # Mock Client
         self.client = AsyncMock()
@@ -73,13 +73,13 @@ class TestNewDeduplication(unittest.TestCase):
 
             # Setup DB mock to return no results for the hash
             self.db.conn.execute.return_value.fetchone.return_value = None
-            self.forwarder.message_hashes = set() # Reset in-memory cache
+            self.deduplicator.message_hashes = set() # Reset in-memory cache
 
-            is_dup = await self.forwarder._is_duplicate(message_group, self.client)
+            is_dup = await self.deduplicator.is_duplicate(message_group, self.client)
             self.assertFalse(is_dup, "File should not be a duplicate on the first check.")
 
             # --- 2. Record the forwarded file ---
-            await self.forwarder._record_forwarded(message_group, origin_id, dest_id, self.client)
+            await self.deduplicator.record_forwarded(message_group, origin_id, dest_id, self.client)
 
             # Verify that the hash was added to the database
             self.db.add_file_hash.assert_called_once_with(
@@ -99,19 +99,19 @@ class TestNewDeduplication(unittest.TestCase):
             # --- 3. Second Pass: Should NOW be a duplicate ---
 
             # The hash should now be in the in-memory set
-            self.assertIn(expected_hash, self.forwarder.message_hashes)
+            self.assertIn(expected_hash, self.deduplicator.message_hashes)
 
-            is_dup_after_record = await self.forwarder._is_duplicate(message_group, self.client)
+            is_dup_after_record = await self.deduplicator.is_duplicate(message_group, self.client)
             self.assertTrue(is_dup_after_record, "File should be a duplicate after being recorded.")
 
             # --- 4. Test DB-based duplication ---
 
             # Reset in-memory cache to simulate a new session
-            self.forwarder.message_hashes = set()
+            self.deduplicator.message_hashes = set()
             # Setup DB mock to return the hash
             self.db.conn.execute.return_value.fetchone.return_value = (1,) # Simulate finding a row
 
-            is_dup_from_db = await self.forwarder._is_duplicate(message_group, self.client)
+            is_dup_from_db = await self.deduplicator.is_duplicate(message_group, self.client)
             self.assertTrue(is_dup_from_db, "File should be a duplicate based on the database check.")
 
 

@@ -3,8 +3,7 @@ from unittest.mock import MagicMock
 from datetime import datetime, timezone, timedelta # Added timezone
 from pathlib import Path # Import Path
 
-from tgarchive.forwarding import AttachmentForwarder
-# Config is now imported from config_models for the test setup
+from tgarchive.forwarding.grouping import MessageGrouper
 from tgarchive.config_models import Config
 
 # Mock TLMessage and related objects for testing grouping logic
@@ -73,11 +72,11 @@ class TestAttachmentForwarderGrouping(unittest.TestCase):
         self.config.data = self.config.data.copy() # Start from default loaded by Config
         self.config.data.update(mock_config_data) # Override with specific test needs
 
-        # Default forwarder for testing parsing, can be re-init for specific strategies
-        self.forwarder = AttachmentForwarder(config=self.config, db=MagicMock())
+        # Default grouper for testing parsing
+        self.grouper = MessageGrouper()
 
     def test_parse_filename_for_grouping(self):
-        parse = self.forwarder._parse_filename_for_grouping
+        parse = self.grouper._parse_filename_for_grouping
 
         # Test cases: (filename, expected_output (base, part_str, part_num, ext))
         # expected_output is None if parsing should fail to find parts in a structured way,
@@ -133,9 +132,7 @@ class TestAttachmentForwarderGrouping(unittest.TestCase):
         self.assertEqual(parse("archive.v1.0.part1.rar"), ("archive.v1.0", ".part1", 1, ".rar"))
 
     def test_group_by_time(self):
-        forwarder_time_grouping = AttachmentForwarder(
-            config=self.config,
-            db=MagicMock(),
+        grouper_time_grouping = MessageGrouper(
             grouping_strategy="time",
             grouping_time_window_seconds=60
         )
@@ -161,7 +158,7 @@ class TestAttachmentForwarderGrouping(unittest.TestCase):
             MockMessage(id=9, date=now + timedelta(seconds=330), sender_id=3, filename="file9.txt"),
         ]
 
-        grouped = forwarder_time_grouping._group_by_time(messages)
+        grouped = grouper_time_grouping._group_by_time(messages)
 
         self.assertEqual(len(grouped), 5)
         self.assertEqual([m.id for m in grouped[0]], [1, 2, 3]) # User 1, Group 1
@@ -171,9 +168,7 @@ class TestAttachmentForwarderGrouping(unittest.TestCase):
         self.assertEqual([m.id for m in grouped[4]], [8, 9])    # User 3, Group 1 + 2 combined
 
     def test_group_by_filename(self):
-        forwarder_filename_grouping = AttachmentForwarder(
-            config=self.config,
-            db=MagicMock(),
+        grouper_filename_grouping = MessageGrouper(
             grouping_strategy="filename"
         )
         now = datetime.now(tz=timezone.utc)
@@ -204,7 +199,7 @@ class TestAttachmentForwarderGrouping(unittest.TestCase):
         # Messages are passed as if already sorted by date (as forward_messages would do before calling _group_messages)
         # However, _group_by_filename internally re-sorts candidates by part number.
 
-        grouped = forwarder_filename_grouping._group_by_filename(messages)
+        grouped = grouper_filename_grouping._group_by_filename(messages)
 
         # Expected groups (order might vary due to dict iteration then final sort by first msg ID):
         # 1. archive.rar (user 1): [1, 2, 3] (sorted by part number)

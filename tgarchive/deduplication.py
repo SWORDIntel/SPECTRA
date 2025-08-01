@@ -10,7 +10,6 @@ import imagehash
 import ssdeep
 from PIL import Image
 from functools import lru_cache
-
 @lru_cache(maxsize=1024)
 def get_file_hashes(db, file_id):
     """

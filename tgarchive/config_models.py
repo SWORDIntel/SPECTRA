@@ -52,6 +52,11 @@ DEFAULT_CFG: Dict[str, Any] = {
         "enable_deduplication": True,
         "secondary_unique_destination": None,
     },
+    "deduplication": {
+        "enable_near_duplicates": False,
+        "fuzzy_hash_similarity_threshold": 90,
+        "perceptual_hash_distance_threshold": 5,
+    },
     "cloud": {
         "auto_invite_accounts": True,
         "invitation_delays": {

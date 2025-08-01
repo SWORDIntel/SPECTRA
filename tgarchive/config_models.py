@@ -51,6 +51,7 @@ DEFAULT_CFG: Dict[str, Any] = {
     "forwarding": {
         "enable_deduplication": True,
         "secondary_unique_destination": None,
+        "forward_with_attribution": True,
     },
     "cloud": {
         "auto_invite_accounts": True,
@@ -256,6 +257,10 @@ class Config:
     @property
     def proxy_conf(self) -> Dict[str, Any]: # Added type hint
         return self.data.get("proxy", {}) # Ensure it returns a dict
+
+    @property
+    def forward_with_attribution(self) -> bool:
+        return self.data.get("forwarding", {}).get("forward_with_attribution", True)
 
     @property
     def vps_conf(self) -> Dict[str, Any]: # Added type hint

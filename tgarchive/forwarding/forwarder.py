@@ -36,7 +36,6 @@ class AttachmentForwarder:
         config: Config,
         db: Optional[SpectraDB] = None,
         forward_to_all_saved_messages: bool = False,
-        prepend_origin_info: bool = False,
         destination_topic_id: Optional[int] = None,
         secondary_unique_destination: Optional[str] = None,
         enable_deduplication: bool = True,
@@ -52,7 +51,7 @@ class AttachmentForwarder:
         self.attribution_formatter = AttributionFormatter(self.config.data)
 
         self.forward_to_all_saved_messages = forward_to_all_saved_messages
-        self.prepend_origin_info = prepend_origin_info
+        self.forward_with_attribution = self.config.forward_with_attribution
         self.destination_topic_id = destination_topic_id
         self.secondary_unique_destination = secondary_unique_destination
 
@@ -110,7 +109,7 @@ class AttachmentForwarder:
                 try:
                     for msg_in_group_idx, current_message_in_group in enumerate(message_group):
                         self.logger.info(f"Forwarding item {msg_in_group_idx + 1}/{len(message_group)} (Msg ID: {current_message_in_group.id}) of current group.")
-                        if self.prepend_origin_info and not self.destination_topic_id:
+                        if self.forward_with_attribution and not self.destination_topic_id:
                             if destination_entity.id in self.config.get("attribution", {}).get("disable_attribution_for_groups", []):
                                 attribution = ""
                             else:

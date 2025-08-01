@@ -51,6 +51,7 @@ DEFAULT_CFG: Dict[str, Any] = {
     "forwarding": {
         "enable_deduplication": True,
         "secondary_unique_destination": None,
+        "always_prepend_origin_info": False,
     },
     "deduplication": {
         "enable_near_duplicates": False,

@@ -605,6 +605,7 @@ class ForwardingMenuForm(npyscreen.Form):
         self.add(npyscreen.ButtonPress, name="Update Channel Access Database", when_pressed_function=self.update_channel_access_db)
         self.add(npyscreen.ButtonPress, name="Selective Attachment Forwarding", when_pressed_function=self.selective_forwarding_form)
         self.add(npyscreen.ButtonPress, name="Total Forward Mode", when_pressed_function=self.total_forwarding_form)
+        self.add(npyscreen.ButtonPress, name="Re-post Messages in Channel", when_pressed_function=self.repost_form)
 
         self.add(npyscreen.FixedText, value="", editable=False) # Spacer
 
@@ -700,6 +701,98 @@ class ForwardingMenuForm(npyscreen.Form):
     def total_forwarding_form(self):
         """Switches to the Total Forward Mode form."""
         self.parentApp.switchForm("TOTAL_FORWARD")
+
+    def repost_form(self):
+        """Switches to the Re-post form."""
+        self.parentApp.switchForm("REPOST")
+
+
+# ── Re-post Form ──────────────────────────────────────────────────
+class RepostForm(npyscreen.Form):
+    """Form for re-posting messages in a channel."""
+    def create(self):
+        self.name = "Re-post Messages in Channel"
+        self.current_forwarder = None
+
+        self.add(npyscreen.FixedText, value="Re-post Messages in Channel", editable=False)
+        self.add(npyscreen.FixedText, value="-" * 40, editable=False)
+        self.add(npyscreen.FixedText, value="This will re-post all messages in a channel and delete the originals.", editable=False)
+        self.add(npyscreen.FixedText, value="This is a destructive operation. Use with caution.", editable=False)
+        self.add(npyscreen.FixedText, value="", editable=False)
+
+        self.channel_id_widget = self.add(npyscreen.TitleText, name="Channel ID/Username:")
+        self.account_id_widget = self.add(npyscreen.TitleText, name="Account (Optional):",
+                                          footer="Leave blank for default/any.")
+
+        self.add(npyscreen.FixedText, value="", editable=False)
+
+        self.add(npyscreen.ButtonPress, name="Start Re-posting", when_pressed_function=self.start_reposting)
+
+        self.status_widget = self.add(StatusMessages, name="Re-posting Status", max_height=6, rely=-10)
+
+        self.add(npyscreen.ButtonPress, name="Back to Forwarding Menu", when_pressed_function=self.back_to_forwarding_menu)
+
+    def _reposting_finished_callback(self, forwarder_instance, result=None):
+        """Callback for when the re-posting process completes."""
+        self.status_widget.add_message("Re-posting process finished.", "INFO")
+        if forwarder_instance:
+            self.status_widget.add_message("Closing client session...", "INFO")
+            try:
+                AsyncRunner.run_async(forwarder_instance.close())
+                self.status_widget.add_message("Client session closed.", "INFO")
+            except Exception as e:
+                self.status_widget.add_message(f"Error closing session: {e}", "ERROR")
+        self.current_forwarder = None
+
+    def start_reposting(self):
+        """Initiates the re-posting process."""
+        if self.current_forwarder:
+            self.status_widget.add_message("A task is already in progress. Please wait.", "WARNING")
+            return
+
+        channel_id = self.channel_id_widget.value
+        account_identifier = self.account_id_widget.value or None
+
+        if not channel_id:
+            self.status_widget.add_message("Channel ID/Username is required.", "ERROR")
+            return
+
+        if not npyscreen.notify_yes_no(
+            f"Are you sure you want to re-post all messages in {channel_id} and delete the originals?\n\nTHIS CANNOT BE UNDONE.",
+            title="Confirm Destructive Operation"
+        ):
+            self.status_widget.add_message("Re-posting cancelled.", "INFO")
+            return
+
+        try:
+            config = self.parentApp.manager.config
+
+            self.current_forwarder = AttachmentForwarder(config=config, db=None)
+
+            self.status_widget.add_message(f"Starting re-posting in channel: {channel_id}...", "INFO")
+
+            AsyncRunner.run_in_thread(
+                self.current_forwarder.repost_messages_in_channel(
+                    channel_id=channel_id,
+                    account_identifier=account_identifier
+                ),
+                callback=lambda res: self._reposting_finished_callback(self.current_forwarder, res)
+            )
+        except Exception as e:
+            self.status_widget.add_message(f"Failed to start re-posting: {e}", "ERROR")
+            if self.current_forwarder:
+                try: AsyncRunner.run_async(self.current_forwarder.close())
+                except: pass
+            self.current_forwarder = None
+
+    def back_to_forwarding_menu(self):
+        """Returns to the Forwarding Menu."""
+        if self.current_forwarder:
+            npyscreen.notify_confirm(
+                "A re-posting task is in progress. Are you sure you want to go back?",
+                title="Task in Progress"
+            )
+        self.parentApp.switchForm("FORWARDING")
 
 
 # ── Set Forward Destination Form ───────────────────────────────────────────
@@ -1172,6 +1265,7 @@ class SpectraApp(npyscreen.NPSAppManaged):
         self.addForm("SET_FORWARD_DEST", SetForwardDestForm, name="Set Default Forwarding Destination")
         self.addForm("SELECTIVE_FORWARD", SelectiveForwardForm, name="Selective Message Forwarding")
         self.addForm("TOTAL_FORWARD", TotalForwardForm, name="Total Forward Mode") # New form
+        self.addForm("REPOST", RepostForm, name="Re-post Messages")
         self.addForm("DISCOVERY", DiscoveryForm, name="SPECTRA Group Discovery")
         self.addForm("GRAPH", GraphExplorerForm, name="SPECTRA Network Explorer")
         self.addForm("VPS_CONFIG", VPSConfigForm, name="VPS Configuration") # Add new form

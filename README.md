@@ -18,7 +18,7 @@ SPECTRA is an advanced framework for Telegram data collection, network discovery
 - ⚡ **Parallel processing** leveraging multiple accounts and proxies simultaneously
 - 🖥️ **Modern TUI** (npyscreen) and CLI, both using the same modular backend
 - ☁️ **Forwarding Mode:** Traverse a series of channels, discover related channels, and download text/archive files with specific rules, using a single API key.
-- 🛡️ **Red team/OPSEC features**: account/proxy rotation, SQL audit trail, sidecar metadata, persistent state
+- 🛡️ **Red team/OPSEC features**: account/proxy rotation, SQL audit trail, sidecar metadata, persistent stateS
 
 ## Installation
 

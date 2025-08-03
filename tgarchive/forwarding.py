@@ -234,6 +234,9 @@ class AttachmentForwarder:
                             if similarity >= similarity_threshold:
                                 self.logger.info(f"Near-duplicate file found for Msg ID {message.id} (fuzzy hash similarity: {similarity}% >= {similarity_threshold}%, matches file_id: {file_id}).")
                                 return True
+                                if similarity >= similarity_threshold:
+                                    self.logger.info(f"Near-duplicate file found for Msg ID {message.id} (fuzzy hash similarity: {similarity}% >= {similarity_threshold}%, matches file_id: {file_id}).")
+                                    return True
 
         return False
 
@@ -866,3 +869,48 @@ class AttachmentForwarder:
                 self.logger.info(f"Continuing to the next channel after error with channel ID: {channel_id}.")
                 continue
         self.logger.info("'Total Forward Mode' completed.")
+
+    async def repost_messages_in_channel(self, channel_id: int | str, account_identifier: Optional[str] = None):
+        """
+        Re-posts messages in a channel to remove forwarding attribution.
+        """
+        client = None
+        try:
+            client = await self._get_client(account_identifier)
+            self.logger.info(f"Attempting to resolve channel: '{channel_id}'")
+            entity = await client.get_entity(channel_id)
+            self.logger.info(f"Channel '{channel_id}' resolved to: {entity.id if hasattr(entity, 'id') else 'Unknown ID'}")
+
+            if not entity:
+                raise ValueError("Could not resolve the Telegram entity.")
+
+            self.logger.info(f"Starting to re-post messages in channel {channel_id}.")
+            async for message in client.iter_messages(entity):
+                try:
+                    # Send a new message with the same content
+                    await client.send_message(
+                        entity=entity,
+                        message=message.text,
+                        file=message.media
+                    )
+                    # Delete the original message
+                    await client.delete_messages(entity, [message.id])
+                    self.logger.info(f"Successfully re-posted and deleted message ID: {message.id}")
+                except telethon_errors.MessageDeleteForbiddenError:
+                    self.logger.error(f"Could not delete message {message.id}. Bot is likely not an admin in the channel.")
+                    # If we can't delete, we should stop to avoid creating a mess.
+                    break
+                except Exception as e:
+                    self.logger.error(f"Error processing message {message.id}: {e}", exc_info=True)
+
+            self.logger.info(f"Finished re-posting messages in channel {channel_id}.")
+
+        except (ValueError, ChannelPrivateError, AuthKeyError, RPCError, ConnectionError) as e:
+            self.logger.error(f"A critical error occurred: {e}", exc_info=True)
+            raise
+        except Exception as e:
+            self.logger.exception(f"An unexpected error occurred during re-posting: {e}")
+            raise
+        finally:
+            if client:
+                await self.close()

@@ -736,6 +736,58 @@ class SpectraDB(AbstractContextManager):
         )
         self.conn.commit()
 
+    def add_channel_file_inventory(self, channel_id: int, file_id: int, message_id: int, topic_id: Optional[int]) -> None:
+        """
+        Records an entry in the channel_file_inventory table.
+        Uses INSERT OR IGNORE to avoid errors on duplicate entries.
+        """
+        self._exec_retry(
+            """
+            INSERT OR IGNORE INTO channel_file_inventory(channel_id, file_id, message_id, topic_id, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (channel_id, file_id, message_id, topic_id, datetime.now(timezone.utc).isoformat())
+        )
+        self.conn.commit()
+
+    def get_all_fuzzy_hashes(self, channel_id: Optional[int] = None) -> List[Tuple[int, str]]:
+        """
+        Retrieves all non-null fuzzy hashes from the database.
+        Optionally filters by channel_id.
+        """
+        if channel_id:
+            sql = """
+                SELECT f.file_id, f.fuzzy_hash
+                FROM file_hashes f
+                JOIN channel_file_inventory c ON f.file_id = c.file_id
+                WHERE f.fuzzy_hash IS NOT NULL AND c.channel_id = ?
+            """
+            params = (channel_id,)
+        else:
+            sql = "SELECT file_id, fuzzy_hash FROM file_hashes WHERE fuzzy_hash IS NOT NULL"
+            params = ()
+        self.cur.execute(sql, params)
+        return self.cur.fetchall()
+
+    def get_all_perceptual_hashes(self, channel_id: Optional[int] = None) -> List[Tuple[int, str]]:
+        """
+        Retrieves all non-null perceptual hashes from the database.
+        Optionally filters by channel_id.
+        """
+        if channel_id:
+            sql = """
+                SELECT f.file_id, f.perceptual_hash
+                FROM file_hashes f
+                JOIN channel_file_inventory c ON f.file_id = c.file_id
+                WHERE f.perceptual_hash IS NOT NULL AND c.channel_id = ?
+            """
+            params = (channel_id,)
+        else:
+            sql = "SELECT file_id, perceptual_hash FROM file_hashes WHERE perceptual_hash IS NOT NULL"
+            params = ()
+        self.cur.execute(sql, params)
+        return self.cur.fetchall()
+
 __all__ = [
     "SpectraDB",
     "User",

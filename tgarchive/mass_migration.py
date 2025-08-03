@@ -15,7 +15,11 @@ class MassMigrationManager:
         self.config = config
         self.db = db
         self.client = client
-        self.forwarder = AttachmentForwarder(config=config, db=db)
+        self.forwarder = AttachmentForwarder(
+            config=config,
+            db=db,
+            prepend_origin_info=config.data.get("forwarding", {}).get("always_prepend_origin_info", False)
+        )
 
     async def one_time_migration(self, source, destination, dry_run=False, parallel=False):
         """

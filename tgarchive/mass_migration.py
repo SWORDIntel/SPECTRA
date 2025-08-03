@@ -25,7 +25,9 @@ class MassMigrationManager:
         """
         Performs a one-time migration from a source to a destination.
         """
-        if parallel:
+        use_parallel = parallel or self.config.get("migration_mode", {}).get("use_parallel", False)
+
+        if use_parallel:
             # This is a placeholder for the parallel migration logic.
             print("Parallel migration is not yet implemented.")
             return

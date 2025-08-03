@@ -16,7 +16,11 @@ class SortingForwarder(AttachmentForwarder):
     A class for forwarding files with sorting.
     """
     def __init__(self, config, db, client, sorter, group_manager):
-        super().__init__(config, db)
+        super().__init__(
+            config=config,
+            db=db,
+            prepend_origin_info=config.data.get("forwarding", {}).get("always_prepend_origin_info", False)
+        )
         self.client = client
         self.sorter = sorter
         self.group_manager = group_manager

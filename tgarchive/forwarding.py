@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import logging
 import asyncio # Added for asyncio.sleep
+import sqlite3 # For handling specific DB errors
 from typing import Optional, Set, List, Tuple # Added List, Tuple
 import hashlib # Added for deduplication
 import re # For filename grouping
+import os
+import tempfile
 from datetime import datetime, timezone, timedelta # Added for deduplication timestamp, timedelta for time grouping
 
 # Third-party imports
@@ -20,6 +23,8 @@ from telethon.errors import RPCError, ChannelPrivateError, UserDeactivatedError,
 from tgarchive.db import SpectraDB
 from tgarchive.config_models import Config, DEFAULT_CFG # Import from new location
 from tgarchive.attribution import AttributionFormatter
+from tgarchive.deduplication import get_sha256_hash, get_perceptual_hash, get_fuzzy_hash, compare_fuzzy_hashes
+import imagehash
 
 logger = logging.getLogger("tgarchive.forwarding")
 
@@ -115,8 +120,8 @@ class AttachmentForwarder:
             if self.secondary_unique_destination:
                 self.logger.info(f"Unique messages will be forwarded to secondary destination: {self.secondary_unique_destination}")
             if self.db:
-                self._init_dedup_table()
-                self._load_existing_hashes() # Load hashes from DB into memory
+                # The deduplication tables are now part of the main schema in db.py
+                self._load_existing_hashes()
             else:
                 self.logger.warning("Deduplication is enabled, but no database is configured. Deduplication will be in-memory only for this session.")
         else:
@@ -124,149 +129,173 @@ class AttachmentForwarder:
 
         self.attribution_formatter = AttributionFormatter(self.config.data)
 
-    def _init_dedup_table(self):
-        """Create deduplication tracking table if it doesn't exist."""
-        if not self.db:
-            self.logger.error("Database not available, cannot initialize dedup table.")
-            return
-        try:
-            self.db.conn.execute("""
-                CREATE TABLE IF NOT EXISTS forwarded_messages (
-                    hash TEXT PRIMARY KEY,
-                    origin_id TEXT,
-                    destination_id TEXT,
-                    message_id INTEGER,
-                    forwarded_at TEXT,
-                    content_preview TEXT
-                )
-            """)
-            self.db.conn.commit()
-            self.logger.info("Deduplication table 'forwarded_messages' initialized successfully.")
-        except Exception as e:
-            self.logger.error(f"Failed to create/ensure dedup table 'forwarded_messages': {e}", exc_info=True)
-
     def _load_existing_hashes(self):
-        """Load existing message hashes from the database into the in-memory set."""
+        """Load existing SHA256 hashes from the file_hashes table."""
         if not self.db:
-            self.logger.warning("Database not available, cannot load existing hashes for deduplication.")
+            self.logger.warning("Database not available, cannot load hashes.")
             return
         try:
-            cursor = self.db.conn.execute("SELECT hash FROM forwarded_messages")
+            # Note: This loads all SHA256 hashes into memory. For very large databases,
+            # this might need to be optimized (e.g., bloom filter, selective loading).
+            cursor = self.db.conn.execute("SELECT sha256_hash FROM file_hashes WHERE sha256_hash IS NOT NULL")
             count = 0
             for row in cursor:
                 self.message_hashes.add(row[0])
                 count += 1
-            self.logger.info(f"Loaded {count} existing message hashes into memory for deduplication.")
+            self.logger.info(f"Loaded {count} existing file content hashes (SHA256) into memory.")
+        except sqlite3.OperationalError as e:
+            self.logger.warning(f"Could not load existing hashes from 'file_hashes' table. It might not exist if this is the first run. Error: {e}")
         except Exception as e:
-            self.logger.error(f"Failed to load existing message hashes from database: {e}", exc_info=True)
+            self.logger.error(f"Error loading existing file hashes: {e}", exc_info=True)
 
-    def _compute_message_hash(self, message: TLMessage) -> str:
-        """Compute a unique hash for message content (text and media)."""
-        content_parts = []
-
-        # Add message text
-        if message.text:
-            content_parts.append(message.text)
-
-        # Add media identifiers (if media exists)
-        if message.media:
-            # General media attributes
-            if hasattr(message.media, 'id'): # Common for Photo, Document
-                content_parts.append(f"media_id:{message.media.id}")
-            if hasattr(message.media, 'access_hash'): # Common for Photo, Document
-                content_parts.append(f"media_hash:{message.media.access_hash}")
-
-            # Specific file attributes if message.file exists (for documents, videos, photos etc.)
-            if message.file:
-                if hasattr(message.file, 'id') and message.file.id is not None: # Ensure ID is not None
-                    content_parts.append(f"file_id:{message.file.id}")
-                if hasattr(message.file, 'size') and message.file.size is not None:
-                    content_parts.append(f"file_size:{message.file.size}")
-
-            if isinstance(message.media, types.MessageMediaWebPage) and hasattr(message.media.webpage, 'url'):
-                 content_parts.append(f"webpage_url:{message.media.webpage.url}")
-
-        if not content_parts and message.media:
-            content_parts.append(f"media_type:{type(message.media).__name__}")
-
-        if not content_parts and not message.text:
-             content_parts.append(f"message_obj_id:{message.id}")
-
-        content_string = "|".join(sorted(str(p) for p in content_parts))
-        return hashlib.sha256(content_string.encode('utf-8')).hexdigest()
-
-    def _compute_group_hash(self, message_group: List[TLMessage]) -> str:
-        """Computes a hash for an entire group of messages."""
-        if not message_group:
-            return ""
-
-        individual_hashes = sorted([self._compute_message_hash(msg) for msg in message_group])
-        combined_hash_input = "|".join(individual_hashes)
-        return hashlib.sha256(combined_hash_input.encode('utf-8')).hexdigest()
-
-    async def _is_duplicate(self, message_group: List[TLMessage]) -> bool:
-        """Check if a message group has been forwarded before using its combined hash."""
+    async def _is_duplicate(self, message_group: List[TLMessage], client: TelegramClient) -> bool:
+        """
+        Check if any file in a message group is a duplicate based on its content hash.
+        This involves downloading each file to compute its hash.
+        """
         if not self.enable_deduplication or not message_group:
             return False
 
-        group_hash = self._compute_group_hash(message_group)
-        representative_msg_id = message_group[0].id
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for message in message_group:
+                if not message.file:
+                    continue  # Skip messages without files
 
-        if group_hash in self.message_hashes:
-            self.logger.info(f"Message group starting with ID {representative_msg_id} (group hash: {group_hash[:8]}...) found in memory cache as duplicate.")
-            return True
+                # Define a temporary path for the downloaded file
+                file_path = os.path.join(tmpdir, message.file.name or str(message.file.id))
 
-        if self.db:
-            try:
-                result = self.db.conn.execute(
-                    "SELECT 1 FROM forwarded_messages WHERE hash = ?",
-                    (group_hash,)
-                ).fetchone()
+                try:
+                    self.logger.debug(f"Downloading file from Msg ID {message.id} for hash computation.")
+                    await client.download_media(message.media, file=file_path)
+                except Exception as e:
+                    self.logger.error(f"Failed to download file for hashing (Msg ID: {message.id}): {e}", exc_info=True)
+                    # If download fails, we cannot determine if it's a duplicate.
+                    # For safety, treat as not a duplicate and continue checking other files.
+                    continue
 
-                if result:
-                    self.message_hashes.add(group_hash)
-                    self.logger.info(f"Message group starting with ID {representative_msg_id} (group hash: {group_hash[:8]}...) found in DB as duplicate.")
+                if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
+                    self.logger.warning(f"File for hashing (Msg ID: {message.id}) was not downloaded correctly or is empty. Skipping duplicate check for this file.")
+                    continue
+
+                # Compute the content hash
+                sha256_hash = get_sha256_hash(file_path)
+                self.logger.debug(f"Computed SHA256 hash for file in Msg ID {message.id}: {sha256_hash[:10]}...")
+
+                # 1. Check in-memory cache of hashes for this session
+                if sha256_hash in self.message_hashes:
+                    self.logger.info(f"Duplicate file found (Msg ID {message.id}, SHA256: {sha256_hash[:10]}...) via in-memory cache.")
                     return True
-            except Exception as e:
-                self.logger.error(f"Error checking duplicate group in DB for hash {group_hash[:8]}...: {e}", exc_info=True)
+
+                # 2. Check database for the hash
+                if self.db:
+                    try:
+                        result = self.db.conn.execute(
+                            "SELECT 1 FROM file_hashes WHERE sha256_hash = ?",
+                            (sha256_hash,)
+                        ).fetchone()
+
+                        if result:
+                            self.logger.info(f"Duplicate file found (Msg ID {message.id}, SHA256: {sha256_hash[:10]}...) via database.")
+                            self.message_hashes.add(sha256_hash)  # Add to cache to speed up future checks
+                            return True
+                    except sqlite3.OperationalError as e:
+                        # This can happen if the table doesn't exist on the first run.
+                        self.logger.warning(f"Could not check for duplicates in 'file_hashes' table, it might not exist yet. Error: {e}")
+                    except Exception as e:
+                        self.logger.error(f"Error checking for duplicate file in DB (hash {sha256_hash[:10]}...): {e}", exc_info=True)
+
+                # 3. Near-duplicate checks
+                if self.config.data.get("deduplication", {}).get("enable_near_duplicates"):
+                    import mimetypes
+                    mime_type, _ = mimetypes.guess_type(file_path)
+
+                    if mime_type and mime_type.startswith("image/"):
+                        # Perceptual hash check for images
+                        perceptual_hash = get_perceptual_hash(file_path)
+                        if perceptual_hash:
+                            self.logger.debug(f"Checking perceptual hash: {perceptual_hash}")
+                            distance_threshold = self.config.data.get("deduplication", {}).get("perceptual_hash_distance_threshold", 5)
+                            existing_phashes = self.db.get_all_perceptual_hashes()
+                            for file_id, other_phash_str in existing_phashes:
+                                other_phash = imagehash.hex_to_hash(other_phash_str)
+                                distance = imagehash.hex_to_hash(perceptual_hash) - other_phash
+                            if distance <= distance_threshold:
+                                self.logger.info(f"Near-duplicate image found for Msg ID {message.id} (pHash distance: {distance} <= {distance_threshold}, matches file_id: {file_id}).")
+                                return True
+                    else:
+                        # Fuzzy hash check for other files
+                        fuzzy_hash = get_fuzzy_hash(file_path)
+                        if fuzzy_hash:
+                            self.logger.debug(f"Checking fuzzy hash: {fuzzy_hash}")
+                            similarity_threshold = self.config.data.get("deduplication", {}).get("fuzzy_hash_similarity_threshold", 90)
+                            existing_fhashes = self.db.get_all_fuzzy_hashes()
+                            for file_id, other_fhash in existing_fhashes:
+                                similarity = compare_fuzzy_hashes(fuzzy_hash, other_fhash)
+                                if similarity >= similarity_threshold:
+                                    self.logger.info(f"Near-duplicate file found for Msg ID {message.id} (fuzzy hash similarity: {similarity}% >= {similarity_threshold}%, matches file_id: {file_id}).")
+                                    return True
+
         return False
 
-    async def _record_forwarded(self, message_group: List[TLMessage], origin_id: str, dest_id: str):
-        """Record that a message group was forwarded by storing its combined hash."""
+    async def _record_forwarded(self, message_group: List[TLMessage], origin_id: int, dest_id: str, client: TelegramClient):
+        """
+        Record that files in a message group were forwarded by storing their content hashes.
+        """
         if not self.enable_deduplication or not self.db or not message_group:
             return
 
-        group_hash = self._compute_group_hash(message_group)
-        self.message_hashes.add(group_hash)
+        # Using a single temp directory for all downloads in the group
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for message in message_group:
+                if not message.file:
+                    continue
 
-        representative_message = message_group[0]
-        content_preview = f"Group of {len(message_group)} file(s)."
-        if len(message_group) == 1:
-            if representative_message.text:
-                content_preview = (representative_message.text[:100] + '...') if len(representative_message.text) > 100 else representative_message.text
-            elif representative_message.file and representative_message.file.name:
-                content_preview = f"File: {getattr(representative_message.file, 'name', 'N/A')}"
-        else:
-            if representative_message.file and representative_message.file.name:
-                 content_preview += f" Starts with: {getattr(representative_message.file, 'name', 'N/A')}"
+                # To avoid re-downloading, this process could be optimized by passing hashes
+                # from the duplicate check phase. However, for robustness and simplicity,
+                # we re-acquire the hash here.
+                file_path = os.path.join(tmpdir, message.file.name or str(message.file.id))
+                try:
+                    await client.download_media(message.media, file=file_path)
+                except Exception as e:
+                    self.logger.error(f"Failed to download file for recording hash (Msg ID: {message.id}): {e}", exc_info=True)
+                    continue
 
-        try:
-            self.db.conn.execute("""
-                INSERT OR IGNORE INTO forwarded_messages
-                (hash, origin_id, destination_id, message_id, forwarded_at, content_preview)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (
-                group_hash,
-                str(origin_id),
-                str(dest_id),
-                representative_message.id,
-                datetime.now(timezone.utc).isoformat(),
-                content_preview
-            ))
-            self.db.conn.commit()
-            self.logger.info(f"Recorded forwarded message group (representative ID {representative_message.id}, group hash {group_hash[:8]}...) to DB.")
-        except Exception as e:
-            self.logger.error(f"Failed to record forwarded message group (group hash {group_hash[:8]}...) to DB: {e}", exc_info=True)
+                if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
+                    self.logger.warning(f"File for recording hash (Msg ID: {message.id}) not downloaded correctly or empty. Skipping.")
+                    continue
+
+                sha256_hash = get_sha256_hash(file_path)
+                perceptual_hash = None
+                fuzzy_hash = None
+
+                if self.config.data.get("deduplication", {}).get("enable_near_duplicates"):
+                    perceptual_hash = get_perceptual_hash(file_path)
+                    fuzzy_hash = get_fuzzy_hash(file_path)
+
+                # Add hash to in-memory cache to prevent re-processing in the same session
+                self.message_hashes.add(sha256_hash)
+
+                try:
+                    # Record the hash in the file_hashes table
+                    # Note: This assumes the media item is already in the 'media' table.
+                    # A more robust implementation might upsert the media item here.
+                    self.db.add_file_hash(
+                        file_id=message.file.id,
+                        sha256_hash=sha256_hash,
+                        perceptual_hash=perceptual_hash,
+                        fuzzy_hash=fuzzy_hash
+                    )
+
+                    # Record the file's appearance in the source channel
+                    self.db.add_channel_file_inventory(
+                        channel_id=origin_id,
+                        file_id=message.file.id,
+                        message_id=message.id,
+                        topic_id=getattr(message, 'reply_to_top_id', None) # General topic ID if available
+                    )
+                    self.logger.info(f"Recorded forwarded file (Msg ID {message.id}, SHA256: {sha256_hash[:10]}...) to database.")
+                except Exception as e:
+                    self.logger.error(f"Failed to record forwarded file hash for Msg ID {message.id} to DB: {e}", exc_info=True)
 
     async def _get_client(self, account_identifier: Optional[str] = None) -> TelegramClient:
         selected_account = None
@@ -509,6 +538,172 @@ class AttachmentForwarder:
         final_groups.sort(key=lambda g: g[0].id if g else float('inf'))
         return final_groups
 
+    async def _resolve_entities(self, client: TelegramClient, origin_id: int | str, destination_id: int | str) -> Tuple[types.TypePeer, types.TypePeer]:
+        self.logger.info(f"Attempting to resolve origin: '{origin_id}'")
+        origin_entity = await client.get_entity(origin_id)
+        self.logger.info(f"Origin '{origin_id}' resolved to: {origin_entity.id if hasattr(origin_entity, 'id') else 'Unknown ID'}")
+        self.logger.info(f"Attempting to resolve destination: '{destination_id}'")
+        destination_entity = await client.get_entity(destination_id)
+        self.logger.info(f"Destination '{destination_id}' resolved to: {destination_entity.id if hasattr(destination_entity, 'id') else 'Unknown ID'}")
+        if not origin_entity or not destination_entity:
+            raise ValueError("Could not resolve one or both Telegram entities.")
+        return origin_entity, destination_entity
+
+    async def _fetch_and_group_messages(self, client: TelegramClient, origin_entity: types.TypePeer, start_message_id: Optional[int]) -> List[List[TLMessage]]:
+        self.logger.info(f"Fetching all media messages from origin: {origin_entity.id} before grouping and forwarding.")
+        all_media_messages: list[TLMessage] = []
+        async for msg in client.iter_messages(origin_entity, min_id=start_message_id or 0):
+            if msg.media:
+                all_media_messages.append(msg)
+        all_media_messages.reverse()
+        self.logger.info(f"Fetched {len(all_media_messages)} media messages from {origin_entity.id}.")
+        message_groups = self._group_messages(all_media_messages)
+        self.logger.info(f"Processing {len(message_groups)} message group(s) after applying '{self.grouping_strategy}' strategy.")
+        return message_groups
+
+    async def _forward_message_group_to_main(self, client: TelegramClient, message_group: List[TLMessage], origin_entity: types.TypePeer, destination_entity: types.TypePeer, account_identifier: Optional[str]) -> bool:
+        try:
+            for msg_in_group_idx, current_message_in_group in enumerate(message_group):
+                self.logger.info(f"Forwarding item {msg_in_group_idx + 1}/{len(message_group)} (Msg ID: {current_message_in_group.id}) of current group.")
+                if self.prepend_origin_info and not self.destination_topic_id:
+                    if destination_entity.id in self.config.get("attribution", {}).get("disable_attribution_for_groups", []):
+                        attribution = ""
+                    else:
+                        sender = await current_message_in_group.get_sender()
+                        sender_name = getattr(sender, 'username', f"{getattr(sender, 'first_name', '')} {getattr(sender, 'last_name', '')}".strip())
+                        attribution = self.attribution_formatter.format_attribution(
+                        message=current_message_in_group,
+                        source_channel_name=getattr(origin_entity, 'title', f"ID: {origin_entity.id}"),
+                        source_channel_id=origin_entity.id,
+                        sender_name=sender_name,
+                        sender_id=sender.id,
+                        timestamp=current_message_in_group.date
+                    )
+                    self.db.update_attribution_stats(origin_entity.id)
+                    origin_title = getattr(origin_entity, 'title', f"ID: {origin_entity.id}")
+                    group_info_header = ""
+                    if len(message_group) > 1:
+                        group_info_header = f"[Group item {msg_in_group_idx+1}/{len(message_group)}] "
+                    header = f"{group_info_header}[Forwarded from {origin_title} (ID: {origin_entity.id})]\n"
+                    message_content = attribution + "\n\n" + (current_message_in_group.text or "")
+                    if client.session.filename != str(Config().path.parent / (account_identifier or self.config.accounts[0].get("session_name"))):
+                            await self.close()
+                            client = await self._get_client(account_identifier)
+                    await client.send_message(
+                        entity=destination_entity,
+                        message=message_content,
+                        file=current_message_in_group.media,
+                        reply_to=self.destination_topic_id
+                    )
+                    self.logger.info(f"Successfully sent Message ID: {current_message_in_group.id} with origin info from '{origin_entity.id}' to '{destination_entity.id}'.")
+                else:
+                    await client.forward_messages(
+                        entity=destination_entity,
+                        messages=[current_message_in_group.id],
+                        from_peer=origin_entity,
+                        reply_to=self.destination_topic_id
+                    )
+                    log_msg = f"Successfully forwarded Message ID: {current_message_in_group.id} from '{origin_entity.id}' to main destination '{destination_entity.id}'"
+                    if self.destination_topic_id:
+                        log_msg += f" (Topic/ReplyTo: {self.destination_topic_id})"
+                    self.logger.info(log_msg)
+                if len(message_group) > 1 and msg_in_group_idx < len(message_group) - 1:
+                    await asyncio.sleep(1)
+            return True
+        except telethon_errors.FloodWaitError as e_flood:
+            self.logger.warning(f"Rate limit hit (main destination) while processing group. Waiting for {e_flood.seconds} seconds.")
+            await asyncio.sleep(e_flood.seconds + 1)
+            self.logger.info(f"Skipping rest of Message Group for main destination due to FloodWait.")
+        except (ChannelPrivateError, ChatAdminRequiredError, UserBannedInChannelError) as e_perm:
+            self.logger.error(f"Permission error forwarding Message Group to main destination: {e_perm}")
+        except RPCError as rpc_error:
+            self.logger.error(f"RPCError forwarding Message Group to main destination: {rpc_error}")
+        except Exception as e_fwd:
+            self.logger.exception(f"Unexpected error forwarding Message Group to main destination: {e_fwd}")
+        return False
+
+    async def _forward_to_secondary_destination(self, client: TelegramClient, message_group: List[TLMessage], origin_entity: types.TypePeer):
+        if not self.secondary_unique_destination:
+            return
+        self.logger.info(f"Attempting to forward unique Message Group to secondary destination: {self.secondary_unique_destination}")
+        try:
+            secondary_dest_entity = await client.get_entity(self.secondary_unique_destination)
+            for msg_s_idx, msg_in_group_secondary in enumerate(message_group):
+                await client.forward_messages(
+                    entity=secondary_dest_entity,
+                    messages=[msg_in_group_secondary.id],
+                    from_peer=origin_entity
+                )
+                self.logger.info(f"  Forwarded item {msg_s_idx+1}/{len(message_group)} (Msg ID: {msg_in_group_secondary.id}) of group to secondary_dest '{self.secondary_unique_destination}'.")
+                if len(message_group) > 1 and msg_s_idx < len(message_group) - 1:
+                    await asyncio.sleep(1)
+        except telethon_errors.FloodWaitError as e_flood_sec:
+            self.logger.warning(f"Rate limit hit (secondary destination: {self.secondary_unique_destination}). Waiting for {e_flood_sec.seconds} seconds.")
+            await asyncio.sleep(e_flood_sec.seconds + 1)
+            self.logger.info(f"Skipping secondary forward for Message Group due to FloodWait.")
+        except Exception as e_sec_fwd:
+            self.logger.error(f"Error forwarding unique Message Group to secondary destination '{self.secondary_unique_destination}': {e_sec_fwd}", exc_info=True)
+
+    async def _forward_to_saved_messages(self, client: TelegramClient, message_group: List[TLMessage], origin_entity: types.TypePeer, current_account_identifier: Optional[str]):
+        if not self.forward_to_all_saved_messages:
+            return
+        self.logger.info(f"Forwarding Message Group to 'Saved Messages' of all configured accounts.")
+        original_main_account_id = client.session.filename
+        for acc_config in self.config.accounts:
+            saved_messages_account_id = acc_config.get("session_name") or acc_config.get("phone_number")
+            if not saved_messages_account_id:
+                self.logger.warning("Skipping an account for 'Saved Messages' forwarding due to missing identifier.")
+                continue
+            self.logger.info(f"Attempting to forward Message Group to 'Saved Messages' for account: {saved_messages_account_id}")
+            try:
+                if self._client and self._client.session.filename != str(Config().path.parent / saved_messages_account_id):
+                    await self.close()
+                target_client = await self._get_client(saved_messages_account_id)
+                for msg_sv_idx, msg_in_group_saved in enumerate(message_group):
+                    await target_client.forward_messages(
+                        entity='me',
+                        messages=[msg_in_group_saved.id],
+                        from_peer=origin_entity
+                    )
+                    self.logger.info(f"  Forwarded item {msg_sv_idx+1}/{len(message_group)} (Msg ID: {msg_in_group_saved.id}) of group to Saved Messages for {saved_messages_account_id}.")
+                    if len(message_group) > 1 and msg_sv_idx < len(message_group) - 1:
+                        await asyncio.sleep(1)
+                await asyncio.sleep(1)
+            except telethon_errors.FloodWaitError as e_flood_saved:
+                self.logger.warning(f"Rate limit hit (Saved Messages for {saved_messages_account_id}). Waiting for {e_flood_saved.seconds} seconds.")
+                await asyncio.sleep(e_flood_saved.seconds + 1)
+            except (UserDeactivatedError, AuthKeyError) as e_auth_saved:
+                self.logger.error(f"Auth error for account {saved_messages_account_id} when forwarding to Saved Messages: {e_auth_saved}. Skipping this account.")
+            except RPCError as e_rpc_saved:
+                self.logger.error(f"RPCError for account {saved_messages_account_id} when forwarding to Saved Messages: {e_rpc_saved}. Skipping this account.")
+            except Exception as e_saved:
+                self.logger.exception(f"Unexpected error for account {saved_messages_account_id} when forwarding to Saved Messages: {e_saved}. Skipping this account.")
+        if self._client and self._client.session.filename != original_main_account_id:
+                await self.close()
+
+    async def _process_message_group(self, client: TelegramClient, message_group: List[TLMessage], origin_entity: types.TypePeer, destination_entity: types.TypePeer, account_identifier: Optional[str]) -> bool:
+        if not message_group:
+            self.logger.warning("Skipping empty message group.")
+            return False
+
+        representative_message = message_group[0]
+        self.logger.debug(f"Processing Group, Representative Msg ID: {representative_message.id} from {origin_entity.id}. Items in group: {len(message_group)}")
+
+        if await self._is_duplicate(message_group, client):
+            self.logger.info(f"Message group starting with ID: {representative_message.id} (from {origin_entity.id}) contains a duplicate file. Skipping forwarding of the entire group.")
+            return False
+
+        self.logger.info(f"Group (representative Msg ID: {representative_message.id}) has media. Attempting to forward to {destination_entity.id}.")
+
+        successfully_forwarded_main = await self._forward_message_group_to_main(client, message_group, origin_entity, destination_entity, account_identifier)
+
+        if successfully_forwarded_main:
+            await self._record_forwarded(message_group, origin_entity.id, str(destination_entity.id), client)
+            await self._forward_to_secondary_destination(client, message_group, origin_entity)
+            await self._forward_to_saved_messages(client, message_group, origin_entity, account_identifier)
+            return True
+        return False
+
     async def forward_messages(
         self,
         origin_id: int | str,
@@ -525,187 +720,28 @@ class AttachmentForwarder:
         client = None
         try:
             client = await self._get_client(account_identifier)
-            self.logger.info(f"Attempting to resolve origin: '{origin_id}'")
-            origin_entity = await client.get_entity(origin_id)
-            self.logger.info(f"Origin '{origin_id}' resolved to: {origin_entity.id if hasattr(origin_entity, 'id') else 'Unknown ID'}")
-            self.logger.info(f"Attempting to resolve destination: '{destination_id}'")
-            destination_entity = await client.get_entity(destination_id)
-            self.logger.info(f"Destination '{destination_id}' resolved to: {destination_entity.id if hasattr(destination_entity, 'id') else 'Unknown ID'}")
+            origin_entity, destination_entity = await self._resolve_entities(client, origin_id, destination_id)
 
-            if not origin_entity or not destination_entity:
-                raise ValueError("Could not resolve one or both Telegram entities.")
+            message_groups = await self._fetch_and_group_messages(client, origin_entity, start_message_id)
 
-            self.logger.info(f"Fetching all media messages from origin: {origin_id} before grouping and forwarding.")
-            all_media_messages: list[TLMessage] = []
-            async for msg in client.iter_messages(origin_entity, min_id=start_message_id or 0):
-                if msg.media:
-                    all_media_messages.append(msg)
-            all_media_messages.reverse()
-            self.logger.info(f"Fetched {len(all_media_messages)} media messages from {origin_id}.")
-
-            message_groups = self._group_messages(all_media_messages)
-            self.logger.info(f"Processing {len(message_groups)} message group(s) after applying '{self.grouping_strategy}' strategy.")
-
-            for group_idx, message_group in enumerate(message_groups):
-                if not message_group:
-                    self.logger.warning(f"Skipping empty message group at index {group_idx}.")
-                    continue
-                representative_message = message_group[0]
-                message = representative_message
-                self.logger.debug(f"Processing Group {group_idx + 1}/{len(message_groups)}, Representative Msg ID: {message.id} from {origin_id}. Items in group: {len(message_group)}")
-
-                if await self._is_duplicate(message_group):
-                    self.logger.info(f"Message group starting with ID: {representative_message.id} (from {origin_id}) is a duplicate. Skipping forwarding.")
-                    continue
-                self.logger.info(f"Group (representative Msg ID: {message.id}) has media. Attempting to forward to {destination_id}.")
-                successfully_forwarded_main = False
-                main_reply_to_arg = self.destination_topic_id 
-                try:
-                    for msg_in_group_idx, current_message_in_group in enumerate(message_group):
-                        self.logger.info(f"Forwarding item {msg_in_group_idx + 1}/{len(message_group)} (Msg ID: {current_message_in_group.id}) of current group.")
-                        if self.prepend_origin_info and not self.destination_topic_id:
-                            if destination_entity.id in self.config.get("attribution", {}).get("disable_attribution_for_groups", []):
-                                attribution = ""
-                            else:
-                                sender = await current_message_in_group.get_sender()
-                                sender_name = getattr(sender, 'username', f"{getattr(sender, 'first_name', '')} {getattr(sender, 'last_name', '')}".strip())
-                                attribution = self.attribution_formatter.format_attribution(
-                                message=current_message_in_group,
-                                source_channel_name=getattr(origin_entity, 'title', f"ID: {origin_entity.id}"),
-                                source_channel_id=origin_entity.id,
-                                sender_name=sender_name,
-                                sender_id=sender.id,
-                                timestamp=current_message_in_group.date
-                            )
-                            self.db.update_attribution_stats(origin_entity.id)
-                            origin_title = getattr(origin_entity, 'title', f"ID: {origin_entity.id}")
-                            group_info_header = ""
-                            if len(message_group) > 1:
-                                group_info_header = f"[Group item {msg_in_group_idx+1}/{len(message_group)}] "
-                            header = f"{group_info_header}[Forwarded from {origin_title} (ID: {origin_entity.id})]\n"
-                            message_content = attribution + "\n\n" + (current_message_in_group.text or "")
-                            if client.session.filename != str(Config().path.parent / (account_identifier or self.config.accounts[0].get("session_name"))):
-                                 await self.close()
-                                 client = await self._get_client(account_identifier)
-                            await client.send_message(
-                                entity=destination_entity,
-                                message=message_content,
-                                file=current_message_in_group.media,
-                                reply_to=main_reply_to_arg
-                            )
-                            self.logger.info(f"Successfully sent Message ID: {current_message_in_group.id} with origin info from '{origin_id}' to '{destination_id}'.")
-                        else:
-                            await client.forward_messages(
-                                entity=destination_entity,
-                                messages=[current_message_in_group.id],
-                                from_peer=origin_entity,
-                                reply_to=main_reply_to_arg
-                            )
-                            log_msg = f"Successfully forwarded Message ID: {current_message_in_group.id} from '{origin_id}' to main destination '{destination_id}'"
-                            if main_reply_to_arg:
-                                log_msg += f" (Topic/ReplyTo: {main_reply_to_arg})"
-                            self.logger.info(log_msg)
-                        if len(message_group) > 1 and msg_in_group_idx < len(message_group) - 1:
-                            await asyncio.sleep(1)
-                    successfully_forwarded_main = True
+            for group in message_groups:
+                if await self._process_message_group(client, group, origin_entity, destination_entity, account_identifier):
                     stats["messages_forwarded"] += 1
-                    if message.file:
+                    if group[0].file:
                         stats["files_forwarded"] += 1
-                        stats["bytes_forwarded"] += message.file.size
-                    new_last_message_id = message.id
-                except telethon_errors.FloodWaitError as e_flood:
-                    self.logger.warning(f"Rate limit hit (main destination) while processing group (representative Msg ID: {message.id}). Waiting for {e_flood.seconds} seconds.")
-                    await asyncio.sleep(e_flood.seconds + 1)
-                    self.logger.info(f"Skipping rest of Message Group (representative Msg ID: {message.id}) for main destination due to FloodWait.")
-                    continue
-                except (ChannelPrivateError, ChatAdminRequiredError, UserBannedInChannelError) as e_perm:
-                    self.logger.error(f"Permission error forwarding Message Group (representative Msg ID: {message.id}) to main destination: {e_perm}")
-                    continue 
-                except RPCError as rpc_error:
-                    self.logger.error(f"RPCError forwarding Message Group (representative Msg ID: {message.id}) to main destination: {rpc_error}")
-                    continue 
-                except Exception as e_fwd:
-                    self.logger.exception(f"Unexpected error forwarding Message Group (representative Msg ID: {message.id}) to main destination: {e_fwd}")
-                    continue
-                if successfully_forwarded_main:
-                    await self._record_forwarded(message_group, str(origin_entity.id), str(destination_entity.id))
-                    if self.secondary_unique_destination:
-                        self.logger.info(f"Attempting to forward unique Message Group (representative Msg ID: {message.id}) to secondary destination: {self.secondary_unique_destination}")
-                        try:
-                            secondary_dest_entity = await client.get_entity(self.secondary_unique_destination)
-                            for msg_s_idx, msg_in_group_secondary in enumerate(message_group):
-                                await client.forward_messages(
-                                    entity=secondary_dest_entity,
-                                    messages=[msg_in_group_secondary.id],
-                                    from_peer=origin_entity
-                                )
-                                self.logger.info(f"  Forwarded item {msg_s_idx+1}/{len(message_group)} (Msg ID: {msg_in_group_secondary.id}) of group to secondary_dest '{self.secondary_unique_destination}'.")
-                                if len(message_group) > 1 and msg_s_idx < len(message_group) - 1:
-                                    await asyncio.sleep(1)
-                        except telethon_errors.FloodWaitError as e_flood_sec:
-                            self.logger.warning(f"Rate limit hit (secondary destination: {self.secondary_unique_destination}). Waiting for {e_flood_sec.seconds} seconds.")
-                            await asyncio.sleep(e_flood_sec.seconds + 1)
-                            self.logger.info(f"Skipping secondary forward for Message Group (representative Msg ID: {message.id}) due to FloodWait.")
-                        except Exception as e_sec_fwd:
-                            self.logger.error(f"Error forwarding unique Message Group (representative Msg ID: {message.id}) to secondary destination '{self.secondary_unique_destination}': {e_sec_fwd}", exc_info=True)
-                    if self.forward_to_all_saved_messages:
-                        self.logger.info(f"Forwarding Message Group (representative Msg ID: {message.id}) to 'Saved Messages' of all configured accounts.")
-                        original_main_account_id = client.session.filename
-                        for acc_config in self.config.accounts:
-                            saved_messages_account_id = acc_config.get("session_name") or acc_config.get("phone_number")
-                            if not saved_messages_account_id:
-                                self.logger.warning("Skipping an account for 'Saved Messages' forwarding due to missing identifier.")
-                                continue
-                            self.logger.info(f"Attempting to forward Message Group (representative Msg ID: {message.id}) to 'Saved Messages' for account: {saved_messages_account_id}")
-                            try:
-                                if self._client and self._client.session.filename != str(Config().path.parent / saved_messages_account_id):
-                                    await self.close()
-                                target_client = await self._get_client(saved_messages_account_id)
-                                for msg_sv_idx, msg_in_group_saved in enumerate(message_group):
-                                    await target_client.forward_messages(
-                                        entity='me',
-                                        messages=[msg_in_group_saved.id],
-                                        from_peer=origin_entity
-                                    )
-                                    self.logger.info(f"  Forwarded item {msg_sv_idx+1}/{len(message_group)} (Msg ID: {msg_in_group_saved.id}) of group to Saved Messages for {saved_messages_account_id}.")
-                                    if len(message_group) > 1 and msg_sv_idx < len(message_group) - 1:
-                                        await asyncio.sleep(1)
-                                await asyncio.sleep(1)
-                            except telethon_errors.FloodWaitError as e_flood_saved:
-                                self.logger.warning(f"Rate limit hit (Saved Messages for {saved_messages_account_id}). Waiting for {e_flood_saved.seconds} seconds.")
-                                await asyncio.sleep(e_flood_saved.seconds + 1)
-                            except (UserDeactivatedError, AuthKeyError) as e_auth_saved:
-                                self.logger.error(f"Auth error for account {saved_messages_account_id} when forwarding to Saved Messages: {e_auth_saved}. Skipping this account.")
-                            except RPCError as e_rpc_saved:
-                                self.logger.error(f"RPCError for account {saved_messages_account_id} when forwarding to Saved Messages: {e_rpc_saved}. Skipping this account.")
-                            except Exception as e_saved:
-                                self.logger.exception(f"Unexpected error for account {saved_messages_account_id} when forwarding to Saved Messages: {e_saved}. Skipping this account.")
-                        if self._client and self._client.session.filename != original_main_account_id:
-                             await self.close()
-            self.logger.info(f"Finished processing all message groups from {origin_id}.")
-        except ValueError as e:
-            self.logger.error(f"Configuration or resolution error: {e}")
-            raise
-        except (ChannelPrivateError, ChatAdminRequiredError) as e:
-            self.logger.error(f"Telegram channel access error: {e}")
-            raise
-        except (AuthKeyError, UserDeactivatedError) as e:
-            self.logger.error(f"Telegram authentication error with account {account_identifier or 'default'}: {e}. This account might be banned or need re-authentication.")
-            raise
-        except RPCError as e:
-            self.logger.error(f"Telegram API RPCError (potentially during entity resolution or initial connection phase): {e}")
-            raise
-        except ConnectionError as e:
-            self.logger.error(f"Connection error: {e}")
+                        stats["bytes_forwarded"] += group[0].file.size
+                    new_last_message_id = group[0].id
+
+        except (ValueError, ChannelPrivateError, AuthKeyError, RPCError, ConnectionError) as e:
+            self.logger.error(f"A critical error occurred: {e}", exc_info=True)
             raise
         except Exception as e:
             self.logger.exception(f"An unexpected error occurred during forwarding: {e}")
             raise
         finally:
-            if client and client.is_connected():
-                self.logger.info("Disconnecting Telegram client.")
-                await client.disconnect()
-            self._client = None
+            if client:
+                await self.close()
+
         return new_last_message_id, stats
 
     async def close(self):

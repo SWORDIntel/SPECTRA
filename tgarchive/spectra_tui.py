@@ -605,6 +605,7 @@ class ForwardingMenuForm(npyscreen.Form):
         self.add(npyscreen.ButtonPress, name="Update Channel Access Database", when_pressed_function=self.update_channel_access_db)
         self.add(npyscreen.ButtonPress, name="Selective Attachment Forwarding", when_pressed_function=self.selective_forwarding_form)
         self.add(npyscreen.ButtonPress, name="Total Forward Mode", when_pressed_function=self.total_forwarding_form)
+        self.add(npyscreen.ButtonPress, name="Re-post Messages in Channel", when_pressed_function=self.repost_form)
 
         self.add(npyscreen.FixedText, value="", editable=False) # Spacer
 
@@ -700,6 +701,98 @@ class ForwardingMenuForm(npyscreen.Form):
     def total_forwarding_form(self):
         """Switches to the Total Forward Mode form."""
         self.parentApp.switchForm("TOTAL_FORWARD")
+
+    def repost_form(self):
+        """Switches to the Re-post form."""
+        self.parentApp.switchForm("REPOST")
+
+
+# ── Re-post Form ──────────────────────────────────────────────────
+class RepostForm(npyscreen.Form):
+    """Form for re-posting messages in a channel."""
+    def create(self):
+        self.name = "Re-post Messages in Channel"
+        self.current_forwarder = None
+
+        self.add(npyscreen.FixedText, value="Re-post Messages in Channel", editable=False)
+        self.add(npyscreen.FixedText, value="-" * 40, editable=False)
+        self.add(npyscreen.FixedText, value="This will re-post all messages in a channel and delete the originals.", editable=False)
+        self.add(npyscreen.FixedText, value="This is a destructive operation. Use with caution.", editable=False)
+        self.add(npyscreen.FixedText, value="", editable=False)
+
+        self.channel_id_widget = self.add(npyscreen.TitleText, name="Channel ID/Username:")
+        self.account_id_widget = self.add(npyscreen.TitleText, name="Account (Optional):",
+                                          footer="Leave blank for default/any.")
+
+        self.add(npyscreen.FixedText, value="", editable=False)
+
+        self.add(npyscreen.ButtonPress, name="Start Re-posting", when_pressed_function=self.start_reposting)
+
+        self.status_widget = self.add(StatusMessages, name="Re-posting Status", max_height=6, rely=-10)
+
+        self.add(npyscreen.ButtonPress, name="Back to Forwarding Menu", when_pressed_function=self.back_to_forwarding_menu)
+
+    def _reposting_finished_callback(self, forwarder_instance, result=None):
+        """Callback for when the re-posting process completes."""
+        self.status_widget.add_message("Re-posting process finished.", "INFO")
+        if forwarder_instance:
+            self.status_widget.add_message("Closing client session...", "INFO")
+            try:
+                AsyncRunner.run_async(forwarder_instance.close())
+                self.status_widget.add_message("Client session closed.", "INFO")
+            except Exception as e:
+                self.status_widget.add_message(f"Error closing session: {e}", "ERROR")
+        self.current_forwarder = None
+
+    def start_reposting(self):
+        """Initiates the re-posting process."""
+        if self.current_forwarder:
+            self.status_widget.add_message("A task is already in progress. Please wait.", "WARNING")
+            return
+
+        channel_id = self.channel_id_widget.value
+        account_identifier = self.account_id_widget.value or None
+
+        if not channel_id:
+            self.status_widget.add_message("Channel ID/Username is required.", "ERROR")
+            return
+
+        if not npyscreen.notify_yes_no(
+            f"Are you sure you want to re-post all messages in {channel_id} and delete the originals?\n\nTHIS CANNOT BE UNDONE.",
+            title="Confirm Destructive Operation"
+        ):
+            self.status_widget.add_message("Re-posting cancelled.", "INFO")
+            return
+
+        try:
+            config = self.parentApp.manager.config
+
+            self.current_forwarder = AttachmentForwarder(config=config, db=None)
+
+            self.status_widget.add_message(f"Starting re-posting in channel: {channel_id}...", "INFO")
+
+            AsyncRunner.run_in_thread(
+                self.current_forwarder.repost_messages_in_channel(
+                    channel_id=channel_id,
+                    account_identifier=account_identifier
+                ),
+                callback=lambda res: self._reposting_finished_callback(self.current_forwarder, res)
+            )
+        except Exception as e:
+            self.status_widget.add_message(f"Failed to start re-posting: {e}", "ERROR")
+            if self.current_forwarder:
+                try: AsyncRunner.run_async(self.current_forwarder.close())
+                except: pass
+            self.current_forwarder = None
+
+    def back_to_forwarding_menu(self):
+        """Returns to the Forwarding Menu."""
+        if self.current_forwarder:
+            npyscreen.notify_confirm(
+                "A re-posting task is in progress. Are you sure you want to go back?",
+                title="Task in Progress"
+            )
+        self.parentApp.switchForm("FORWARDING")
 
 
 # ── Set Forward Destination Form ───────────────────────────────────────────
@@ -1069,7 +1162,10 @@ class MainMenuForm(npyscreen.Form):
         self.add(npyscreen.ButtonPress, name="6. Settings (VPS Config)", when_pressed_function=self.vps_config_form)
         self.add(npyscreen.ButtonPress, name="7. Download Users", when_pressed_function=self.download_users_form)
         self.add(npyscreen.ButtonPress, name="8. Help & About", when_pressed_function=self.help_form)
-        self.add(npyscreen.ButtonPress, name="9. Exit", when_pressed_function=self.exit_app)
+        self.add(npyscreen.ButtonPress, name="7. Download Users", when_pressed_function=self.download_users_form)
+        self.add(npyscreen.ButtonPress, name="8. Forwarding & Deduplication Settings", when_pressed_function=self.forwarding_settings_form)
+        self.add(npyscreen.ButtonPress, name="9. Help & About", when_pressed_function=self.help_form)
+        self.add(npyscreen.ButtonPress, name="10. Exit", when_pressed_function=self.exit_app)
         
         # Status
         self.add(npyscreen.FixedText, value="")
@@ -1118,6 +1214,10 @@ class MainMenuForm(npyscreen.Form):
     def download_users_form(self):
         """Switch to download users form"""
         self.parentApp.switchForm("DOWNLOAD_USERS")
+
+    def forwarding_settings_form(self):
+        """Switch to forwarding settings form"""
+        self.parentApp.switchForm("FORWARDING_SETTINGS")
     
     def help_form(self):
         """Show help and about information"""
@@ -1157,6 +1257,38 @@ Features:
             self.parentApp.switchForm(None)
 
 
+# ── Forwarding & Deduplication Settings Form ────────────────────────────────
+class ForwardingSettingsForm(npyscreen.ActionFormV2):
+    """Form for configuring forwarding and deduplication settings."""
+
+    def create(self):
+        self.name = "Forwarding & Deduplication Settings"
+        self.config = self.parentApp.manager.config
+
+        self.add(npyscreen.FixedText, value="Forwarding Settings", editable=False)
+        self.always_prepend_info = self.add(npyscreen.Checkbox, name="Always Prepend Origin Info", value=self.config.data.get("forwarding", {}).get("always_prepend_origin_info", False))
+
+        self.add(npyscreen.FixedText, value="", editable=False)
+        self.add(npyscreen.FixedText, value="Deduplication Settings", editable=False)
+        self.enable_near_duplicates = self.add(npyscreen.Checkbox, name="Enable Near-Duplicate Detection", value=self.config.data.get("deduplication", {}).get("enable_near_duplicates", False))
+
+        self.fuzzy_threshold = self.add(npyscreen.TitleSlider, name="Fuzzy Hash Similarity Threshold:", out_of=100, step=1, value=self.config.data.get("deduplication", {}).get("fuzzy_hash_similarity_threshold", 90))
+        self.phash_threshold = self.add(npyscreen.TitleSlider, name="Perceptual Hash Distance Threshold:", out_of=20, step=1, value=self.config.data.get("deduplication", {}).get("perceptual_hash_distance_threshold", 5))
+
+    def on_ok(self):
+        # Save settings to config
+        self.config.data["forwarding"]["always_prepend_origin_info"] = self.always_prepend_info.value
+        self.config.data["deduplication"]["enable_near_duplicates"] = self.enable_near_duplicates.value
+        self.config.data["deduplication"]["fuzzy_hash_similarity_threshold"] = self.fuzzy_threshold.value
+        self.config.data["deduplication"]["perceptual_hash_distance_threshold"] = self.phash_threshold.value
+        self.config.save()
+        npyscreen.notify_confirm("Settings saved.", title="Success")
+        self.parentApp.switchForm("MAIN")
+
+    def on_cancel(self):
+        self.parentApp.switchForm("MAIN")
+
+
 # ── Main Application ─────────────────────────────────────────────────────────
 class SpectraApp(npyscreen.NPSAppManaged):
     """Main application class"""
@@ -1172,6 +1304,8 @@ class SpectraApp(npyscreen.NPSAppManaged):
         self.addForm("SET_FORWARD_DEST", SetForwardDestForm, name="Set Default Forwarding Destination")
         self.addForm("SELECTIVE_FORWARD", SelectiveForwardForm, name="Selective Message Forwarding")
         self.addForm("TOTAL_FORWARD", TotalForwardForm, name="Total Forward Mode") # New form
+        self.addForm("REPOST", RepostForm, name="Re-post Messages")
+        self.addForm("FORWARDING_SETTINGS", ForwardingSettingsForm, name="Forwarding & Deduplication Settings")
         self.addForm("DISCOVERY", DiscoveryForm, name="SPECTRA Group Discovery")
         self.addForm("GRAPH", GraphExplorerForm, name="SPECTRA Network Explorer")
         self.addForm("VPS_CONFIG", VPSConfigForm, name="VPS Configuration") # Add new form

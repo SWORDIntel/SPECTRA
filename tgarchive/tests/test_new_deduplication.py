@@ -1,4 +1,3 @@
-```
 import unittest
 import asyncio
 import os
@@ -32,7 +31,8 @@ class TestNewDeduplication(unittest.TestCase):
         self.deduplicator = Deduplicator(db=self.db, enable_deduplication=True)
         # Forwarder instance, now using the deduplicator
         self.forwarder = AttachmentForwarder(config=self.config, db=self.db, deduplicator=self.deduplicator)
-
+        # Forwarder instance
+        self.forwarder = AttachmentForwarder(config=self.config, db=self.db)
         # Mock Client
         self.client = AsyncMock()
 
@@ -84,6 +84,13 @@ class TestNewDeduplication(unittest.TestCase):
 
             # --- 2. Record the forwarded file ---
             await self.deduplicator.record_forwarded(message_group, origin_id, dest_id, self.client)
+            self.forwarder.message_hashes = set() # Reset in-memory cache
+
+            is_dup = await self.forwarder._is_duplicate(message_group, self.client)
+            self.assertFalse(is_dup, "File should not be a duplicate on the first check.")
+
+            # --- 2. Record the forwarded file ---
+            await self.forwarder._record_forwarded(message_group, origin_id, dest_id, self.client)
 
             # Verify that the hash was added to the database
             self.db.add_file_hash.assert_called_once_with(
@@ -106,6 +113,9 @@ class TestNewDeduplication(unittest.TestCase):
             self.assertIn(expected_hash, self.deduplicator.message_hashes)
 
             is_dup_after_record = await self.deduplicator.is_duplicate(message_group, self.client)
+            self.assertIn(expected_hash, self.forwarder.message_hashes)
+
+            is_dup_after_record = await self.forwarder._is_duplicate(message_group, self.client)
             self.assertTrue(is_dup_after_record, "File should be a duplicate after being recorded.")
 
             # --- 4. Test DB-based duplication ---
@@ -116,9 +126,13 @@ class TestNewDeduplication(unittest.TestCase):
             self.db.conn.execute.return_value.fetchone.return_value = (1,) # Simulate finding a row
 
             is_dup_from_db = await self.deduplicator.is_duplicate(message_group, self.client)
+            self.forwarder.message_hashes = set()
+            # Setup DB mock to return the hash
+            self.db.conn.execute.return_value.fetchone.return_value = (1,) # Simulate finding a row
+
+            is_dup_from_db = await self.forwarder._is_duplicate(message_group, self.client)
             self.assertTrue(is_dup_from_db, "File should be a duplicate based on the database check.")
 
 
 if __name__ == '__main__':
     unittest.main()
-```

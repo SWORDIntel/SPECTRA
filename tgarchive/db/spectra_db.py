@@ -10,6 +10,7 @@ from .db_base import BaseDB
 from .forward_operations import ForwardOperations
 from .migration_operations import MigrationOperations
 from .sorting_hash_operations import SortingHashOperations
+from .mirror_operations import MirrorOperations
 
 
 class SpectraDB(BaseDB):
@@ -23,6 +24,7 @@ class SpectraDB(BaseDB):
         self.forward = ForwardOperations(self)
         self.sorting_hash = SortingHashOperations(self)
         self.migration = MigrationOperations(self)
+        self.mirror = MirrorOperations(self)
 
     # Delegate core operations
     def upsert_user(self, user):
@@ -144,6 +146,16 @@ class SpectraDB(BaseDB):
 
     def get_migration_report(self, *args, **kwargs):
         return self.migration.get_migration_report(*args, **kwargs)
+
+    # Delegate mirror operations
+    def add_mirror_progress(self, *args, **kwargs):
+        return self.mirror.add_mirror_progress(*args, **kwargs)
+
+    def update_mirror_progress(self, *args, **kwargs):
+        return self.mirror.update_mirror_progress(*args, **kwargs)
+
+    def get_mirror_progress(self, *args, **kwargs):
+        return self.mirror.get_mirror_progress(*args, **kwargs)
 
 
 __all__ = ["SpectraDB"]

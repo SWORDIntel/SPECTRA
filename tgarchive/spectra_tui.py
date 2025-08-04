@@ -33,6 +33,7 @@ from .channel_utils import populate_account_channel_access
 from .forwarding import AttachmentForwarder
 from .forms import VPSConfigForm # Import the new form
 from .user_operations import get_server_users
+from .group_mirror import GroupMirrorManager
 
 # ── Global Config ──────────────────────────────────────────────────────────
 TZ = timezone.utc
@@ -1147,6 +1148,73 @@ class DownloadUsersForm(npyscreen.Form):
         self.parentApp.switchForm("MAIN")
 
 
+# ── Group Mirror Form ──────────────────────────────────────────────────────
+class GroupMirrorForm(npyscreen.Form):
+    """Form for mirroring a group to another group."""
+
+    def create(self):
+        self.name = "SPECTRA Group Mirroring"
+        self.manager = self.parentApp.manager
+        self.config = self.manager.config
+        self.db = self.parentApp.db_instance
+
+        self.add(npyscreen.FixedText, value=TITLE)
+        self.add(npyscreen.FixedText, value="Mirror a Group to Another Group")
+        self.add(npyscreen.FixedText, value="Uses two separate accounts for source and destination.")
+        self.add(npyscreen.FixedText, value="")
+
+        self.source_group = self.add(npyscreen.TitleText, name="Source Group ID/Username:")
+        self.dest_group = self.add(npyscreen.TitleText, name="Destination Group ID/Username:")
+        self.source_account = self.add(npyscreen.TitleText, name="Source Account Session/Phone:")
+        self.dest_account = self.add(npyscreen.TitleText, name="Destination Account Session/Phone:")
+
+        self.add(npyscreen.ButtonPress, name="Start Mirroring", when_pressed_function=self.start_mirroring)
+        self.status = self.add(StatusMessages, name="Status Messages", max_height=8)
+        self.add(npyscreen.ButtonPress, name="Back to Main Menu", when_pressed_function=self.back_to_main)
+
+        self.status.add_message("Group Mirroring ready. Enter details to begin.")
+
+    def start_mirroring(self):
+        source = self.source_group.value.strip()
+        dest = self.dest_group.value.strip()
+        source_acc = self.source_account.value.strip()
+        dest_acc = self.dest_account.value.strip()
+
+        if not all([source, dest, source_acc, dest_acc]):
+            self.status.add_message("All fields are required.", "ERROR")
+            return
+
+        if source_acc == dest_acc:
+            self.status.add_message("Source and Destination accounts must be different.", "ERROR")
+            return
+
+        if npyscreen.notify_yes_no(
+            f"Start mirroring from '{source}' to '{dest}'?\n\nThis will copy all topics and messages.",
+            title="Confirm Group Mirror"
+        ):
+            self.status.add_message("Initializing mirror process...")
+
+            async def mirror_task():
+                mirror_manager = GroupMirrorManager(
+                    config=self.config,
+                    db=self.db,
+                    source_account_id=source_acc,
+                    dest_account_id=dest_acc
+                )
+                try:
+                    await mirror_manager.mirror_group(source, dest)
+                finally:
+                    await mirror_manager.close()
+
+            def mirror_callback(_):
+                self.status.add_message("Mirroring process completed.")
+
+            AsyncRunner.run_in_thread(mirror_task(), callback=mirror_callback)
+
+    def back_to_main(self):
+        self.parentApp.switchForm("MAIN")
+
+
 # ── Main Menu Form ─────────────────────────────────────────────────────────
 class MainMenuForm(npyscreen.Form):
     """Main menu form for the application"""
@@ -1163,12 +1231,13 @@ class MainMenuForm(npyscreen.Form):
         self.add(npyscreen.ButtonPress, name="1. Archive Channel/Group", when_pressed_function=self.archive_form)
         self.add(npyscreen.ButtonPress, name="2. Discover Groups", when_pressed_function=self.discovery_form)
         self.add(npyscreen.ButtonPress, name="3. Network Analysis", when_pressed_function=self.graph_form)
-        self.add(npyscreen.ButtonPress, name="4. Forwarding Utilities", when_pressed_function=self.forwarding_form) # New menu item
-        self.add(npyscreen.ButtonPress, name="5. Account Management", when_pressed_function=self.account_form) # Adjusted number
-        self.add(npyscreen.ButtonPress, name="6. Settings (VPS Config)", when_pressed_function=self.vps_config_form)
-        self.add(npyscreen.ButtonPress, name="7. Download Users", when_pressed_function=self.download_users_form)
-        self.add(npyscreen.ButtonPress, name="8. Help & About", when_pressed_function=self.help_form)
-        self.add(npyscreen.ButtonPress, name="9. Exit", when_pressed_function=self.exit_app)
+        self.add(npyscreen.ButtonPress, name="4. Forwarding Utilities", when_pressed_function=self.forwarding_form)
+        self.add(npyscreen.ButtonPress, name="5. Group Mirroring", when_pressed_function=self.mirror_form)
+        self.add(npyscreen.ButtonPress, name="6. Account Management", when_pressed_function=self.account_form)
+        self.add(npyscreen.ButtonPress, name="7. Settings (VPS Config)", when_pressed_function=self.vps_config_form)
+        self.add(npyscreen.ButtonPress, name="8. Download Users", when_pressed_function=self.download_users_form)
+        self.add(npyscreen.ButtonPress, name="9. Help & About", when_pressed_function=self.help_form)
+        self.add(npyscreen.ButtonPress, name="10. Exit", when_pressed_function=self.exit_app)
         
         # Status
         self.add(npyscreen.FixedText, value="")
@@ -1192,6 +1261,10 @@ class MainMenuForm(npyscreen.Form):
         """Switch to forwarding utilities form"""
         self.parentApp.switchForm("FORWARDING")
     
+    def mirror_form(self):
+        """Switch to group mirror form"""
+        self.parentApp.switchForm("GROUP_MIRROR")
+
     def graph_form(self):
         """Switch to graph explorer form"""
         self.parentApp.switchForm("GRAPH")
@@ -1263,6 +1336,7 @@ class SpectraApp(npyscreen.NPSAppManaged):
     def onStart(self):
         """Initialize application forms"""
         self.manager = None  # Will be initialized in setup_manager
+        self.db_instance = None # Add a db_instance to the app
         
         # Register forms
         self.addForm("MAIN", MainMenuForm, name="SPECTRA Main Menu")
@@ -1276,6 +1350,7 @@ class SpectraApp(npyscreen.NPSAppManaged):
         self.addForm("GRAPH", GraphExplorerForm, name="SPECTRA Network Explorer")
         self.addForm("VPS_CONFIG", VPSConfigForm, name="VPS Configuration") # Add new form
         self.addForm("DOWNLOAD_USERS", DownloadUsersForm, name="SPECTRA User Downloader")
+        self.addForm("GROUP_MIRROR", GroupMirrorForm, name="SPECTRA Group Mirroring")
     
     def setup_manager(self):
         """Initialize the integrated manager"""
@@ -1285,6 +1360,7 @@ class SpectraApp(npyscreen.NPSAppManaged):
             
             # Create integrated manager
             self.manager = discovery.SpectraCrawlerManager(config)
+            self.db_instance = SpectraDB(config.db_path)
             
             # Initialize in background
             AsyncRunner.run_in_thread(self.manager.initialize())

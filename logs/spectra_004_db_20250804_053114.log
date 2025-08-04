@@ -1,0 +1,12 @@
+2025-08-04 05:31:14,189 [INFO] tgarchive.config_models: Loaded config from spectra_config.json
+2025-08-04 05:31:14,191 [INFO] tgarchive.group_mirror.GroupMirrorManager: Initializing source client for account: source_acc
+2025-08-04 05:31:14,191 [INFO] tgarchive.group_mirror.GroupMirrorManager: Initializing destination client for account: dest_acc
+2025-08-04 05:31:14,191 [INFO] tgarchive.group_mirror.GroupMirrorManager: Both source and destination clients are connected.
+2025-08-04 05:31:14,192 [INFO] tgarchive.config_models: Loaded config from spectra_config.json
+2025-08-04 05:31:14,194 [INFO] tgarchive.config_models: Loaded config from spectra_config.json
+2025-08-04 05:31:14,199 [INFO] tgarchive.group_mirror.GroupMirrorManager: Starting mirror from 'source_group' to 'dest_group'
+2025-08-04 05:31:14,199 [INFO] tgarchive.group_mirror.GroupMirrorManager: Mirroring topics from 123 to 456
+2025-08-04 05:31:14,200 [INFO] tgarchive.group_mirror.GroupMirrorManager: Creating topic 'Topic 1' in destination group.
+2025-08-04 05:31:14,200 [WARNING] tgarchive.group_mirror.GroupMirrorManager: Could not determine new topic ID for 'Topic 1' from response.
+2025-08-04 05:31:14,200 [INFO] tgarchive.group_mirror.GroupMirrorManager: Finished topic mirroring.
+2025-08-04 05:31:14,200 [INFO] tgarchive.group_mirror.GroupMirrorManager: No previous mirror progress found. Starting new mirror.

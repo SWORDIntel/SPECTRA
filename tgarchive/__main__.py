@@ -29,6 +29,7 @@ from .channel_utils import populate_account_channel_access
 from .forwarding import AttachmentForwarder # Added for handle_forward
 from .scheduler_service import SchedulerDaemon
 from .mass_migration import MassMigrationManager
+from .group_mirror import GroupMirrorManager
 
 try:
     from .forwarding_processor import CloudProcessor
@@ -245,6 +246,14 @@ def setup_parser() -> argparse.ArgumentParser:
     download_users_parser.add_argument("--output-format", default="csv", choices=["csv", "json", "sqlite"], help="Output format")
     download_users_parser.add_argument("--rotate-ip", action="store_true", help="Enable IP rotation on flood wait errors")
     download_users_parser.add_argument("--rate-limit-delay", type=int, default=1, help="Delay in seconds between requests")
+
+    # Mirror command
+    mirror_parser = subparsers.add_parser("mirror", help="Mirror a group to another group using two separate accounts")
+    mirror_parser.add_argument("--source", required=True, help="Source group ID or username")
+    mirror_parser.add_argument("--destination", required=True, help="Destination group ID or username")
+    mirror_parser.add_argument("--source-account", required=True, help="Session name or phone number of the account for the source group")
+    mirror_parser.add_argument("--destination-account", required=True, help="Session name or phone number of the account for the destination group")
+
     return parser
 
 # ── Command handlers ───────────────────────────────────────────────────────
@@ -1335,6 +1344,26 @@ async def handle_download_users(args: argparse.Namespace) -> int:
         return 1
     finally:
         await client.disconnect()
-        
+
+async def handle_mirror(args: argparse.Namespace) -> int:
+    """Handle mirror command"""
+    cfg = Config(Path(args.config))
+    db = SpectraDB(cfg.data.get("db", {}).get("path", "spectra.db"))
+
+    manager = GroupMirrorManager(
+        config=cfg,
+        db=db,
+        source_account_id=args.source_account,
+        dest_account_id=args.destination_account
+    )
+    try:
+        await manager.mirror_group(args.source, args.destination)
+        return 0
+    except Exception as e:
+        logger.error(f"Group mirroring failed: {e}", exc_info=True)
+        return 1
+    finally:
+        await manager.close()
+
 if __name__ == "__main__":
     sys.exit(main())

@@ -30,6 +30,7 @@ from .forwarding import AttachmentForwarder # Added for handle_forward
 from .scheduler_service import SchedulerDaemon
 from .mass_migration import MassMigrationManager
 from .group_mirror import GroupMirrorManager
+from .osint.intelligence import IntelligenceCollector
 
 try:
     from .forwarding_processor import CloudProcessor
@@ -253,6 +254,26 @@ def setup_parser() -> argparse.ArgumentParser:
     mirror_parser.add_argument("--destination", required=True, help="Destination group ID or username")
     mirror_parser.add_argument("--source-account", required=True, help="Session name or phone number of the account for the source group")
     mirror_parser.add_argument("--destination-account", required=True, help="Session name or phone number of the account for the destination group")
+
+    # OSINT command
+    osint_parser = subparsers.add_parser("osint", help="OSINT commands for tracking users and their interactions")
+    osint_subparsers = osint_parser.add_subparsers(dest="osint_command", help="OSINT command")
+
+    osint_add_target_parser = osint_subparsers.add_parser("add-target", help="Add a user to the OSINT targets list")
+    osint_add_target_parser.add_argument("--user", required=True, help="Username of the user to add")
+    osint_add_target_parser.add_argument("--notes", default="", help="Notes about the target")
+
+    osint_remove_target_parser = osint_subparsers.add_parser("remove-target", help="Remove a user from the OSINT targets list")
+    osint_remove_target_parser.add_argument("--user", required=True, help="Username of the user to remove")
+
+    osint_subparsers.add_parser("list-targets", help="List all OSINT targets")
+
+    osint_scan_parser = osint_subparsers.add_parser("scan", help="Scan a channel for interactions involving a target user")
+    osint_scan_parser.add_argument("--channel", required=True, help="Channel ID or username to scan")
+    osint_scan_parser.add_argument("--user", required=True, help="Username of the target user to scan for")
+
+    osint_show_network_parser = osint_subparsers.add_parser("show-network", help="Show the interaction network for a target user")
+    osint_show_network_parser.add_argument("--user", required=True, help="Username of the target user")
 
     return parser
 
@@ -1169,6 +1190,8 @@ async def async_main(args: argparse.Namespace) -> int:
         return await handle_rollback(args)
     elif args.command == "migrate-report":
         return await handle_migrate_report(args)
+    elif args.command == "osint":
+        return await handle_osint(args)
 
     else:
         # No command or unrecognized command
@@ -1341,6 +1364,57 @@ async def handle_download_users(args: argparse.Namespace) -> int:
         return 0
     except Exception as e:
         logger.error(f"Failed to download users: {e}")
+        return 1
+    finally:
+        await client.disconnect()
+
+async def handle_osint(args: argparse.Namespace) -> int:
+    """Handle OSINT commands"""
+    cfg = Config(Path(args.config))
+    db = SpectraDB(Path(args.db))
+
+    # We need a client for OSINT operations
+    # A proper implementation would get the client from a manager class
+    from telethon import TelegramClient
+    account = cfg.auto_select_account()
+    if not account:
+        logger.error("No account available for this operation.")
+        return 1
+
+    client = TelegramClient(account['session_name'], account['api_id'], account['api_hash'])
+    await client.connect()
+
+    collector = IntelligenceCollector(cfg, db, client)
+
+    try:
+        if args.osint_command == "add-target":
+            await collector.add_target(args.user, args.notes)
+        elif args.osint_command == "remove-target":
+            await collector.remove_target(args.user)
+        elif args.osint_command == "list-targets":
+            targets = await collector.list_targets()
+            if targets:
+                logger.info("OSINT Targets:")
+                for target in targets:
+                    logger.info(f"  - {target['username']} (ID: {target['user_id']})")
+            else:
+                logger.info("No OSINT targets found.")
+        elif args.osint_command == "scan":
+            await collector.scan_channel(args.channel, args.user)
+        elif args.osint_command == "show-network":
+            network = await collector.get_network(args.user)
+            if network:
+                logger.info(f"Interaction network for {args.user}:")
+                for interaction in network:
+                    logger.info(f"  - {interaction['source_user_id']} -> {interaction['target_user_id']} ({interaction['interaction_type']}) in channel {interaction['channel_id']}")
+            else:
+                logger.info(f"No interaction network found for {args.user}.")
+        else:
+            logger.error(f"Unknown osint command: {args.osint_command}")
+            return 1
+        return 0
+    except Exception as e:
+        logger.error(f"OSINT operation failed: {e}", exc_info=True)
         return 1
     finally:
         await client.disconnect()

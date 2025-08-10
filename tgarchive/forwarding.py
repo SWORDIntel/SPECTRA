@@ -24,7 +24,13 @@ from tgarchive.db import SpectraDB
 from tgarchive.config_models import Config, DEFAULT_CFG # Import from new location
 from tgarchive.attribution import AttributionFormatter
 from tgarchive.deduplication import get_sha256_hash, get_perceptual_hash, get_fuzzy_hash, compare_fuzzy_hashes
-import imagehash
+
+# Conditional import for imagehash
+try:
+    import imagehash
+    IMAGEHASH_AVAILABLE = True
+except ImportError:
+    IMAGEHASH_AVAILABLE = False
 
 logger = logging.getLogger("tgarchive.forwarding")
 
@@ -82,8 +88,6 @@ class AttachmentForwarder:
 
         # Regex to capture base, part identifier (and number within), and full extension (including multi-part like .tar.gz)
         # Group 1: base_name
-        # Group 2: full part string (e.g., _part1, _1, (1))
-        # Group 1: base_name
         # Group 2: full part string (e.g., _part1, _1, (1), .part1, .1)
         # Groups for part numbers:
         #   3: for _part(\d+)
@@ -117,6 +121,8 @@ class AttachmentForwarder:
             self.logger.info(f"Forwarding to destination topic ID: {self.destination_topic_id}")
         if self.enable_deduplication:
             self.logger.info("Deduplication is ENABLED.")
+            if not IMAGEHASH_AVAILABLE:
+                self.logger.warning("imagehash library not available - perceptual hash features will be disabled.")
             if self.secondary_unique_destination:
                 self.logger.info(f"Unique messages will be forwarded to secondary destination: {self.secondary_unique_destination}")
             if self.db:
@@ -209,34 +215,47 @@ class AttachmentForwarder:
                     import mimetypes
                     mime_type, _ = mimetypes.guess_type(file_path)
 
-                    if mime_type and mime_type.startswith("image/"):
+                    if mime_type and mime_type.startswith("image/") and IMAGEHASH_AVAILABLE:
                         # Perceptual hash check for images
                         perceptual_hash = get_perceptual_hash(file_path)
-                        if perceptual_hash:
+                        if perceptual_hash and self.db:
                             self.logger.debug(f"Checking perceptual hash: {perceptual_hash}")
                             distance_threshold = self.config.data.get("deduplication", {}).get("perceptual_hash_distance_threshold", 5)
-                            existing_phashes = self.db.get_all_perceptual_hashes()
-                            for file_id, other_phash_str in existing_phashes:
-                                other_phash = imagehash.hex_to_hash(other_phash_str)
-                                distance = imagehash.hex_to_hash(perceptual_hash) - other_phash
-                            if distance <= distance_threshold:
-                                self.logger.info(f"Near-duplicate image found for Msg ID {message.id} (pHash distance: {distance} <= {distance_threshold}, matches file_id: {file_id}).")
-                                return True
+                            
+                            # Check if database has get_all_perceptual_hashes method
+                            if hasattr(self.db, 'get_all_perceptual_hashes'):
+                                existing_phashes = self.db.get_all_perceptual_hashes()
+                                for file_id, other_phash_str in existing_phashes:
+                                    try:
+                                        other_phash = imagehash.hex_to_hash(other_phash_str)
+                                        distance = imagehash.hex_to_hash(perceptual_hash) - other_phash
+                                        if distance <= distance_threshold:
+                                            self.logger.info(f"Near-duplicate image found for Msg ID {message.id} (pHash distance: {distance} <= {distance_threshold}, matches file_id: {file_id}).")
+                                            return True
+                                    except Exception as e:
+                                        self.logger.error(f"Error comparing perceptual hashes: {e}")
+                            else:
+                                self.logger.warning("Database method 'get_all_perceptual_hashes' not available.")
                     else:
                         # Fuzzy hash check for other files
                         fuzzy_hash = get_fuzzy_hash(file_path)
-                        if fuzzy_hash:
+                        if fuzzy_hash and self.db:
                             self.logger.debug(f"Checking fuzzy hash: {fuzzy_hash}")
                             similarity_threshold = self.config.data.get("deduplication", {}).get("fuzzy_hash_similarity_threshold", 90)
-                            existing_fhashes = self.db.get_all_fuzzy_hashes()
-                            for file_id, other_fhash in existing_fhashes:
-                                similarity = compare_fuzzy_hashes(fuzzy_hash, other_fhash)
-                            if similarity >= similarity_threshold:
-                                self.logger.info(f"Near-duplicate file found for Msg ID {message.id} (fuzzy hash similarity: {similarity}% >= {similarity_threshold}%, matches file_id: {file_id}).")
-                                return True
-                                if similarity >= similarity_threshold:
-                                    self.logger.info(f"Near-duplicate file found for Msg ID {message.id} (fuzzy hash similarity: {similarity}% >= {similarity_threshold}%, matches file_id: {file_id}).")
-                                    return True
+                            
+                            # Check if database has get_all_fuzzy_hashes method
+                            if hasattr(self.db, 'get_all_fuzzy_hashes'):
+                                existing_fhashes = self.db.get_all_fuzzy_hashes()
+                                for file_id, other_fhash in existing_fhashes:
+                                    try:
+                                        similarity = compare_fuzzy_hashes(fuzzy_hash, other_fhash)
+                                        if similarity >= similarity_threshold:
+                                            self.logger.info(f"Near-duplicate file found for Msg ID {message.id} (fuzzy hash similarity: {similarity}% >= {similarity_threshold}%, matches file_id: {file_id}).")
+                                            return True
+                                    except Exception as e:
+                                        self.logger.error(f"Error comparing fuzzy hashes: {e}")
+                            else:
+                                self.logger.warning("Database method 'get_all_fuzzy_hashes' not available.")
 
         return False
 
@@ -282,20 +301,27 @@ class AttachmentForwarder:
                     # Record the hash in the file_hashes table
                     # Note: This assumes the media item is already in the 'media' table.
                     # A more robust implementation might upsert the media item here.
-                    self.db.add_file_hash(
-                        file_id=message.file.id,
-                        sha256_hash=sha256_hash,
-                        perceptual_hash=perceptual_hash,
-                        fuzzy_hash=fuzzy_hash
-                    )
+                    if hasattr(self.db, 'add_file_hash'):
+                        self.db.add_file_hash(
+                            file_id=message.file.id,
+                            sha256_hash=sha256_hash,
+                            perceptual_hash=perceptual_hash,
+                            fuzzy_hash=fuzzy_hash
+                        )
+                    else:
+                        self.logger.warning("Database method 'add_file_hash' not available.")
 
                     # Record the file's appearance in the source channel
-                    self.db.add_channel_file_inventory(
-                        channel_id=origin_id,
-                        file_id=message.file.id,
-                        message_id=message.id,
-                        topic_id=getattr(message, 'reply_to_top_id', None) # General topic ID if available
-                    )
+                    if hasattr(self.db, 'add_channel_file_inventory'):
+                        self.db.add_channel_file_inventory(
+                            channel_id=origin_id,
+                            file_id=message.file.id,
+                            message_id=message.id,
+                            topic_id=getattr(message, 'reply_to_top_id', None) # General topic ID if available
+                        )
+                    else:
+                        self.logger.warning("Database method 'add_channel_file_inventory' not available.")
+                        
                     self.logger.info(f"Recorded forwarded file (Msg ID {message.id}, SHA256: {sha256_hash[:10]}...) to database.")
                 except Exception as e:
                     self.logger.error(f"Failed to record forwarded file hash for Msg ID {message.id} to DB: {e}", exc_info=True)
@@ -582,7 +608,8 @@ class AttachmentForwarder:
                         sender_id=sender.id,
                         timestamp=current_message_in_group.date
                     )
-                    self.db.update_attribution_stats(origin_entity.id)
+                    if hasattr(self.db, 'update_attribution_stats'):
+                        self.db.update_attribution_stats(origin_entity.id)
                     origin_title = getattr(origin_entity, 'title', f"ID: {origin_entity.id}")
                     group_info_header = ""
                     if len(message_group) > 1:
@@ -764,13 +791,35 @@ class AttachmentForwarder:
             return
         self.logger.info(f"Starting 'Total Forward Mode'. Destination: {destination_id}")
         try:
-            unique_channels_with_accounts = self.db.get_all_unique_channels()
+            if hasattr(self.db, 'get_all_unique_channels'):
+                unique_channels_with_accounts = self.db.get_all_unique_channels()
+            else:
+                self.logger.error("Database method 'get_all_unique_channels' not available.")
+                return
         except Exception as e_db:
             self.logger.error(f"Failed to retrieve channels from database: {e_db}", exc_info=True)
             return
         if not unique_channels_with_accounts:
             self.logger.warning("No channels found in account_channel_access table to process for total forward mode.")
             return
+
+        self.logger.info(f"Found {len(unique_channels_with_accounts)} unique channels to process.")
+        for channel_id, accessing_account_phone in unique_channels_with_accounts:
+            self.logger.info(f"--- Processing channel ID: {channel_id} using account: {accessing_account_phone} ---")
+            try:
+                await self.close()
+                await self.forward_messages(
+                    origin_id=channel_id,
+                    destination_id=destination_id,
+                    account_identifier=accessing_account_phone
+                )
+                self.logger.info(f"--- Finished processing channel ID: {channel_id} ---")
+            except Exception as e_fwd_all:
+                self.logger.error(f"Failed to forward messages for channel ID {channel_id} using account {accessing_account_phone}: {e_fwd_all}", exc_info=True)
+                await self.close()
+                self.logger.info(f"Continuing to the next channel after error with channel ID: {channel_id}.")
+                continue
+        self.logger.info("'Total Forward Mode' completed.")
 
     async def forward_files(self, schedule_id: int, source_id: int | str, destination_id: int | str, file_types: Optional[str], min_file_size: Optional[int], max_file_size: Optional[int], account_identifier: Optional[str] = None):
         client = None
@@ -795,10 +844,13 @@ class AttachmentForwarder:
                 if max_file_size is not None and message.file.size > max_file_size:
                     continue
 
-                if await self._is_duplicate([message]):
+                if await self._is_duplicate([message], client):
                     continue
 
-                self.db.add_to_file_forward_queue(schedule_id, message.id, message.file.id)
+                if hasattr(self.db, 'add_to_file_forward_queue'):
+                    self.db.add_to_file_forward_queue(schedule_id, message.id, message.file.id)
+                else:
+                    self.logger.warning("Database method 'add_to_file_forward_queue' not available.")
 
         except Exception as e:
             self.logger.error(f"Error queueing files from {source_id}: {e}")
@@ -811,15 +863,24 @@ class AttachmentForwarder:
         client = None
         try:
             client = await self._get_client(account_identifier)
+            if not hasattr(self.db, 'get_file_forward_queue'):
+                self.logger.error("Database method 'get_file_forward_queue' not available.")
+                return
+                
             queue = self.db.get_file_forward_queue()
             for queue_id, schedule_id, message_id, file_id, destination in queue:
                 try:
                     if destination:
                         destination_entity = await client.get_entity(destination)
                     else:
-                        schedule = self.db.get_file_forward_schedule_by_id(schedule_id)
+                        if hasattr(self.db, 'get_file_forward_schedule_by_id'):
+                            schedule = self.db.get_file_forward_schedule_by_id(schedule_id)
+                        else:
+                            self.logger.error("Database method 'get_file_forward_schedule_by_id' not available.")
+                            continue
                         if not schedule:
-                            self.db.update_file_forward_queue_status(queue_id, "error: schedule not found")
+                            if hasattr(self.db, 'update_file_forward_queue_status'):
+                                self.db.update_file_forward_queue_status(queue_id, "error: schedule not found")
                             continue
                         destination_entity = await client.get_entity(schedule.destination)
 
@@ -830,19 +891,23 @@ class AttachmentForwarder:
                         messages=[message_id],
                         from_peer=source_entity,
                     )
-                    await self._record_forwarded([await client.get_messages(source_entity, ids=message_id)], str(source_entity.id), str(destination_entity.id))
-                    self.db.update_file_forward_queue_status(queue_id, "success")
+                    message = await client.get_messages(source_entity, ids=message_id)
+                    if message:
+                        await self._record_forwarded([message], str(source_entity.id), str(destination_entity.id), client)
+                    
+                    if hasattr(self.db, 'update_file_forward_queue_status'):
+                        self.db.update_file_forward_queue_status(queue_id, "success")
 
                     # Bandwidth throttling
                     bandwidth_limit_kbps = self.config.data.get("scheduler", {}).get("bandwidth_limit_kbps", 0)
                     if bandwidth_limit_kbps > 0:
-                        message = await client.get_messages(source_entity, ids=message_id)
                         if message and message.file:
                             delay = message.file.size / (bandwidth_limit_kbps * 1024)
                             await asyncio.sleep(delay)
 
                 except Exception as e:
-                    self.db.update_file_forward_queue_status(queue_id, f"error: {e}")
+                    if hasattr(self.db, 'update_file_forward_queue_status'):
+                        self.db.update_file_forward_queue_status(queue_id, f"error: {e}")
                     self.logger.error(f"Error processing queue item {queue_id}: {e}")
         except Exception as e:
             self.logger.error(f"Error processing file forward queue: {e}")
@@ -850,25 +915,6 @@ class AttachmentForwarder:
         finally:
             if client:
                 await client.disconnect()
-            self.logger.warning("No channels found in account_channel_access table to process for total forward mode.")
-            return
-        self.logger.info(f"Found {len(unique_channels_with_accounts)} unique channels to process.")
-        for channel_id, accessing_account_phone in unique_channels_with_accounts:
-            self.logger.info(f"--- Processing channel ID: {channel_id} using account: {accessing_account_phone} ---")
-            try:
-                await self.close()
-                await self.forward_messages(
-                    origin_id=channel_id,
-                    destination_id=destination_id,
-                    account_identifier=accessing_account_phone
-                )
-                self.logger.info(f"--- Finished processing channel ID: {channel_id} ---")
-            except Exception as e_fwd_all:
-                self.logger.error(f"Failed to forward messages for channel ID {channel_id} using account {accessing_account_phone}: {e_fwd_all}", exc_info=True)
-                await self.close()
-                self.logger.info(f"Continuing to the next channel after error with channel ID: {channel_id}.")
-                continue
-        self.logger.info("'Total Forward Mode' completed.")
 
     async def repost_messages_in_channel(self, channel_id: int | str, account_identifier: Optional[str] = None):
         """

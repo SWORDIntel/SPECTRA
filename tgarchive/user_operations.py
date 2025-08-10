@@ -6,19 +6,83 @@ This module contains functions for user-related operations.
 """
 
 import logging
+import json
+import aiofiles
+import aiosqlite
 from telethon import TelegramClient
+from tqdm.asyncio import tqdm
+
+import asyncio
+from telethon.errors.rpcerrorlist import FloodWaitError
 
 logger = logging.getLogger(__name__)
 
-async def get_server_users(client: TelegramClient, server_id: int, output_file: str):
+async def get_server_users(client: TelegramClient, server_id: int, output_file: str, output_format: str = 'csv', rotate_ip: bool = False, rate_limit_delay: int = 1):
     """
     Downloads the full user list, profile, and ID for all users of a specific server.
     """
-    try:
-        with open(output_file, 'w', encoding='utf-8') as f:
-            f.write("user_id,username,first_name,last_name,phone\n")
+    while True:
+        try:
+            users = []
+            pbar = tqdm(desc="Downloading users")
             async for user in client.iter_participants(server_id):
-                f.write(f"{user.id},{user.username},{user.first_name},{user.last_name},{user.phone}\n")
-        logger.info(f"User list for server {server_id} has been saved to {output_file}")
-    except Exception as e:
-        logger.error(f"Error downloading user list for server {server_id}: {e}")
+                users.append({
+                    "user_id": user.id,
+                    "username": user.username,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "phone": user.phone
+                })
+                pbar.update(1)
+                await asyncio.sleep(rate_limit_delay)
+            pbar.close()
+
+            if output_format == 'csv':
+                async with aiofiles.open(output_file, 'w', encoding='utf-8') as f:
+                    await f.write("user_id,username,first_name,last_name,phone\n")
+                    for user in users:
+                        await f.write(f"{user['user_id']},{user['username']},{user['first_name']},{user['last_name']},{user['phone']}\n")
+            elif output_format == 'json':
+                async with aiofiles.open(output_file, 'w', encoding='utf-8') as f:
+                    await f.write(json.dumps(users, indent=4))
+            elif output_format == 'sqlite':
+                async with aiosqlite.connect(output_file) as db:
+                    await db.execute("""
+                        CREATE TABLE IF NOT EXISTS users (
+                            user_id INTEGER PRIMARY KEY,
+                            username TEXT,
+                            first_name TEXT,
+                            last_name TEXT,
+                            phone TEXT
+                        )
+                    """)
+                    await db.executemany("INSERT OR REPLACE INTO users VALUES (:user_id, :username, :first_name, :last_name, :phone)", users)
+                    await db.commit()
+
+            logger.info(f"User list for server {server_id} has been saved to {output_file} in {output_format} format.")
+            break
+        except ValueError:
+            logger.error(f"Invalid server ID: {server_id}. Please provide a valid integer.")
+            break
+        except FloodWaitError as e:
+            logger.warning(f"Flood wait error: {e}. Waiting for {e.seconds} seconds.")
+            if rotate_ip:
+                logger.info("Rotating IP address...")
+                await rotate_ip_address()
+            await asyncio.sleep(e.seconds)
+        except Exception as e:
+            logger.error(f"Error downloading user list for server {server_id}: {e}")
+            break
+
+async def rotate_ip_address():
+    """
+    Rotates the IP address using NordVPN or Mullvad.
+    """
+    # This is a placeholder for the actual implementation.
+    # The user would need to have NordVPN or Mullvad installed and configured.
+    # The commands to connect to a new server would be executed here.
+    # For example:
+    # os.system("nordvpn connect")
+    # or
+    # os.system("mullvad connect")
+    logger.info("IP rotation is not yet implemented.")

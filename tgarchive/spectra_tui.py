@@ -33,6 +33,7 @@ from .channel_utils import populate_account_channel_access
 from .forwarding import AttachmentForwarder
 from .forms import VPSConfigForm # Import the new form
 from .user_operations import get_server_users
+from .group_mirror import GroupMirrorManager
 
 # ── Global Config ──────────────────────────────────────────────────────────
 TZ = timezone.utc
@@ -1089,6 +1090,9 @@ class DownloadUsersForm(npyscreen.Form):
 
         self.server_id = self.add(npyscreen.TitleText, name="Server ID:")
         self.output_file = self.add(npyscreen.TitleText, name="Output File:", value="users.csv")
+        self.output_format = self.add(npyscreen.TitleSelectOne, name="Output Format:", values=["csv", "json", "sqlite"], max_height=3, value=[0])
+        self.rotate_ip = self.add(npyscreen.Checkbox, name="Rotate IP on Flood Wait", value=False)
+        self.rate_limit_delay = self.add(npyscreen.TitleSlider, out_of=10, name="Rate Limit Delay (s)", value=1)
 
         self.add(npyscreen.ButtonPress, name="Start Download", when_pressed_function=self.start_download)
         self.status = self.add(StatusMessages, name="Status Messages", max_height=8)
@@ -1100,6 +1104,9 @@ class DownloadUsersForm(npyscreen.Form):
         """Start the user download process"""
         server_id = self.server_id.value.strip()
         output_file = self.output_file.value.strip()
+        output_format = self.output_format.values[self.output_format.value[0]]
+        rotate_ip = self.rotate_ip.value
+        rate_limit_delay = self.rate_limit_delay.value
 
         if not server_id:
             self.status.add_message("Please enter a server ID", "ERROR")
@@ -1110,7 +1117,7 @@ class DownloadUsersForm(npyscreen.Form):
             return
 
         if npyscreen.notify_yes_no(
-            f"Start downloading users from server {server_id} to {output_file}?",
+            f"Start downloading users from server {server_id} to {output_file} in {output_format} format?",
             title="Confirm Download"
         ):
             self.status.add_message(f"Starting user download from server {server_id}...")
@@ -1128,7 +1135,7 @@ class DownloadUsersForm(npyscreen.Form):
 
             async def downloader():
                 await client.connect()
-                await get_server_users(client, int(server_id), output_file)
+                await get_server_users(client, int(server_id), output_file, output_format, rotate_ip, rate_limit_delay)
                 await client.disconnect()
 
             AsyncRunner.run_in_thread(
@@ -1138,6 +1145,256 @@ class DownloadUsersForm(npyscreen.Form):
 
     def back_to_main(self):
         """Return to the main menu"""
+        self.parentApp.switchForm("MAIN")
+
+
+# ── Group Mirror Form ──────────────────────────────────────────────────────
+class GroupMirrorForm(npyscreen.Form):
+    """Form for mirroring a group to another group."""
+
+    def create(self):
+        self.name = "SPECTRA Group Mirroring"
+        self.manager = self.parentApp.manager
+        self.config = self.manager.config
+        self.db = self.parentApp.db_instance
+
+        self.add(npyscreen.FixedText, value=TITLE)
+        self.add(npyscreen.FixedText, value="Mirror a Group to Another Group")
+        self.add(npyscreen.FixedText, value="Uses two separate accounts for source and destination.")
+        self.add(npyscreen.FixedText, value="")
+
+        self.source_group = self.add(npyscreen.TitleText, name="Source Group ID/Username:")
+        self.dest_group = self.add(npyscreen.TitleText, name="Destination Group ID/Username:")
+        self.source_account = self.add(npyscreen.TitleText, name="Source Account Session/Phone:")
+        self.dest_account = self.add(npyscreen.TitleText, name="Destination Account Session/Phone:")
+
+        self.add(npyscreen.ButtonPress, name="Start Mirroring", when_pressed_function=self.start_mirroring)
+        self.status = self.add(StatusMessages, name="Status Messages", max_height=8)
+        self.add(npyscreen.ButtonPress, name="Back to Main Menu", when_pressed_function=self.back_to_main)
+
+        self.status.add_message("Group Mirroring ready. Enter details to begin.")
+
+    def start_mirroring(self):
+        source = self.source_group.value.strip()
+        dest = self.dest_group.value.strip()
+        source_acc = self.source_account.value.strip()
+        dest_acc = self.dest_account.value.strip()
+
+        if not all([source, dest, source_acc, dest_acc]):
+            self.status.add_message("All fields are required.", "ERROR")
+            return
+
+        if source_acc == dest_acc:
+            self.status.add_message("Source and Destination accounts must be different.", "ERROR")
+            return
+
+        if npyscreen.notify_yes_no(
+            f"Start mirroring from '{source}' to '{dest}'?\n\nThis will copy all topics and messages.",
+            title="Confirm Group Mirror"
+        ):
+            self.status.add_message("Initializing mirror process...")
+
+            async def mirror_task():
+                mirror_manager = GroupMirrorManager(
+                    config=self.config,
+                    db=self.db,
+                    source_account_id=source_acc,
+                    dest_account_id=dest_acc
+                )
+                try:
+                    await mirror_manager.mirror_group(source, dest)
+                finally:
+                    await mirror_manager.close()
+
+            def mirror_callback(_):
+                self.status.add_message("Mirroring process completed.")
+
+            AsyncRunner.run_in_thread(mirror_task(), callback=mirror_callback)
+
+    def back_to_main(self):
+        self.parentApp.switchForm("MAIN")
+
+
+# ── OSINT Menu Form ────────────────────────────────────────────────────────
+class OSINTMenuForm(npyscreen.Form):
+    """Form for OSINT operations"""
+    def create(self):
+        self.name = "SPECTRA OSINT Utilities"
+        self.add(npyscreen.FixedText, value="OSINT Utilities - Track Users and Analyze Networks")
+        self.add(npyscreen.FixedText, value="-" * 40)
+
+        self.add(npyscreen.ButtonPress, name="Add Target", when_pressed_function=self.add_target_form)
+        self.add(npyscreen.ButtonPress, name="List/Remove Targets", when_pressed_function=self.list_targets_form)
+        self.add(npyscreen.ButtonPress, name="Scan Channel for Interactions", when_pressed_function=self.scan_channel_form)
+        self.add(npyscreen.ButtonPress, name="Show Interaction Network", when_pressed_function=self.show_network_form)
+
+        self.add(npyscreen.FixedText, value="")
+        self.status_widget = self.add(StatusMessages, name="Status", max_height=5, editable=False)
+        self.status_widget.add_message("OSINT utilities ready.")
+        self.add(npyscreen.FixedText, value="")
+        self.add(npyscreen.ButtonPress, name="Back to Main Menu", when_pressed_function=self.back_to_main_menu)
+
+    def add_target_form(self):
+        self.parentApp.switchForm("OSINT_ADD_TARGET")
+
+    def list_targets_form(self):
+        self.parentApp.switchForm("OSINT_LIST_TARGETS")
+
+    def scan_channel_form(self):
+        self.parentApp.switchForm("OSINT_SCAN_CHANNEL")
+
+    def show_network_form(self):
+        self.parentApp.switchForm("OSINT_SHOW_NETWORK")
+
+    def back_to_main_menu(self):
+        self.parentApp.switchForm("MAIN")
+
+# ── OSINT Sub-Forms ────────────────────────────────────────────────────────
+class OSINTAddTargetForm(npyscreen.ActionFormV2):
+    def create(self):
+        self.name = "Add OSINT Target"
+        self.username = self.add(npyscreen.TitleText, name="Username:")
+        self.notes = self.add(npyscreen.TitleText, name="Notes:")
+
+    def on_ok(self):
+        username = self.username.value
+        if not username:
+            npyscreen.notify_confirm("Username cannot be empty.", "Error")
+            return
+
+        async def add_target_task():
+            collector = self.parentApp.get_intelligence_collector()
+            await collector.add_target(username, self.notes.value)
+
+        AsyncRunner.run_in_thread(add_target_task())
+        npyscreen.notify_confirm(f"Task to add '{username}' has been started.", "Info")
+        self.parentApp.switchForm("OSINT_MENU")
+
+    def on_cancel(self):
+        self.parentApp.switchForm("OSINT_MENU")
+
+class OSINTListTargetsForm(npyscreen.Form):
+    def create(self):
+        self.name = "OSINT Targets"
+        self.target_list = self.add(npyscreen.TitleMultiSelect, name="Targets", max_height=-5)
+        self.add(npyscreen.ButtonPress, name="Remove Selected", when_pressed_function=self.remove_target)
+        self.add(npyscreen.ButtonPress, name="Back", when_pressed_function=self.back_to_menu)
+
+    def beforeEditing(self):
+        self.update_list()
+
+    def update_list(self):
+        async def list_targets_task():
+            collector = self.parentApp.get_intelligence_collector()
+            return await collector.list_targets()
+
+        targets = AsyncRunner.run_async(list_targets_task())
+        self.target_list.values = [f"{t['username']} (ID: {t['user_id']})" for t in targets]
+
+    def remove_target(self):
+        selected = self.target_list.get_selected_objects()
+        if not selected:
+            npyscreen.notify_confirm("No target selected.", "Warning")
+            return
+
+        username = selected[0].split(" ")[0]
+        if npyscreen.notify_yes_no(f"Are you sure you want to remove {username}?", "Confirm"):
+            async def remove_target_task():
+                collector = self.parentApp.get_intelligence_collector()
+                await collector.remove_target(username)
+
+            AsyncRunner.run_in_thread(remove_target_task(), callback=lambda r: self.update_list())
+            npyscreen.notify_confirm(f"Task to remove '{username}' has been started.", "Info")
+
+
+    def back_to_menu(self):
+        self.parentApp.switchForm("OSINT_MENU")
+
+class OSINTScanChannelForm(npyscreen.ActionFormV2):
+    def create(self):
+        self.name = "Scan Channel for Interactions"
+        self.channel = self.add(npyscreen.TitleText, name="Channel ID/Username:")
+        self.username = self.add(npyscreen.TitleText, name="Target Username:")
+
+    def on_ok(self):
+        channel = self.channel.value
+        username = self.username.value
+        if not channel or not username:
+            npyscreen.notify_confirm("Channel and Username are required.", "Error")
+            return
+
+        async def scan_task():
+            collector = self.parentApp.get_intelligence_collector()
+            await collector.scan_channel(channel, username)
+
+        AsyncRunner.run_in_thread(scan_task())
+        npyscreen.notify_confirm(f"Scan for '{username}' in '{channel}' started.", "Info")
+        self.parentApp.switchForm("OSINT_MENU")
+
+    def on_cancel(self):
+        self.parentApp.switchForm("OSINT_MENU")
+
+class OSINTShowNetworkForm(npyscreen.Form):
+    def create(self):
+        self.name = "Interaction Network"
+        self.username = self.add(npyscreen.TitleText, name="Target Username:")
+        self.add(npyscreen.ButtonPress, name="Show Network", when_pressed_function=self.show_network)
+        self.network_display = self.add(npyscreen.Pager, name="Network")
+        self.add(npyscreen.ButtonPress, name="Back", when_pressed_function=self.back_to_menu)
+
+    def show_network(self):
+        username = self.username.value
+        if not username:
+            npyscreen.notify_confirm("Username is required.", "Error")
+            return
+
+        async def get_network_task():
+            collector = self.parentApp.get_intelligence_collector()
+            return await collector.get_network(username)
+
+        def update_display(network):
+            if network:
+                lines = [f"{i['source_user_id']} -> {i['target_user_id']} ({i['interaction_type']})" for i in network]
+                self.network_display.values = lines
+            else:
+                self.network_display.values = ["No network found."]
+            self.network_display.display()
+
+        AsyncRunner.run_in_thread(get_network_task(), callback=update_display)
+
+    def back_to_menu(self):
+        self.parentApp.switchForm("OSINT_MENU")
+
+
+# ── Forwarding & Deduplication Settings Form ────────────────────────────────
+class ForwardingSettingsForm(npyscreen.ActionFormV2):
+    """Form for configuring forwarding and deduplication settings."""
+
+    def create(self):
+        self.name = "Forwarding & Deduplication Settings"
+        self.config = self.parentApp.manager.config
+
+        self.add(npyscreen.FixedText, value="Forwarding Settings", editable=False)
+        self.always_prepend_info = self.add(npyscreen.Checkbox, name="Always Prepend Origin Info", value=self.config.data.get("forwarding", {}).get("always_prepend_origin_info", False))
+
+        self.add(npyscreen.FixedText, value="", editable=False)
+        self.add(npyscreen.FixedText, value="Deduplication Settings", editable=False)
+        self.enable_near_duplicates = self.add(npyscreen.Checkbox, name="Enable Near-Duplicate Detection", value=self.config.data.get("deduplication", {}).get("enable_near_duplicates", False))
+
+        self.fuzzy_threshold = self.add(npyscreen.TitleSlider, name="Fuzzy Hash Similarity Threshold:", out_of=100, step=1, value=self.config.data.get("deduplication", {}).get("fuzzy_hash_similarity_threshold", 90))
+        self.phash_threshold = self.add(npyscreen.TitleSlider, name="Perceptual Hash Distance Threshold:", out_of=20, step=1, value=self.config.data.get("deduplication", {}).get("perceptual_hash_distance_threshold", 5))
+
+    def on_ok(self):
+        # Save settings to config
+        self.config.data["forwarding"]["always_prepend_origin_info"] = self.always_prepend_info.value
+        self.config.data["deduplication"]["enable_near_duplicates"] = self.enable_near_duplicates.value
+        self.config.data["deduplication"]["fuzzy_hash_similarity_threshold"] = self.fuzzy_threshold.value
+        self.config.data["deduplication"]["perceptual_hash_distance_threshold"] = self.phash_threshold.value
+        self.config.save()
+        npyscreen.notify_confirm("Settings saved.", title="Success")
+        self.parentApp.switchForm("MAIN")
+
+    def on_cancel(self):
         self.parentApp.switchForm("MAIN")
 
 
@@ -1153,19 +1410,19 @@ class MainMenuForm(npyscreen.Form):
         self.add(npyscreen.FixedText, value="Integrated Telegram Intelligence Platform")
         self.add(npyscreen.FixedText, value="")
         
-        # Options
+        # Options - merged from both versions, best features combined
         self.add(npyscreen.ButtonPress, name="1. Archive Channel/Group", when_pressed_function=self.archive_form)
         self.add(npyscreen.ButtonPress, name="2. Discover Groups", when_pressed_function=self.discovery_form)
         self.add(npyscreen.ButtonPress, name="3. Network Analysis", when_pressed_function=self.graph_form)
-        self.add(npyscreen.ButtonPress, name="4. Forwarding Utilities", when_pressed_function=self.forwarding_form) # New menu item
-        self.add(npyscreen.ButtonPress, name="5. Account Management", when_pressed_function=self.account_form) # Adjusted number
-        self.add(npyscreen.ButtonPress, name="6. Settings (VPS Config)", when_pressed_function=self.vps_config_form)
-        self.add(npyscreen.ButtonPress, name="7. Download Users", when_pressed_function=self.download_users_form)
-        self.add(npyscreen.ButtonPress, name="8. Help & About", when_pressed_function=self.help_form)
-        self.add(npyscreen.ButtonPress, name="7. Download Users", when_pressed_function=self.download_users_form)
-        self.add(npyscreen.ButtonPress, name="8. Forwarding & Deduplication Settings", when_pressed_function=self.forwarding_settings_form)
-        self.add(npyscreen.ButtonPress, name="9. Help & About", when_pressed_function=self.help_form)
-        self.add(npyscreen.ButtonPress, name="10. Exit", when_pressed_function=self.exit_app)
+        self.add(npyscreen.ButtonPress, name="4. Forwarding Utilities", when_pressed_function=self.forwarding_form)
+        self.add(npyscreen.ButtonPress, name="5. OSINT Utilities", when_pressed_function=self.osint_form)
+        self.add(npyscreen.ButtonPress, name="6. Group Mirroring", when_pressed_function=self.mirror_form)
+        self.add(npyscreen.ButtonPress, name="7. Account Management", when_pressed_function=self.account_form)
+        self.add(npyscreen.ButtonPress, name="8. Settings (VPS Config)", when_pressed_function=self.vps_config_form)
+        self.add(npyscreen.ButtonPress, name="9. Forwarding & Deduplication Settings", when_pressed_function=self.forwarding_settings_form)
+        self.add(npyscreen.ButtonPress, name="10. Download Users", when_pressed_function=self.download_users_form)
+        self.add(npyscreen.ButtonPress, name="11. Help & About", when_pressed_function=self.help_form)
+        self.add(npyscreen.ButtonPress, name="12. Exit", when_pressed_function=self.exit_app)
         
         # Status
         self.add(npyscreen.FixedText, value="")
@@ -1177,6 +1434,10 @@ class MainMenuForm(npyscreen.Form):
         self.status.value = f"Ready. {len(self.parentApp.manager.config.active_accounts)} accounts available."
         self.status.display()
     
+    def osint_form(self):
+        """Switch to OSINT form"""
+        self.parentApp.switchForm("OSINT_MENU")
+
     def archive_form(self):
         """Switch to archive form"""
         self.parentApp.switchForm("ARCHIVE")
@@ -1189,6 +1450,10 @@ class MainMenuForm(npyscreen.Form):
         """Switch to forwarding utilities form"""
         self.parentApp.switchForm("FORWARDING")
     
+    def mirror_form(self):
+        """Switch to group mirror form"""
+        self.parentApp.switchForm("GROUP_MIRROR")
+
     def graph_form(self):
         """Switch to graph explorer form"""
         self.parentApp.switchForm("GRAPH")
@@ -1257,38 +1522,6 @@ Features:
             self.parentApp.switchForm(None)
 
 
-# ── Forwarding & Deduplication Settings Form ────────────────────────────────
-class ForwardingSettingsForm(npyscreen.ActionFormV2):
-    """Form for configuring forwarding and deduplication settings."""
-
-    def create(self):
-        self.name = "Forwarding & Deduplication Settings"
-        self.config = self.parentApp.manager.config
-
-        self.add(npyscreen.FixedText, value="Forwarding Settings", editable=False)
-        self.always_prepend_info = self.add(npyscreen.Checkbox, name="Always Prepend Origin Info", value=self.config.data.get("forwarding", {}).get("always_prepend_origin_info", False))
-
-        self.add(npyscreen.FixedText, value="", editable=False)
-        self.add(npyscreen.FixedText, value="Deduplication Settings", editable=False)
-        self.enable_near_duplicates = self.add(npyscreen.Checkbox, name="Enable Near-Duplicate Detection", value=self.config.data.get("deduplication", {}).get("enable_near_duplicates", False))
-
-        self.fuzzy_threshold = self.add(npyscreen.TitleSlider, name="Fuzzy Hash Similarity Threshold:", out_of=100, step=1, value=self.config.data.get("deduplication", {}).get("fuzzy_hash_similarity_threshold", 90))
-        self.phash_threshold = self.add(npyscreen.TitleSlider, name="Perceptual Hash Distance Threshold:", out_of=20, step=1, value=self.config.data.get("deduplication", {}).get("perceptual_hash_distance_threshold", 5))
-
-    def on_ok(self):
-        # Save settings to config
-        self.config.data["forwarding"]["always_prepend_origin_info"] = self.always_prepend_info.value
-        self.config.data["deduplication"]["enable_near_duplicates"] = self.enable_near_duplicates.value
-        self.config.data["deduplication"]["fuzzy_hash_similarity_threshold"] = self.fuzzy_threshold.value
-        self.config.data["deduplication"]["perceptual_hash_distance_threshold"] = self.phash_threshold.value
-        self.config.save()
-        npyscreen.notify_confirm("Settings saved.", title="Success")
-        self.parentApp.switchForm("MAIN")
-
-    def on_cancel(self):
-        self.parentApp.switchForm("MAIN")
-
-
 # ── Main Application ─────────────────────────────────────────────────────────
 class SpectraApp(npyscreen.NPSAppManaged):
     """Main application class"""
@@ -1296,6 +1529,7 @@ class SpectraApp(npyscreen.NPSAppManaged):
     def onStart(self):
         """Initialize application forms"""
         self.manager = None  # Will be initialized in setup_manager
+        self.db_instance = None # Add a db_instance to the app
         
         # Register forms
         self.addForm("MAIN", MainMenuForm, name="SPECTRA Main Menu")
@@ -1303,13 +1537,19 @@ class SpectraApp(npyscreen.NPSAppManaged):
         self.addForm("FORWARDING", ForwardingMenuForm, name="SPECTRA Forwarding")
         self.addForm("SET_FORWARD_DEST", SetForwardDestForm, name="Set Default Forwarding Destination")
         self.addForm("SELECTIVE_FORWARD", SelectiveForwardForm, name="Selective Message Forwarding")
-        self.addForm("TOTAL_FORWARD", TotalForwardForm, name="Total Forward Mode") # New form
+        self.addForm("TOTAL_FORWARD", TotalForwardForm, name="Total Forward Mode")
         self.addForm("REPOST", RepostForm, name="Re-post Messages")
         self.addForm("FORWARDING_SETTINGS", ForwardingSettingsForm, name="Forwarding & Deduplication Settings")
         self.addForm("DISCOVERY", DiscoveryForm, name="SPECTRA Group Discovery")
         self.addForm("GRAPH", GraphExplorerForm, name="SPECTRA Network Explorer")
-        self.addForm("VPS_CONFIG", VPSConfigForm, name="VPS Configuration") # Add new form
+        self.addForm("VPS_CONFIG", VPSConfigForm, name="VPS Configuration")
         self.addForm("DOWNLOAD_USERS", DownloadUsersForm, name="SPECTRA User Downloader")
+        self.addForm("GROUP_MIRROR", GroupMirrorForm, name="SPECTRA Group Mirroring")
+        self.addForm("OSINT_MENU", OSINTMenuForm, name="OSINT Utilities")
+        self.addForm("OSINT_ADD_TARGET", OSINTAddTargetForm, name="Add OSINT Target")
+        self.addForm("OSINT_LIST_TARGETS", OSINTListTargetsForm, name="List OSINT Targets")
+        self.addForm("OSINT_SCAN_CHANNEL", OSINTScanChannelForm, name="Scan Channel for Interactions")
+        self.addForm("OSINT_SHOW_NETWORK", OSINTShowNetworkForm, name="Show Interaction Network")
     
     def setup_manager(self):
         """Initialize the integrated manager"""
@@ -1319,9 +1559,26 @@ class SpectraApp(npyscreen.NPSAppManaged):
             
             # Create integrated manager
             self.manager = discovery.SpectraCrawlerManager(config)
+            self.db_instance = SpectraDB(config.db_path)
             
             # Initialize in background
             AsyncRunner.run_in_thread(self.manager.initialize())
+
+    def get_intelligence_collector(self) -> "IntelligenceCollector":
+        """Get an instance of the IntelligenceCollector"""
+        from .osint.intelligence import IntelligenceCollector
+        from telethon import TelegramClient
+
+        if not hasattr(self, '_intelligence_collector'):
+            account = self.manager.config.auto_select_account()
+            if not account:
+                raise Exception("No account available for OSINT operations.")
+
+            client = TelegramClient(account['session_name'], account['api_id'], account['api_hash'])
+            # The client needs to be connected, which is handled by the collector methods
+            self._intelligence_collector = IntelligenceCollector(self.manager.config, self.db_instance, client)
+
+        return self._intelligence_collector
 
 
 # ── Entry point ────────────────────────────────────────────────────────────
@@ -1343,4 +1600,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()

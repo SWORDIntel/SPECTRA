@@ -37,7 +37,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape  # type: ign
 from rich.console import Console
 
 # ── Local import ─────────────────────────────────────────────────────────
-from spectra_004_db_handler import SpectraDB  # assumes same dir / installed pkg
+from .db import SpectraDB
 
 console = Console()
 

@@ -10,6 +10,7 @@ import threading
 import json
 import asyncio
 from croniter import croniter
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import pytz
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -37,6 +38,8 @@ class SchedulerDaemon:
         self.thread = threading.Thread(target=self.run, daemon=True)
         self.health_check_server = None
         self.notification_manager = NotificationManager(self.config.get("notifications", {}))
+        max_workers = self.config.get("scheduler", {}).get("max_concurrent_forwards", 4)
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
 
     def load_config(self):
         """
@@ -91,20 +94,25 @@ class SchedulerDaemon:
                 if iter.get_prev(datetime) == now.replace(second=0, microsecond=0):
                     self.notification_manager.send(f"Starting channel forward for channel {channel_id}")
                     print(f"Executing channel forward for channel {channel_id}")
-                    try:
-                        new_last_message_id = asyncio.run(scheduled_channel_forward(
-                            self.config_path,
-                            db.db_path,
-                            channel_id,
-                            destination,
-                            last_message_id
-                        ))
-                        if new_last_message_id:
-                            db.update_channel_forward_schedule_checkpoint(schedule_id, new_last_message_id)
-                        self.notification_manager.send(f"Successfully finished channel forward for channel {channel_id}")
-                    except Exception as e:
-                        print(f"Error executing channel forward for channel {channel_id}: {e}")
-                        self.notification_manager.send(f"Error executing channel forward for channel {channel_id}: {e}")
+                    for attempt in range(self.config.get("scheduler", {}).get("error_retry_attempts", 3)):
+                        try:
+                            self.executor.submit(
+                                asyncio.run,
+                                scheduled_channel_forward(
+                                    self.config_path,
+                                    db.db_path,
+                                    channel_id,
+                                    destination,
+                                    last_message_id
+                                )
+                            )
+                            break
+                        except Exception as e:
+                            if attempt < self.config.get("scheduler", {}).get("error_retry_attempts", 3) - 1:
+                                time.sleep(2 ** attempt)
+                            else:
+                                print(f"Error executing channel forward for channel {channel_id}: {e}")
+                                self.notification_manager.send(f"Error executing channel forward for channel {channel_id}: {e}")
 
             # Execute file forwarding jobs from DB
             file_schedules = db.get_file_forward_schedules()
@@ -113,26 +121,34 @@ class SchedulerDaemon:
                 if iter.get_prev(datetime) == now.replace(second=0, microsecond=0):
                     self.notification_manager.send(f"Starting file forward for source {source}")
                     print(f"Executing file forward for source {source}")
-                    try:
-                        asyncio.run(scheduled_file_forward(
-                            self.config_path,
-                            db.db_path,
-                            schedule_id,
-                            source,
-                            destination,
-                            file_types,
-                            min_file_size,
-                            max_file_size
-                        ))
-                        self.notification_manager.send(f"Successfully finished file forward for source {source}")
-                    except Exception as e:
+                    for attempt in range(self.config.get("scheduler", {}).get("error_retry_attempts", 3)):
+                        try:
+                            self.executor.submit(
+                                asyncio.run,
+                                scheduled_file_forward(
+                                    self.config_path,
+                                    db.db_path,
+                                    schedule_id,
+                                    source,
+                                    destination,
+                                    file_types,
+                                    min_file_size,
+                                    max_file_size
+                                )
+                            )
+                            break
+                        except Exception as e:
+                            if attempt < self.config.get("scheduler", {}).get("error_retry_attempts", 3) - 1:
+                                time.sleep(2 ** attempt)
+                            else:
                         print(f"Error executing file forward for source {source}: {e}")
                         self.notification_manager.send(f"Error executing file forward for source {source}: {e}")
 
             # Process file forwarding queue
             self.process_file_forward_queue()
 
-            time.sleep(60)  # Check every minute
+            interval = self.config.get("scheduler", {}).get("schedule_check_interval_seconds", 60)
+            time.sleep(interval)
         self.stop_health_check()
 
     def process_file_forward_queue(self):

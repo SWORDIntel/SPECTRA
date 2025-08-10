@@ -65,6 +65,9 @@ class GroupManager:
             self.group_metadata_cache[category] = group_id
             return group_id
 
+        if not self.config.get("file_sorter", {}).get("group_creation_enabled", True):
+            return None
+
         group_id = await self.create_category_group(category)
         self.group_metadata_cache[category] = group_id
         return group_id

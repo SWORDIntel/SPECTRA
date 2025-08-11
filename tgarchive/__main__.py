@@ -31,6 +31,8 @@ from .scheduler_service import SchedulerDaemon
 from .mass_migration import MassMigrationManager
 from .group_mirror import GroupMirrorManager
 from .osint.intelligence import IntelligenceCollector
+from .file_sorting_manager import FileSortingManager
+from .file_system_watcher import start_watching
 
 try:
     from .forwarding_processor import CloudProcessor
@@ -141,12 +143,11 @@ def setup_parser() -> argparse.ArgumentParser:
     account_parser.add_argument("--import", action="store_true", dest="import_accs", help="Import accounts from gen_config.py")
 
     # Forwarding command
-    cloud_parser = subparsers.add_parser("forward", help="Run in forwarding mode for targeted channel traversal and downloading.")
-    cloud_parser.add_argument("--channels-file", type=str, required=True, help="Path to a file containing the initial list of channel URLs or IDs (one per line).")
-    cloud_parser.add_argument("--output-dir", type=str, required=True, help="Directory to store downloaded files and logs for the forwarding mode session.")
-    cloud_parser.add_argument("--max-depth", type=int, default=2, help="Maximum depth to follow channel links during discovery (default: 2).")
-    cloud_parser.add_argument("--min-files-gateway", type=int, default=100, help="Minimum number of files a channel must have to be considered a 'gateway' for focused downloading (default: 100).")
-
+    forward_parser = subparsers.add_parser("forward", help="Run in forwarding mode for targeted channel traversal and downloading.")
+    forward_parser.add_argument("--channels-file", type=str, help="Path to a file containing the initial list of channel URLs or IDs (one per line).")
+    forward_parser.add_argument("--output-dir", type=str, help="Directory to store downloaded files and logs for the forwarding mode session.")
+    forward_parser.add_argument("--max-depth", type=int, default=2, help="Maximum depth to follow channel links during discovery (default: 2).")
+    forward_parser.add_argument("--min-files-gateway", type=int, default=100, help="Minimum number of files a channel must have to be considered a 'gateway' for focused downloading (default: 100).")
 
     # Config command
     config_parser = subparsers.add_parser("config", help="Manage SPECTRA configuration")
@@ -160,10 +161,9 @@ def setup_parser() -> argparse.ArgumentParser:
     # Channels command
     channels_parser = subparsers.add_parser("channels", help="Manage channel-related information")
     channels_subparsers = channels_parser.add_subparsers(dest="channels_command", help="Channel command")
-    channels_update_access_parser = channels_subparsers.add_parser("update-access", help="Update the list of channels accessible by each account")
+    channels_subparsers.add_parser("update-access", help="Update the list of channels accessible by each account")
 
-    # Forward command
-    forward_parser = subparsers.add_parser("forward", help="Forward messages/attachments between Telegram entities")
+    # Add more forward command arguments
     forward_parser.add_argument("--origin", help="Origin channel/chat ID or username (optional if --total-mode is used)")
     forward_parser.add_argument("--destination", help="Destination channel/chat ID or username (uses default from config if not set)")
     forward_parser.add_argument("--account", help="Specific account (phone number or session name) to use for forwarding/orchestration")
@@ -175,17 +175,8 @@ def setup_parser() -> argparse.ArgumentParser:
     dedup_group.add_argument("--enable-deduplication", action="store_true", dest="enable_deduplication", default=None, help="Enable message deduplication (overrides config if set).")
     dedup_group.add_argument("--disable-deduplication", action="store_false", dest="enable_deduplication", help="Disable message deduplication (overrides config if set).")
 
-
-    # Forwarding command (modify existing)
-    # Re-fetch cloud_parser if it was already defined to add new args
-    # Assuming cloud_parser is defined like: cloud_parser = subparsers.add_parser("forward", ...)
-    # For safety, let's ensure cloud_parser is accessible or re-define if necessary.
-    # This code assumes cloud_parser is already part of subparsers.
-    # If not, it needs to be added: e.g. cloud_parser = subparsers.add_parser("forward", help="Forwarding mode processing")
-
-    # Adding args to existing cloud_parser:
-    # (No need to redefine cloud_parser, just add arguments to it)
-    auto_invite_group = cloud_parser.add_mutually_exclusive_group()
+    # Adding args to existing forward_parser:
+    auto_invite_group = forward_parser.add_mutually_exclusive_group()
     auto_invite_group.add_argument("--enable-auto-invites", action="store_true", dest="auto_invite_accounts", default=None, help="Enable automatic account invitations in forwarding mode (overrides config).")
     auto_invite_group.add_argument("--disable-auto-invites", action="store_false", dest="auto_invite_accounts", help="Disable automatic account invitations in forwarding mode (overrides config).")
 
@@ -274,6 +265,11 @@ def setup_parser() -> argparse.ArgumentParser:
 
     osint_show_network_parser = osint_subparsers.add_parser("show-network", help="Show the interaction network for a target user")
     osint_show_network_parser.add_argument("--user", required=True, help="Username of the target user")
+
+    # Sort command
+    sort_parser = subparsers.add_parser("sort", help="Watch a directory and sort new files by type")
+    sort_parser.add_argument("--directory", required=True, help="Directory to watch for new files")
+    sort_parser.add_argument("--output-directory", required=True, help="Directory to move sorted files to")
 
     return parser
 
@@ -1192,6 +1188,10 @@ async def async_main(args: argparse.Namespace) -> int:
         return await handle_migrate_report(args)
     elif args.command == "osint":
         return await handle_osint(args)
+    elif args.command == "mirror":
+        return await handle_mirror(args)
+    elif args.command == "sort":
+        return await handle_sort(args)
 
     else:
         # No command or unrecognized command
@@ -1438,6 +1438,20 @@ async def handle_mirror(args: argparse.Namespace) -> int:
         return 1
     finally:
         await manager.close()
+
+async def handle_sort(args: argparse.Namespace) -> int:
+    """Handle sort command"""
+    cfg = Config(Path(args.config))
+    db = SpectraDB(cfg.data.get("db", {}).get("path", "spectra.db"))
+
+    sorting_manager = FileSortingManager(
+        config=cfg.data,
+        output_dir=args.output_directory,
+        db=db
+    )
+
+    start_watching(args.directory, sorting_manager)
+    return 0
 
 if __name__ == "__main__":
     sys.exit(main())

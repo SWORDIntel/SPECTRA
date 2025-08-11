@@ -19,13 +19,34 @@ class FileTypeSorter:
     def __init__(self, config):
         self.config = config
         self.extension_mapping = self.config.get("file_sorter", {}).get("extension_mapping", {})
+        self.multipart_exts = {f".{i:03d}" for i in range(1, 1000)}
+        self.multipart_exts.update({f".r{i:02d}" for i in range(1, 100)})
+        self.multipart_exts.update({f".z{i:02d}" for i in range(1, 100)})
+
+    def _get_true_extension(self, file_path: str) -> str:
+        """
+        Gets the 'true' file extension, handling multi-part archives and combined extensions.
+        e.g., 'file.tar.gz' -> '.tar.gz', 'file.7z.001' -> '.7z'
+        """
+        name, ext = os.path.splitext(file_path)
+        if ext in self.multipart_exts:
+            # It's a multi-part archive part, get the extension before it
+            name, ext = os.path.splitext(name)
+            return ext
+
+        # Handle common combined extensions
+        if name.endswith('.tar'):
+            return '.tar' + ext
+
+        return ext
 
     def get_file_category(self, file_path, db):
         """
         Gets the category of a file and updates statistics.
         """
         category = "unknown"
-        _, ext = os.path.splitext(file_path)
+        ext = self._get_true_extension(file_path)
+
         for cat, extensions in self.extension_mapping.items():
             if ext in extensions:
                 category = cat

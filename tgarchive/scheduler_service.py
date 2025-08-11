@@ -141,8 +141,8 @@ class SchedulerDaemon:
                             if attempt < self.config.get("scheduler", {}).get("error_retry_attempts", 3) - 1:
                                 time.sleep(2 ** attempt)
                             else:
-                        print(f"Error executing file forward for source {source}: {e}")
-                        self.notification_manager.send(f"Error executing file forward for source {source}: {e}")
+                                print(f"Error executing file forward for source {source}: {e}")
+                                self.notification_manager.send(f"Error executing file forward for source {source}: {e}")
 
             # Process file forwarding queue
             self.process_file_forward_queue()

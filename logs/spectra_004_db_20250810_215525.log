@@ -1,0 +1,3 @@
+2025-08-10 21:55:26,503 [INFO] tgarchive.config_models: Loaded config from spectra_config.json
+2025-08-10 21:55:26,505 [INFO] tgarchive.db.db_base: DB ready at spectra.db
+2025-08-10 21:55:26,508 [INFO] tgarchive.file_system_watcher: Started watching directory: ./test_sorting_temp_dir

@@ -39,3 +39,4 @@ pywin32>=300; sys_platform == 'win32'
 aiofiles>=23.2.1
 aiosqlite>=0.20.0
 tqdm>=4.66.1
+watchdog>=2.1.6

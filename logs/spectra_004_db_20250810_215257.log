@@ -1,0 +1,4 @@
+2025-08-10 21:52:58,295 [INFO] tgarchive.config_models: Loaded config from spectra_config.json
+2025-08-10 21:52:58,301 [INFO] tgarchive.db.db_base: DB ready at spectra.db
+2025-08-10 21:52:58,301 [INFO] tgarchive.group_mirror.GroupMirrorManager: Initializing source client for account: dummy_source_acc
+2025-08-10 21:52:58,301 [ERROR] tgarchive.group_mirror.GroupMirrorManager: Invalid entity ID or account configuration: Account 'dummy_source_acc' not found in configuration.

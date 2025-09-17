@@ -141,7 +141,7 @@ def setup_parser() -> argparse.ArgumentParser:
     account_parser.add_argument("--import", action="store_true", dest="import_accs", help="Import accounts from gen_config.py")
 
     # Forwarding command
-    cloud_parser = subparsers.add_parser("forward", help="Run in forwarding mode for targeted channel traversal and downloading.")
+    cloud_parser = subparsers.add_parser("cloud", help="Run in forwarding mode for targeted channel traversal and downloading.")
     cloud_parser.add_argument("--channels-file", type=str, required=True, help="Path to a file containing the initial list of channel URLs or IDs (one per line).")
     cloud_parser.add_argument("--output-dir", type=str, required=True, help="Directory to store downloaded files and logs for the forwarding mode session.")
     cloud_parser.add_argument("--max-depth", type=int, default=2, help="Maximum depth to follow channel links during discovery (default: 2).")

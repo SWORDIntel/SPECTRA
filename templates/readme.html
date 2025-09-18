@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPECTRA GUI System - Documentation</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --secondary-color: #1e40af;
+            --success-color: #059669;
+            --warning-color: #d97706;
+            --danger-color: #dc2626;
+            --background-color: #f8fafc;
+            --card-background: #ffffff;
+            --text-color: #1f2937;
+            --border-color: #e5e7eb;
+            --sidebar-width: 280px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            line-height: 1.6;
+        }
+
+        /* System Status Bar */
+        .system-status-bar {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            padding: 0.75rem 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9rem;
+        }
+
+        .status-info {
+            display: flex;
+            gap: 2rem;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10b981;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Layout */
+        .container {
+            display: flex;
+            min-height: calc(100vh - 50px);
+        }
+
+        /* Sidebar Navigation */
+        .sidebar {
+            width: var(--sidebar-width);
+            background: var(--card-background);
+            border-right: 1px solid var(--border-color);
+            padding: 2rem 0;
+            position: fixed;
+            height: calc(100vh - 50px);
+            overflow-y: auto;
+            z-index: 100;
+        }
+
+        .sidebar-header {
+            padding: 0 1.5rem 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 1rem;
+        }
+
+        .sidebar-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--primary-color);
+            margin-bottom: 0.5rem;
+        }
+
+        .sidebar-subtitle {
+            font-size: 0.875rem;
+            color: #6b7280;
+        }
+
+        .nav-menu {
+            list-style: none;
+        }
+
+        .nav-item {
+            margin: 0;
+        }
+
+        .nav-link {
+            display: block;
+            padding: 0.75rem 1.5rem;
+            color: var(--text-color);
+            text-decoration: none;
+            font-size: 0.9rem;
+            border-left: 3px solid transparent;
+            transition: all 0.2s ease;
+        }
+
+        .nav-link:hover {
+            background: #f3f4f6;
+            border-left-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+
+        .nav-link.active {
+            background: #eff6ff;
+            border-left-color: var(--primary-color);
+            color: var(--primary-color);
+            font-weight: 500;
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            margin-left: var(--sidebar-width);
+            padding: 2rem;
+            max-width: calc(100vw - var(--sidebar-width));
+        }
+
+        .content-header {
+            background: var(--card-background);
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+
+        .content-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem;
+        }
+
+        .content-subtitle {
+            font-size: 1.2rem;
+            color: #6b7280;
+            margin-bottom: 1rem;
+        }
+
+        .quick-links {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .quick-link {
+            background: var(--primary-color);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: background-color 0.2s ease;
+        }
+
+        .quick-link:hover {
+            background: var(--secondary-color);
+        }
+
+        /* Documentation Content */
+        .documentation-content {
+            background: var(--card-background);
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .doc-content {
+            padding: 2rem;
+            max-width: none;
+        }
+
+        /* Typography */
+        .doc-content h1 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: var(--primary-color);
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .doc-content h2 {
+            font-size: 1.8rem;
+            font-weight: 600;
+            color: var(--text-color);
+            margin: 2rem 0 1rem;
+            padding-bottom: 0.3rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .doc-content h3 {
+            font-size: 1.4rem;
+            font-weight: 600;
+            color: var(--text-color);
+            margin: 1.5rem 0 0.75rem;
+        }
+
+        .doc-content h4 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: var(--text-color);
+            margin: 1rem 0 0.5rem;
+        }
+
+        .doc-content p {
+            margin-bottom: 1rem;
+            line-height: 1.7;
+        }
+
+        .doc-content ul, .doc-content ol {
+            margin-bottom: 1rem;
+            padding-left: 2rem;
+        }
+
+        .doc-content li {
+            margin-bottom: 0.5rem;
+        }
+
+        .doc-content blockquote {
+            background: #f8fafc;
+            border-left: 4px solid var(--primary-color);
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0 6px 6px 0;
+        }
+
+        /* Code Blocks */
+        .doc-content pre {
+            background: #f8fafc;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1rem 0;
+            overflow-x: auto;
+            position: relative;
+        }
+
+        .doc-content code {
+            font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
+            font-size: 0.875rem;
+        }
+
+        .doc-content pre code {
+            background: none;
+            padding: 0;
+            border: none;
+            border-radius: 0;
+        }
+
+        .doc-content :not(pre) > code {
+            background: #f1f5f9;
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            color: #dc2626;
+        }
+
+        /* Copy Code Button */
+        .code-block-wrapper {
+            position: relative;
+        }
+
+        .copy-button {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .code-block-wrapper:hover .copy-button {
+            opacity: 1;
+        }
+
+        .copy-button:hover {
+            background: var(--secondary-color);
+        }
+
+        /* Tables */
+        .doc-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            background: var(--card-background);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .doc-content th,
+        .doc-content td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .doc-content th {
+            background: #f8fafc;
+            font-weight: 600;
+            color: var(--text-color);
+        }
+
+        .doc-content tr:hover {
+            background: #f8fafc;
+        }
+
+        /* Status Badges */
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .status-success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status-info {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        /* Alert Boxes */
+        .alert {
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+            border-left: 4px solid;
+        }
+
+        .alert-info {
+            background: #eff6ff;
+            border-color: var(--primary-color);
+            color: #1e40af;
+        }
+
+        .alert-success {
+            background: #f0fdf4;
+            border-color: var(--success-color);
+            color: #065f46;
+        }
+
+        .alert-warning {
+            background: #fffbeb;
+            border-color: var(--warning-color);
+            color: #92400e;
+        }
+
+        .alert-danger {
+            background: #fef2f2;
+            border-color: var(--danger-color);
+            color: #991b1b;
+        }
+
+        /* Links */
+        .doc-content a {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .doc-content a:hover {
+            text-decoration: underline;
+        }
+
+        /* Feature Cards */
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin: 2rem 0;
+        }
+
+        .feature-card {
+            background: #f8fafc;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1.5rem;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .feature-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--primary-color);
+            margin-bottom: 0.5rem;
+        }
+
+        /* Back to Top Button */
+        .back-to-top {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            cursor: pointer;
+            font-size: 1.2rem;
+            box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .back-to-top.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .back-to-top:hover {
+            background: var(--secondary-color);
+            transform: translateY(-2px);
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+                transition: transform 0.3s ease;
+            }
+
+            .sidebar.mobile-open {
+                transform: translateX(0);
+            }
+
+            .main-content {
+                margin-left: 0;
+                max-width: 100vw;
+                padding: 1rem;
+            }
+
+            .system-status-bar {
+                flex-direction: column;
+                gap: 0.5rem;
+                text-align: center;
+            }
+
+            .status-info {
+                flex-wrap: wrap;
+                gap: 1rem;
+            }
+
+            .content-title {
+                font-size: 2rem;
+            }
+
+            .quick-links {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .mobile-menu-toggle {
+                display: block;
+                position: fixed;
+                top: 70px;
+                left: 1rem;
+                z-index: 1001;
+                background: var(--primary-color);
+                color: white;
+                border: none;
+                border-radius: 8px;
+                padding: 0.5rem;
+                cursor: pointer;
+            }
+        }
+
+        .mobile-menu-toggle {
+            display: none;
+        }
+
+        /* Smooth scrolling */
+        html {
+            scroll-behavior: smooth;
+        }
+
+        /* Print styles */
+        @media print {
+            .sidebar,
+            .system-status-bar,
+            .back-to-top,
+            .mobile-menu-toggle {
+                display: none;
+            }
+
+            .main-content {
+                margin-left: 0;
+                max-width: 100%;
+            }
+
+            .doc-content {
+                box-shadow: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- System Status Bar -->
+    <div class="system-status-bar">
+        <div class="status-info">
+            <div class="status-item">
+                <span class="status-indicator"></span>
+                <span>System: {{ system_status.orchestrator_status|title }}</span>
+            </div>
+            <div class="status-item">
+                <span>Agents: {{ system_status.total_agents or 0 }}</span>
+            </div>
+            <div class="status-item">
+                <span>Mode: {{ system_status.mode|title }}</span>
+            </div>
+        </div>
+        <div class="status-timestamp">
+            Last updated: <span id="last-updated">{{ system_status.timestamp }}</span>
+        </div>
+    </div>
+
+    <!-- Mobile Menu Toggle -->
+    <button class="mobile-menu-toggle" onclick="toggleMobileMenu()">
+        ☰ Menu
+    </button>
+
+    <div class="container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-title">SPECTRA Documentation</div>
+                <div class="sidebar-subtitle">Complete System Guide</div>
+            </div>
+            <ul class="nav-menu">
+                <li class="nav-item">
+                    <a href="#overview" class="nav-link" onclick="scrollToSection('overview')">📖 Overview</a>
+                </li>
+                <li class="nav-item">
+                    <a href="#architecture" class="nav-link" onclick="scrollToSection('architecture')">🏗️ Architecture</a>
+                </li>
+                <li class="nav-item">
+                    <a href="#features" class="nav-link" onclick="scrollToSection('features')">✨ Features</a>
+                </li>
+                <li class="nav-item">
+                    <a href="#installation" class="nav-link" onclick="scrollToSection('installation')">🚀 Installation</a>
+                </li>
+                <li class="nav-item">
+                    <a href="#quick-start" class="nav-link" onclick="scrollToSection('quick-start')">⚡ Quick Start</a>
+                </li>
+                <li class="nav-item">
+                    <a href="#configuration" class="nav-link" onclick="scrollToSection('configuration')">⚙️ Configuration</a>
+                </li>
+                <li class="nav-item">
+                    <a href="#usage-guide" class="nav-link" onclick="scrollToSection('usage-guide')">📚 Usage Guide</a>
+                </li>
+                <li class="nav-item">
+                    <a href="#technical" class="nav-link" onclick="scrollToSection('technical')">🔧 Technical</a>
+                </li>
+                <li class="nav-item">
+                    <a href="#api-reference" class="nav-link" onclick="scrollToSection('api-reference')">📡 API Reference</a>
+                </li>
+                <li class="nav-item">
+                    <a href="#development" class="nav-link" onclick="scrollToSection('development')">🛠️ Development</a>
+                </li>
+                <li class="nav-item">
+                    <a href="#troubleshooting" class="nav-link" onclick="scrollToSection('troubleshooting')">🔍 Troubleshooting</a>
+                </li>
+                <li class="nav-item">
+                    <a href="#faq" class="nav-link" onclick="scrollToSection('faq')">❓ FAQ</a>
+                </li>
+                <li class="nav-item">
+                    <a href="#support" class="nav-link" onclick="scrollToSection('support')">🆘 Support</a>
+                </li>
+            </ul>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <div class="content-header">
+                <h1 class="content-title">SPECTRA GUI System</h1>
+                <p class="content-subtitle">Advanced Multi-Agent Intelligence Collection Platform</p>
+                <div class="quick-links">
+                    <a href="/" class="quick-link">← Back to Dashboard</a>
+                    <a href="/api/system/status" class="quick-link">System Status</a>
+                    <a href="/phase-management" class="quick-link">Phase Management</a>
+                    <a href="/coordination" class="quick-link">Coordination</a>
+                </div>
+            </div>
+
+            <!-- Documentation Content -->
+            <div class="documentation-content">
+                <div class="doc-content">
+                    {{ readme_content|safe }}
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Back to Top Button -->
+    <button class="back-to-top" id="backToTop" onclick="scrollToTop()">
+        ↑
+    </button>
+
+    <script>
+        // Initialize syntax highlighting
+        hljs.highlightAll();
+
+        // Add copy buttons to code blocks
+        document.addEventListener('DOMContentLoaded', function() {
+            const preElements = document.querySelectorAll('pre');
+            preElements.forEach(function(pre) {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'code-block-wrapper';
+                pre.parentNode.insertBefore(wrapper, pre);
+                wrapper.appendChild(pre);
+
+                const copyButton = document.createElement('button');
+                copyButton.className = 'copy-button';
+                copyButton.textContent = 'Copy';
+                copyButton.onclick = function() {
+                    const code = pre.querySelector('code');
+                    navigator.clipboard.writeText(code.textContent).then(function() {
+                        copyButton.textContent = 'Copied!';
+                        setTimeout(function() {
+                            copyButton.textContent = 'Copy';
+                        }, 2000);
+                    });
+                };
+                wrapper.appendChild(copyButton);
+            });
+
+            // Initialize navigation
+            updateActiveNavLink();
+        });
+
+        // Navigation functions
+        function scrollToSection(sectionId) {
+            const element = document.getElementById(sectionId);
+            if (element) {
+                element.scrollIntoView({ behavior: 'smooth' });
+            } else {
+                // If direct ID doesn't exist, try to find by heading text
+                const headings = document.querySelectorAll('h1, h2, h3');
+                for (const heading of headings) {
+                    if (heading.textContent.toLowerCase().includes(sectionId.replace('-', ' '))) {
+                        heading.scrollIntoView({ behavior: 'smooth' });
+                        break;
+                    }
+                }
+            }
+
+            // Close mobile menu if open
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar.classList.contains('mobile-open')) {
+                sidebar.classList.remove('mobile-open');
+            }
+        }
+
+        function scrollToTop() {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function toggleMobileMenu() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('mobile-open');
+        }
+
+        function updateActiveNavLink() {
+            const navLinks = document.querySelectorAll('.nav-link');
+            const sections = document.querySelectorAll('h1, h2');
+
+            window.addEventListener('scroll', function() {
+                let currentSection = '';
+
+                sections.forEach(function(section) {
+                    const rect = section.getBoundingClientRect();
+                    if (rect.top <= 100 && rect.bottom >= 100) {
+                        currentSection = section.textContent.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '-');
+                    }
+                });
+
+                navLinks.forEach(function(link) {
+                    link.classList.remove('active');
+                    if (link.getAttribute('href').includes(currentSection)) {
+                        link.classList.add('active');
+                    }
+                });
+            });
+        }
+
+        // Back to top button visibility
+        window.addEventListener('scroll', function() {
+            const backToTop = document.getElementById('backToTop');
+            if (window.scrollY > 300) {
+                backToTop.classList.add('visible');
+            } else {
+                backToTop.classList.remove('visible');
+            }
+        });
+
+        // Update timestamp periodically
+        function updateTimestamp() {
+            const timestampElement = document.getElementById('last-updated');
+            if (timestampElement) {
+                timestampElement.textContent = new Date().toLocaleTimeString();
+            }
+        }
+
+        setInterval(updateTimestamp, 30000); // Update every 30 seconds
+
+        // Close mobile menu when clicking outside
+        document.addEventListener('click', function(event) {
+            const sidebar = document.getElementById('sidebar');
+            const mobileToggle = document.querySelector('.mobile-menu-toggle');
+
+            if (!sidebar.contains(event.target) && !mobileToggle.contains(event.target)) {
+                sidebar.classList.remove('mobile-open');
+            }
+        });
+    </script>
+</body>
+</html>

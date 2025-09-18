@@ -6,8 +6,11 @@
 ![Python](https://img.shields.io/badge/Python-3.9+-green?style=for-the-badge&logo=python)
 ![Flask](https://img.shields.io/badge/Flask-WebApp-red?style=for-the-badge&logo=flask)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen?style=for-the-badge)
+![Security](https://img.shields.io/badge/Security-LOCAL%20ONLY-green?style=for-the-badge&logo=shield)
 
 **Advanced Multi-Agent Intelligence Collection Platform with Real-time GUI**
+
+**🔒 SECURE BY DEFAULT - LOCAL ACCESS ONLY**
 
 [Quick Start](#quick-start) • [Features](#features) • [Installation](#installation) • [API Reference](#api-reference) • [Troubleshooting](#troubleshooting)
 
@@ -45,6 +48,17 @@ The **SPECTRA GUI System** is a comprehensive web-based interface for managing a
 - 🌐 **Web Interface** - Modern, responsive design with WebSocket integration
 - 🔧 **Auto-Configuration** - Self-installing dependencies and virtual environments
 - 📈 **Advanced Analytics** - Performance tracking and optimization recommendations
+- 🔒 **LOCAL ONLY Security** - Secure localhost-only access with no external network exposure
+
+### 🔒 Security Features
+
+**SPECTRA GUI is SECURE BY DEFAULT:**
+- **🏠 Localhost Only**: Default binding to `127.0.0.1` prevents external access
+- **📂 Local File Access**: Documentation served from local file system only
+- **🚫 No Network Exposure**: README and system files protected from external networks
+- **⚡ Port Management**: Intelligent port conflict detection with automatic fallback
+- **🔍 Security Monitoring**: Real-time security status with visual indicators
+- **✅ Clear Messaging**: Prominent "LOCAL ONLY" badges throughout interface
 
 ### Visual Overview
 
@@ -236,12 +250,15 @@ python3 spectra_gui_launcher.py --debug --log-level DEBUG
 python3 spectra_gui_launcher.py --daemon
 ```
 
-### 2. **Access the Web Interface**
-- **Main Interface**: http://localhost:5000
-- **Agent Dashboard**: http://localhost:5000/agents
-- **Phase Management**: http://localhost:5000/phases
-- **System Status**: http://localhost:5000/status
-- **API Documentation**: http://localhost:5000/api/docs
+### 2. **Access the Web Interface (LOCAL ONLY)**
+- **Main Interface**: http://localhost:5000 🔒
+- **Documentation**: http://localhost:5000/readme 🔒
+- **Agent Dashboard**: http://localhost:5000/agents 🔒
+- **Phase Management**: http://localhost:5000/phases 🔒
+- **System Status**: http://localhost:5000/status 🔒
+- **API Documentation**: http://localhost:5000/api/docs 🔒
+
+> **🔒 SECURITY NOTE**: All URLs use `localhost` for LOCAL ONLY access. No external network access to files or data.
 
 ### 3. **Initial Configuration**
 1. Open the web interface in your browser

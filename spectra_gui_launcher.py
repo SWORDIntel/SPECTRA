@@ -37,6 +37,13 @@ from enum import Enum
 from pathlib import Path
 import argparse
 
+# Optional markdown import
+try:
+    import markdown
+    MARKDOWN_AVAILABLE = True
+except ImportError:
+    MARKDOWN_AVAILABLE = False
+
 # GUI Framework Integration
 try:
     from flask import Flask, render_template, jsonify, redirect, url_for, request
@@ -126,7 +133,7 @@ class SpectraGUILauncher:
 
         # Flask application for unified interface
         if FLASK_AVAILABLE:
-            self.app = Flask(__name__)
+            self.app = Flask(__name__, static_folder='static', static_url_path='/static')
             self.app.config['SECRET_KEY'] = 'spectra_gui_system'
             self.socketio = SocketIO(self.app, cors_allowed_origins="*")
             self._setup_unified_routes()
@@ -186,6 +193,22 @@ class SpectraGUILauncher:
                 return self.implementation_tools.generate_implementation_html()
             return self._render_component_unavailable("Implementation Tools")
 
+        @self.app.route('/readme')
+        @self.app.route('/help')
+        @self.app.route('/documentation')
+        def readme_help():
+            """README documentation and help interface"""
+            try:
+                # Read and convert README.md to HTML
+                readme_content = self._get_readme_content()
+                system_status = self.get_system_status()
+                return render_template('readme.html',
+                                     readme_content=readme_content,
+                                     system_status=system_status)
+            except Exception as e:
+                self.logger.error(f"Error loading README: {e}")
+                return self._render_readme_error(str(e))
+
         # API Routes
         @self.app.route('/api/system/status')
         def api_system_status():
@@ -242,6 +265,122 @@ class SpectraGUILauncher:
             <p>This component is currently unavailable.</p>
             <p>Please check the system configuration and component status.</p>
             <a href="/">← Back to System Dashboard</a>
+        </body>
+        </html>
+        """
+
+    def _get_readme_content(self) -> str:
+        """Read and process README.md content"""
+        try:
+            readme_path = Path("README.md")
+            if readme_path.exists():
+                with open(readme_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                # Convert markdown to HTML
+                if MARKDOWN_AVAILABLE:
+                    try:
+                        html_content = markdown.markdown(
+                            content,
+                            extensions=['codehilite', 'fenced_code', 'tables', 'toc']
+                        )
+                        return html_content
+                    except Exception as e:
+                        self.logger.warning(f"Markdown processing failed: {e}, using fallback")
+                        return self._markdown_to_html_fallback(content)
+                else:
+                    # Fallback if markdown module is not available
+                    self.logger.warning("Markdown module not available, using fallback")
+                    return self._markdown_to_html_fallback(content)
+            else:
+                return "<p>README.md file not found.</p>"
+        except Exception as e:
+            self.logger.error(f"Error reading README.md: {e}")
+            return f"<p>Error loading README content: {e}</p>"
+
+    def _markdown_to_html_fallback(self, content: str) -> str:
+        """Basic markdown to HTML conversion fallback"""
+        import re
+
+        # Escape HTML characters
+        content = content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+        # Convert headers
+        content = re.sub(r'^# (.+)$', r'<h1>\1</h1>', content, flags=re.MULTILINE)
+        content = re.sub(r'^## (.+)$', r'<h2>\1</h2>', content, flags=re.MULTILINE)
+        content = re.sub(r'^### (.+)$', r'<h3>\1</h3>', content, flags=re.MULTILINE)
+
+        # Convert code blocks
+        content = re.sub(r'```(\w+)?\n(.*?)\n```', r'<pre><code>\2</code></pre>', content, flags=re.DOTALL)
+        content = re.sub(r'`([^`]+)`', r'<code>\1</code>', content)
+
+        # Convert links
+        content = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', content)
+
+        # Convert line breaks
+        content = content.replace('\n\n', '</p><p>').replace('\n', '<br>')
+        content = '<p>' + content + '</p>'
+
+        return content
+
+    def _render_readme_error(self, error_message: str) -> str:
+        """Render README error page"""
+        return f"""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>SPECTRA - Documentation Error</title>
+            <style>
+                body {{
+                    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                    background-color: #f8fafc;
+                    color: #1f2937;
+                    line-height: 1.6;
+                    margin: 0;
+                    padding: 2rem;
+                }}
+                .error-container {{
+                    max-width: 600px;
+                    margin: 0 auto;
+                    background: white;
+                    padding: 2rem;
+                    border-radius: 12px;
+                    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+                    text-align: center;
+                }}
+                .error-title {{
+                    color: #dc2626;
+                    font-size: 1.5rem;
+                    font-weight: 600;
+                    margin-bottom: 1rem;
+                }}
+                .error-message {{
+                    color: #6b7280;
+                    margin-bottom: 2rem;
+                }}
+                .back-button {{
+                    background: #2563eb;
+                    color: white;
+                    padding: 0.75rem 1.5rem;
+                    border: none;
+                    border-radius: 8px;
+                    text-decoration: none;
+                    display: inline-block;
+                    font-weight: 500;
+                }}
+                .back-button:hover {{
+                    background: #1e40af;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="error-container">
+                <h1 class="error-title">Documentation Load Error</h1>
+                <p class="error-message">{error_message}</p>
+                <a href="/" class="back-button">← Back to Dashboard</a>
+            </div>
         </body>
         </html>
         """
@@ -777,6 +916,31 @@ class SpectraGUILauncher:
                     </div>
                 </div>
                 <button class="btn" onclick="openComponent('/implementation')">Open Implementation Tools</button>
+            </div>
+        </div>
+
+        <!-- Documentation & Help -->
+        <div class="component-card">
+            <div class="component-header">
+                <div class="component-title">Documentation & Help</div>
+                <div class="component-description">Complete system documentation, usage guides, and feature reference</div>
+            </div>
+            <div class="component-body">
+                <div class="component-status">
+                    <span class="status-indicator status-running"></span>
+                    <span>Available</span>
+                </div>
+                <div class="health-metrics">
+                    <div class="metric-item">
+                        <div class="metric-value">100%</div>
+                        <div class="metric-label">Coverage</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-value">5ms</div>
+                        <div class="metric-label">Load Time</div>
+                    </div>
+                </div>
+                <button class="btn" onclick="openComponent('/readme')">Open Documentation</button>
             </div>
         </div>
     </div>

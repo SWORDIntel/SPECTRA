@@ -90,4 +90,4 @@ spectra_venv/bin/tqdm
 spectra_venv/lib64
 spectra_venv/pyvenv.cfg
 test_env_check.py
-test_minimal.py
+test_minimal.pycore.*

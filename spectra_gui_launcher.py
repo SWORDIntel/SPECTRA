@@ -27,11 +27,12 @@ import asyncio
 import json
 import logging
 import signal
+import socket
 import sys
 import threading
 import time
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, asdict
 from enum import Enum
 from pathlib import Path
@@ -59,6 +60,76 @@ from phase_management_dashboard import PhaseManagementDashboard
 from coordination_interface import CoordinationInterface
 from implementation_tools import ImplementationTools
 from agent_optimization_engine import AgentOptimizationEngine
+
+
+def check_port_available(host: str, port: int, timeout: float = 3.0) -> bool:
+    """
+    Check if a port is available for binding.
+
+    Args:
+        host: Host address to check
+        port: Port number to check
+        timeout: Connection timeout in seconds
+
+    Returns:
+        True if port is available, False otherwise
+    """
+    try:
+        # Create socket with proper options
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.settimeout(timeout)
+
+            # Try to bind to the port
+            result = sock.bind((host, port))
+            return True
+
+    except (socket.error, OSError) as e:
+        return False
+
+
+def find_available_port(host: str, preferred_port: int, max_attempts: int = 20) -> Tuple[int, bool]:
+    """
+    Find an available port starting from the preferred port.
+
+    Args:
+        host: Host address to check
+        preferred_port: Preferred port number
+        max_attempts: Maximum number of ports to try
+
+    Returns:
+        Tuple of (port_number, is_preferred_port)
+    """
+    # First try the preferred port
+    if check_port_available(host, preferred_port):
+        return preferred_port, True
+
+    # Try alternative ports
+    for i in range(1, max_attempts + 1):
+        alternative_port = preferred_port + i
+        if check_port_available(host, alternative_port):
+            return alternative_port, False
+
+    # If no port found, return the preferred port and let it fail gracefully
+    return preferred_port, False
+
+
+def get_security_level(host: str) -> Tuple[str, str]:
+    """
+    Determine security level based on host configuration.
+
+    Args:
+        host: Host address
+
+    Returns:
+        Tuple of (security_level, description)
+    """
+    if host in ['127.0.0.1', 'localhost', '::1']:
+        return "HIGH", "LOCAL ACCESS ONLY - Secure localhost configuration"
+    elif host in ['0.0.0.0', '::', '*']:
+        return "CRITICAL", "⚠️ NETWORK ACCESSIBLE - External access enabled"
+    else:
+        return "MEDIUM", f"Specific interface: {host}"
 
 
 class ComponentStatus(Enum):
@@ -123,6 +194,10 @@ class SpectraGUILauncher:
         self.system_running = False
         self.shutdown_requested = False
 
+        # Security configuration
+        self.local_only = config.host in ["127.0.0.1", "localhost"]
+        self.available_port = None
+
         # Core components
         self.orchestrator: Optional[SpectraOrchestrator] = None
         self.main_gui: Optional[SpectraCoordinationGUI] = None
@@ -154,6 +229,88 @@ class SpectraGUILauncher:
         # Background monitoring
         self.monitoring_task = None
         self.health_check_interval = config.monitoring_interval
+
+    def _check_port_availability(self, port: int) -> bool:
+        """Check if a port is available for use"""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(2)  # Increased timeout for better reliability
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                result = sock.connect_ex((self.config.host, port))
+                return result != 0  # Port is available if connection fails
+        except Exception as e:
+            self.logger.warning(f"Port availability check failed for {port}: {e}")
+            return False
+
+    def _find_available_port(self, start_port: int = 5000, max_attempts: int = 20) -> Optional[int]:
+        """Find an available port starting from start_port"""
+        self.logger.info(f"🔍 Searching for available port starting from {start_port}")
+
+        for port in range(start_port, start_port + max_attempts):
+            if self._check_port_availability(port):
+                self.logger.info(f"✅ Found available port: {port}")
+                return port
+            else:
+                self.logger.debug(f"❌ Port {port} is in use")
+
+        self.logger.error(f"❌ No available ports found in range {start_port}-{start_port + max_attempts}")
+        return None
+
+    def _get_security_warnings(self) -> List[str]:
+        """Generate security warnings based on configuration"""
+        warnings = []
+
+        if not self.local_only:
+            warnings.extend([
+                "🚨 CRITICAL SECURITY RISK: System is accessible from external networks!",
+                "🔒 This exposes README files and system information to network access",
+                "⚠️ Potential data exposure risk from network accessibility",
+                "🏠 IMMEDIATE ACTION: Change host to 127.0.0.1 or localhost for security",
+                "🔐 Current configuration allows external file system access"
+            ])
+        else:
+            warnings.extend([
+                "✅ SECURE: System is configured for localhost access only",
+                "🔒 README and system files are protected from external access"
+            ])
+
+        warnings.extend([
+            "📍 README ACCESS IS LOCAL SYSTEM ONLY",
+            "🔐 No external file system access provided",
+            "💻 All documentation served from local installation only",
+            "🚫 No network file sharing or remote access capabilities",
+            "🛡️ System files and configuration protected from external access"
+        ])
+
+        return warnings
+
+    def _log_security_status(self):
+        """Log security status and warnings"""
+        security_warnings = self._get_security_warnings()
+        actual_port = self.available_port or self.config.port
+
+        self.logger.info("=" * 70)
+        self.logger.info("🔒 SPECTRA GUI SECURITY STATUS")
+        self.logger.info("=" * 70)
+        self.logger.info(f"🌐 Access URL: http://{self.config.host}:{actual_port}")
+        self.logger.info(f"🔐 Security Level: {'HIGH (localhost only)' if self.local_only else 'CRITICAL (network accessible)'}")
+        self.logger.info(f"📍 README Source: Local file system only")
+        self.logger.info(f"⚡ Port Status: {'Alternative port {}'.format(actual_port) if self.available_port else 'Default port {}'.format(self.config.port)}")
+
+        if not self.local_only:
+            self.logger.critical("🚨 SECURITY ALERT: External network access enabled!")
+            self.logger.critical("⚠️ This configuration exposes README and system files!")
+
+        self.logger.info("📋 Security Warnings:")
+        for warning in security_warnings:
+            if warning.startswith(("🚨", "⚠️")):
+                self.logger.warning(f"   {warning}")
+            elif warning.startswith("✅"):
+                self.logger.info(f"   {warning}")
+            else:
+                self.logger.info(f"   ℹ️  {warning}")
+
+        self.logger.info("=" * 70)
 
     def _setup_unified_routes(self):
         """Setup unified Flask routes for the complete system"""
@@ -243,6 +400,33 @@ class SpectraGUILauncher:
                 except Exception as e:
                     return jsonify({"success": False, "error": str(e)})
             return jsonify({"success": False, "error": "Optimization engine not available"})
+
+        @self.app.route('/api/security/warnings')
+        def api_security_warnings():
+            """Get security warnings and notices"""
+            return jsonify({
+                "warnings": self._get_security_warnings(),
+                "access_info": {
+                    "host": self.config.host,
+                    "port": str(self.available_port or self.config.port),
+                    "security_level": "HIGH" if self.local_only else "LOW",
+                    "access_level": "LOCAL ONLY" if self.local_only else "NETWORK ACCESSIBLE"
+                },
+                "local_only": self.local_only,
+                "security_level": "HIGH" if self.local_only else "LOW"
+            })
+
+        @self.app.route('/api/system/access-info')
+        def api_access_info():
+            """Get system access information"""
+            return jsonify({
+                "host": self.config.host,
+                "port": str(self.available_port or self.config.port),
+                "security_level": "HIGH" if self.local_only else "LOW",
+                "access_level": "LOCAL ONLY" if self.local_only else "NETWORK ACCESSIBLE",
+                "readme_source": "Local file system only",
+                "data_access": "Local system files only"
+            })
 
         # WebSocket events
         @self.socketio.on('connect')
@@ -766,6 +950,69 @@ class SpectraGUILauncher:
             color: #6b7280;
         }
 
+        .security-notice {
+            background: rgba(255, 255, 255, 0.95);
+            border: 2px solid #10b981;
+            border-radius: 12px;
+            padding: 1rem;
+            margin-top: 1rem;
+            color: #065f46;
+            backdrop-filter: blur(10px);
+        }
+
+        .security-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .security-icon {
+            font-size: 1.5rem;
+        }
+
+        .security-title {
+            font-weight: 700;
+            font-size: 1.2rem;
+            color: #065f46;
+        }
+
+        .security-details p {
+            margin: 0.25rem 0;
+            font-size: 0.95rem;
+            line-height: 1.4;
+        }
+
+        .security-details strong {
+            color: #047857;
+            font-weight: 600;
+        }
+
+        #access-host, #access-port, #security-status {
+            font-weight: 600;
+            color: #059669;
+        }
+
+        .security-warning {
+            background: #fef3c7;
+            border: 2px solid #f59e0b;
+            color: #92400e;
+        }
+
+        .security-warning .security-title {
+            color: #92400e;
+        }
+
+        .security-critical {
+            background: #fee2e2;
+            border: 2px solid #ef4444;
+            color: #991b1b;
+        }
+
+        .security-critical .security-title {
+            color: #991b1b;
+        }
+
         .footer {
             text-align: center;
             padding: 2rem;
@@ -794,6 +1041,19 @@ class SpectraGUILauncher:
     <div class="header">
         <h1>SPECTRA GUI System</h1>
         <p>Comprehensive Multi-Agent Coordination and Management Platform</p>
+
+        <!-- Security Notice -->
+        <div id="security-notice" class="security-notice">
+            <div class="security-header">
+                <span class="security-icon">🔒</span>
+                <span class="security-title">LOCAL ACCESS ONLY</span>
+            </div>
+            <div class="security-details">
+                <p><strong>📍 README and system access is LOCAL SYSTEM ONLY</strong></p>
+                <p>🔐 No external file access • 💻 Local installation files only • 🚫 No network sharing</p>
+                <p>Host: <span id="access-host">127.0.0.1</span> | Port: <span id="access-port">5000</span> | Status: <span id="security-status">SECURE</span></p>
+            </div>
+        </div>
     </div>
 
     <div class="system-status">
@@ -922,13 +1182,16 @@ class SpectraGUILauncher:
         <!-- Documentation & Help -->
         <div class="component-card">
             <div class="component-header">
-                <div class="component-title">Documentation & Help</div>
+                <div class="component-title">Documentation & Help 🔒</div>
                 <div class="component-description">Complete system documentation, usage guides, and feature reference</div>
+                <div style="background: rgba(22, 163, 74, 0.2); color: #16a34a; padding: 0.5rem; border-radius: 6px; margin-top: 0.5rem; font-size: 0.85rem; font-weight: 600; text-align: center;">
+                    LOCAL ACCESS ONLY
+                </div>
             </div>
             <div class="component-body">
                 <div class="component-status">
                     <span class="status-indicator status-running"></span>
-                    <span>Available</span>
+                    <span>Secure & Available</span>
                 </div>
                 <div class="health-metrics">
                     <div class="metric-item">
@@ -997,6 +1260,52 @@ class SpectraGUILauncher:
         setInterval(updateUptime, 1000);
         updateUptime();
 
+        // Load security information
+        function loadSecurityInfo() {
+            fetch('/api/security/warnings')
+                .then(response => response.json())
+                .then(data => {
+                    updateSecurityNotice(data);
+                    updateAccessInfo(data.access_info);
+                })
+                .catch(error => {
+                    console.warn('Could not load security info:', error);
+                    updateSecurityNotice({
+                        warnings: ["📍 README ACCESS IS LOCAL SYSTEM ONLY"],
+                        local_only: true,
+                        security_level: "HIGH"
+                    });
+                });
+        }
+
+        function updateSecurityNotice(securityData) {
+            const notice = document.getElementById('security-notice');
+            if (!notice) return;
+
+            // Update security level styling
+            notice.className = 'security-notice';
+            if (!securityData.local_only) {
+                notice.classList.add('security-critical');
+            }
+
+            // Update security status
+            const statusEl = document.getElementById('security-status');
+            if (statusEl) {
+                statusEl.textContent = securityData.local_only ? 'SECURE (LOCAL)' : 'EXPOSED (NETWORK)';
+                statusEl.style.color = securityData.local_only ? '#059669' : '#dc2626';
+            }
+        }
+
+        function updateAccessInfo(accessInfo) {
+            if (!accessInfo) return;
+
+            const hostEl = document.getElementById('access-host');
+            const portEl = document.getElementById('access-port');
+
+            if (hostEl) hostEl.textContent = accessInfo.host || '127.0.0.1';
+            if (portEl) portEl.textContent = accessInfo.port || '5000';
+        }
+
         // Auto-refresh system status
         setInterval(function() {
             fetch('/api/system/status')
@@ -1004,6 +1313,10 @@ class SpectraGUILauncher:
                 .then(data => updateSystemStatus(data))
                 .catch(error => console.error('Error fetching system status:', error));
         }, 5000);
+
+        // Load initial security info and refresh periodically
+        loadSecurityInfo();
+        setInterval(loadSecurityInfo, 30000); // Every 30 seconds
     </script>
 </body>
 </html>
@@ -1043,12 +1356,30 @@ class SpectraGUILauncher:
 
         self.logger.info("Starting SPECTRA GUI System")
 
+        # Check port availability and find alternative if needed
+        self.logger.info(f"🔍 Checking availability of port {self.config.port}")
+        if not self._check_port_availability(self.config.port):
+            self.logger.warning(f"⚠️ Port {self.config.port} is already in use")
+            alternative_port = self._find_available_port(self.config.port + 1)
+            if alternative_port:
+                self.logger.info(f"✅ Using alternative port {alternative_port}")
+                self.available_port = alternative_port
+            else:
+                self.logger.error("❌ CRITICAL: No available ports found in range")
+                self.logger.error("🔧 Try stopping other services or using a different port range")
+                return False
+        else:
+            self.logger.info(f"✅ Port {self.config.port} is available")
+
         # Initialize all components
         if not await self.initialize_system():
             self.logger.error("System initialization failed")
             return False
 
         self.system_running = True
+
+        # Log security status
+        self._log_security_status()
 
         # Start orchestrator
         if self.orchestrator:
@@ -1058,12 +1389,13 @@ class SpectraGUILauncher:
         self.monitoring_task = asyncio.create_task(self._health_monitoring_loop())
 
         # Start unified web interface
+        actual_port = self.available_port or self.config.port
         try:
-            self.logger.info(f"Starting unified interface at http://{self.config.host}:{self.config.port}")
+            self.logger.info(f"Starting unified interface at http://{self.config.host}:{actual_port}")
             self.socketio.run(
                 self.app,
                 host=self.config.host,
-                port=self.config.port,
+                port=actual_port,
                 debug=self.config.debug,
                 use_reloader=False
             )
@@ -1182,10 +1514,10 @@ class SpectraGUILauncher:
 
 
 def create_default_config() -> SystemConfiguration:
-    """Create default system configuration"""
+    """Create default system configuration with security-first defaults"""
     return SystemConfiguration(
         mode=SystemMode.DEVELOPMENT,
-        host="0.0.0.0",
+        host="127.0.0.1",  # SECURITY: localhost only by default
         port=5000,
         debug=True,
         orchestrator_config="spectra_config.json",
@@ -1198,7 +1530,7 @@ def create_default_config() -> SystemConfiguration:
             "phase_dashboard": 5003,
             "implementation": 5004
         },
-        security_enabled=False,
+        security_enabled=True,  # SECURITY: Enable security by default
         monitoring_interval=5.0
     )
 
@@ -1207,7 +1539,7 @@ async def main():
     """Main entry point for the SPECTRA GUI system"""
     parser = argparse.ArgumentParser(description="SPECTRA Comprehensive GUI System")
     parser.add_argument("--config", help="Configuration file path")
-    parser.add_argument("--host", default="0.0.0.0", help="Host address")
+    parser.add_argument("--host", default="127.0.0.1", help="Host address (default: 127.0.0.1 for security)")
     parser.add_argument("--port", type=int, default=5000, help="Port number")
     parser.add_argument("--mode", choices=["development", "staging", "production", "demo"],
                        default="development", help="System mode")

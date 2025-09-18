@@ -566,6 +566,9 @@
             <div class="status-item">
                 <span>Mode: {{ system_status.mode|title }}</span>
             </div>
+            <div class="status-item">
+                <span style="background: #16a34a; color: white; padding: 2px 8px; border-radius: 12px; font-weight: 600; font-size: 0.8rem;">🔒 LOCAL ONLY</span>
+            </div>
         </div>
         <div class="status-timestamp">
             Last updated: <span id="last-updated">{{ system_status.timestamp }}</span>
@@ -633,6 +636,19 @@
             <div class="content-header">
                 <h1 class="content-title">SPECTRA GUI System</h1>
                 <p class="content-subtitle">Advanced Multi-Agent Intelligence Collection Platform</p>
+
+                <!-- Security Notice -->
+                <div style="background: #f0f9ff; border: 2px solid #16a34a; border-radius: 8px; padding: 1rem; margin: 1rem 0; text-align: center;">
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                        <span style="font-size: 1.2rem;">🔒</span>
+                        <strong style="color: #16a34a; font-size: 1.1rem;">LOCAL ACCESS ONLY</strong>
+                        <span style="font-size: 1.2rem;">🏠</span>
+                    </div>
+                    <p style="margin: 0; color: #374151; font-size: 0.9rem;">
+                        This documentation is served locally from your system. No external network access to files or data.
+                    </p>
+                </div>
+
                 <div class="quick-links">
                     <a href="/" class="quick-link">← Back to Dashboard</a>
                     <a href="/api/system/status" class="quick-link">System Status</a>

@@ -21,6 +21,7 @@ Date: September 18, 2025
 import asyncio
 import json
 import logging
+import socket
 import threading
 import time
 from datetime import datetime, timedelta
@@ -150,7 +151,7 @@ class SpectraCoordinationGUI:
 
     def __init__(self,
                  orchestrator: SpectraOrchestrator,
-                 host: str = "0.0.0.0",
+                 host: str = "127.0.0.1",  # Changed default to localhost only
                  port: int = 5001,
                  debug: bool = False):
         """Initialize the coordination GUI"""
@@ -159,6 +160,10 @@ class SpectraCoordinationGUI:
         self.host = host
         self.port = port
         self.debug = debug
+
+        # Security configuration
+        self.local_only = host in ["127.0.0.1", "localhost"]
+        self.available_port = None
 
         # GUI state management
         self.is_running = False
@@ -190,6 +195,71 @@ class SpectraCoordinationGUI:
         # Background processing
         self.update_thread = None
         self.stop_event = threading.Event()
+
+    def _check_port_availability(self, port: int) -> bool:
+        """Check if a port is available for use"""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(2)  # Increased timeout for better reliability
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                result = sock.connect_ex((self.host, port))
+                return result != 0  # Port is available if connection fails
+        except Exception as e:
+            self.logger.warning(f"Port availability check failed for {port}: {e}")
+            return False
+
+    def _find_available_port(self, start_port: int = 5001, max_attempts: int = 20) -> Optional[int]:
+        """Find an available port starting from start_port"""
+        self.logger.info(f"🔍 Searching for available port starting from {start_port}")
+
+        for port in range(start_port, start_port + max_attempts):
+            if self._check_port_availability(port):
+                self.logger.info(f"✅ Found available port: {port}")
+                return port
+            else:
+                self.logger.debug(f"❌ Port {port} is in use")
+
+        self.logger.error(f"❌ No available ports found in range {start_port}-{start_port + max_attempts}")
+        return None
+
+    def _get_security_warnings(self) -> List[str]:
+        """Generate security warnings based on configuration"""
+        warnings = []
+
+        if not self.local_only:
+            warnings.extend([
+                "🚨 CRITICAL SECURITY RISK: GUI is accessible from external networks!",
+                "🔒 This exposes README and system information to network access",
+                "⚠️ Potential data exposure risk from network accessibility",
+                "🏠 IMMEDIATE ACTION: Change host to 127.0.0.1 or localhost for security",
+                "🔐 Current configuration allows external file system access"
+            ])
+        else:
+            warnings.extend([
+                "✅ SECURE: GUI is configured for localhost access only",
+                "🔒 README and system files are protected from external access"
+            ])
+
+        warnings.extend([
+            "📍 README ACCESS IS LOCAL SYSTEM ONLY",
+            "🔐 No external file system access is provided",
+            "💻 All documentation served from local installation only",
+            "🚫 No network file sharing or remote access capabilities",
+            "🛡️ System files and configuration protected from external access"
+        ])
+
+        return warnings
+
+    def _get_access_info(self) -> Dict[str, str]:
+        """Get access information for display"""
+        return {
+            "access_level": "LOCAL ONLY" if self.local_only else "NETWORK ACCESSIBLE",
+            "host": self.host,
+            "port": str(self.available_port or self.port),
+            "security_status": "SECURE (localhost)" if self.local_only else "EXPOSED (network)",
+            "readme_source": "Local file system only",
+            "data_access": "Local system files only"
+        }
 
     def _setup_routes(self):
         """Setup Flask routes for the GUI application"""
@@ -286,6 +356,21 @@ class SpectraCoordinationGUI:
         def api_get_optimization_recommendations():
             """Get optimization recommendations"""
             return jsonify(self._get_optimization_recommendations())
+
+        @self.app.route('/api/security/warnings')
+        def api_security_warnings():
+            """Get security warnings and notices"""
+            return jsonify({
+                "warnings": self._get_security_warnings(),
+                "access_info": self._get_access_info(),
+                "local_only": self.local_only,
+                "security_level": "HIGH" if self.local_only else "LOW"
+            })
+
+        @self.app.route('/api/system/access-info')
+        def api_access_info():
+            """Get system access information"""
+            return jsonify(self._get_access_info())
 
     def _setup_websocket_handlers(self):
         """Setup WebSocket event handlers for real-time communication"""
@@ -726,8 +811,34 @@ class SpectraCoordinationGUI:
             self.logger.warning("GUI is already running")
             return
 
+        # Check port availability and find alternative if needed
+        self.logger.info(f"🔍 Checking availability of port {self.port}")
+        if not self._check_port_availability(self.port):
+            self.logger.warning(f"⚠️ Port {self.port} is already in use")
+            alternative_port = self._find_available_port(self.port + 1)
+            if alternative_port:
+                self.logger.info(f"✅ Using alternative port {alternative_port}")
+                self.available_port = alternative_port
+            else:
+                self.logger.error("❌ CRITICAL: No available ports found in range")
+                self.logger.error("🔧 Try stopping other services or using a different port range")
+                return False
+        else:
+            self.logger.info(f"✅ Port {self.port} is available")
+
+        actual_port = self.available_port or self.port
         self.is_running = True
-        self.logger.info(f"Starting SPECTRA Coordination GUI at http://{self.host}:{self.port}")
+
+        # Log security information
+        security_warnings = self._get_security_warnings()
+        access_info = self._get_access_info()
+
+        self.logger.info(f"Starting SPECTRA Coordination GUI")
+        self.logger.info(f"🌐 Access URL: http://{self.host}:{actual_port}")
+        self.logger.info(f"🔒 Security Level: {'HIGH (local only)' if self.local_only else 'LOW (network accessible)'}")
+
+        for warning in security_warnings[:3]:  # Log first 3 warnings
+            self.logger.info(f"⚠️  {warning}")
 
         # Start background update thread
         self.update_thread = threading.Thread(target=self._update_loop, daemon=True)
@@ -741,14 +852,17 @@ class SpectraCoordinationGUI:
             self.socketio.run(
                 self.app,
                 host=self.host,
-                port=self.port,
+                port=actual_port,
                 debug=self.debug,
                 use_reloader=False  # Avoid conflicts with threading
             )
         except Exception as e:
             self.logger.error(f"GUI application error: {e}", exc_info=True)
+            return False
         finally:
             self.is_running = False
+
+        return True
 
     async def stop_gui(self):
         """Stop the GUI application"""
@@ -868,6 +982,69 @@ class SpectraCoordinationGUI:
         .header p {
             opacity: 0.9;
             font-size: 1.1rem;
+        }
+
+        .security-notice {
+            background: rgba(255, 255, 255, 0.95);
+            border: 2px solid #10b981;
+            border-radius: 12px;
+            padding: 1rem;
+            margin-top: 1rem;
+            color: #065f46;
+            backdrop-filter: blur(10px);
+        }
+
+        .security-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .security-icon {
+            font-size: 1.5rem;
+        }
+
+        .security-title {
+            font-weight: 700;
+            font-size: 1.2rem;
+            color: #065f46;
+        }
+
+        .security-details p {
+            margin: 0.25rem 0;
+            font-size: 0.95rem;
+            line-height: 1.4;
+        }
+
+        .security-details strong {
+            color: #047857;
+            font-weight: 600;
+        }
+
+        #access-host, #access-port, #security-status {
+            font-weight: 600;
+            color: #059669;
+        }
+
+        .security-warning {
+            background: #fef3c7;
+            border: 2px solid #f59e0b;
+            color: #92400e;
+        }
+
+        .security-warning .security-title {
+            color: #92400e;
+        }
+
+        .security-critical {
+            background: #fee2e2;
+            border: 2px solid #ef4444;
+            color: #991b1b;
+        }
+
+        .security-critical .security-title {
+            color: #991b1b;
         }
 
         .nav-tabs {
@@ -1182,6 +1359,19 @@ class SpectraCoordinationGUI:
     <div class="header">
         <h1>SPECTRA Agent Coordination System</h1>
         <p>Multi-Agent Workflow Management for Advanced Data Management Implementation</p>
+
+        <!-- Security Notice -->
+        <div id="security-notice" class="security-notice">
+            <div class="security-header">
+                <span class="security-icon">🔒</span>
+                <span class="security-title">LOCAL ACCESS ONLY</span>
+            </div>
+            <div class="security-details">
+                <p><strong>📍 README and documentation access is LOCAL SYSTEM ONLY</strong></p>
+                <p>🔐 No external file system access • 💻 Local installation files only</p>
+                <p>Host: <span id="access-host">127.0.0.1</span> | Port: <span id="access-port">5001</span> | Status: <span id="security-status">SECURE</span></p>
+            </div>
+        </div>
     </div>
 
     <div class="nav-tabs">
@@ -1509,14 +1699,64 @@ class SpectraCoordinationGUI:
             });
         }
 
+        // Load security information
+        function loadSecurityInfo() {
+            fetch('/api/security/warnings')
+                .then(response => response.json())
+                .then(data => {
+                    updateSecurityNotice(data);
+                    updateAccessInfo(data.access_info);
+                })
+                .catch(error => {
+                    console.warn('Could not load security info:', error);
+                    updateSecurityNotice({
+                        warnings: ["📍 README ACCESS IS LOCAL SYSTEM ONLY"],
+                        local_only: true,
+                        security_level: "HIGH"
+                    });
+                });
+        }
+
+        function updateSecurityNotice(securityData) {
+            const notice = document.getElementById('security-notice');
+            if (!notice) return;
+
+            // Update security level styling
+            notice.className = 'security-notice';
+            if (!securityData.local_only) {
+                notice.classList.add('security-critical');
+            }
+
+            // Update security status
+            const statusEl = document.getElementById('security-status');
+            if (statusEl) {
+                statusEl.textContent = securityData.local_only ? 'SECURE (LOCAL)' : 'EXPOSED (NETWORK)';
+                statusEl.style.color = securityData.local_only ? '#059669' : '#dc2626';
+            }
+        }
+
+        function updateAccessInfo(accessInfo) {
+            if (!accessInfo) return;
+
+            const hostEl = document.getElementById('access-host');
+            const portEl = document.getElementById('access-port');
+
+            if (hostEl) hostEl.textContent = accessInfo.host || '127.0.0.1';
+            if (portEl) portEl.textContent = accessInfo.port || '5001';
+        }
+
         // Initialize application
         document.addEventListener('DOMContentLoaded', function() {
             initializePerformanceChart();
+            loadSecurityInfo();
 
             // Load initial data
             fetch('/api/system/status')
                 .then(response => response.json())
                 .then(data => updateSystemMetrics(data));
+
+            // Refresh security info periodically
+            setInterval(loadSecurityInfo, 30000); // Every 30 seconds
         });
     </script>
 </body>
@@ -1559,7 +1799,7 @@ async def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="SPECTRA Agent Coordination GUI")
-    parser.add_argument("--host", default="0.0.0.0", help="Host address")
+    parser.add_argument("--host", default="127.0.0.1", help="Host address (default: 127.0.0.1 for security)")
     parser.add_argument("--port", type=int, default=5001, help="Port number")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument("--config", default="spectra_config.json", help="Orchestrator configuration")

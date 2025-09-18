@@ -30,9 +30,19 @@ Pillow==10.1.0
 npyscreen==4.10.5
 # Fallback: npyscreen>=4.10.0,<5.0
 
-# Template rendering
+# Template rendering and web framework
 Jinja2==3.1.2
 # Fallback: Jinja2>=3.0.0,<4.0
+
+Flask==2.3.3
+# Fallback: Flask>=2.0.0,<3.0
+
+Flask-SocketIO==5.3.6
+# Fallback: Flask-SocketIO>=5.0.0,<6.0
+
+# Markdown processing for documentation
+Markdown==3.5.1
+# Fallback: Markdown>=3.4.0,<4.0
 
 # === NETWORK ANALYSIS (RECOMMENDED) ===
 # Required for discovery and network visualization
@@ -177,10 +187,10 @@ pywin32==306; sys_platform == "win32"
 #   pip install -r requirements.txt
 #
 # Strategy 2 - Core only (minimal):
-#   pip install telethon rich tqdm PyYAML Pillow npyscreen Jinja2
+#   pip install telethon rich tqdm PyYAML Pillow npyscreen Jinja2 Flask Flask-SocketIO Markdown
 #
 # Strategy 3 - Core + Network analysis:
-#   pip install telethon rich tqdm PyYAML Pillow npyscreen Jinja2 networkx matplotlib pandas
+#   pip install telethon rich tqdm PyYAML Pillow npyscreen Jinja2 Flask Flask-SocketIO Markdown networkx matplotlib pandas
 #
 # Strategy 4 - Selective (skip problematic packages):
 #   Comment out packages that fail and install manually later

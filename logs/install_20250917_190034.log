@@ -1,0 +1,90 @@
+[2025-09-17 19:00:34] [INFO] Skipping system dependencies
+[2025-09-17 19:00:34] [INFO] Force reinstall enabled
+[2025-09-17 19:00:34] [INFO] Starting SPECTRA enhanced auto-installation
+[2025-09-17 19:00:34] [INFO] Installation log: /home/john/SPECTRA/logs/install_20250917_190034.log
+[2025-09-17 19:00:34] [PROGRESS] Detecting system configuration...
+[2025-09-17 19:00:34] [SUCCESS] System detected: linux (debian) with apt
+[2025-09-17 19:00:34] [PROGRESS] Detecting Python installation...
+[2025-09-17 19:00:34] [SUCCESS] Found suitable Python: python3 (version 3.13)
+[2025-09-17 19:00:34] [INFO] Skipping system dependencies installation
+[2025-09-17 19:00:34] [PROGRESS] Setting up Python virtual environment...
+[2025-09-17 19:00:36] [SUCCESS] Virtual environment created
+[2025-09-17 19:00:36] [INFO] Upgrading pip...
+Requirement already satisfied: pip in ./.venv/lib/python3.13/site-packages (25.2)
+[2025-09-17 19:00:37] [SUCCESS] Pip upgraded
+[2025-09-17 19:00:37] [PROGRESS] Installing Python dependencies...
+Obtaining file:///home/john/SPECTRA
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Checking if build backend supports build_editable: started
+  Checking if build backend supports build_editable: finished with status 'done'
+  Getting requirements to build editable: started
+  Getting requirements to build editable: finished with status 'done'
+  Preparing editable metadata (pyproject.toml): started
+  Preparing editable metadata (pyproject.toml): finished with status 'done'
+Collecting telethon==1.35.0 (from spectra-archive==0.0.0)
+  Downloading Telethon-1.35.0.tar.gz (599 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 599.8/599.8 kB 5.2 MB/s  0:00:00
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Collecting rich==13.6.0 (from spectra-archive==0.0.0)
+  Downloading rich-13.6.0-py3-none-any.whl.metadata (18 kB)
+Collecting tqdm==4.66.1 (from spectra-archive==0.0.0)
+  Downloading tqdm-4.66.1-py3-none-any.whl.metadata (57 kB)
+Collecting PyYAML==6.0.1 (from spectra-archive==0.0.0)
+  Downloading PyYAML-6.0.1.tar.gz (125 kB)
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Collecting Pillow==10.1.0 (from spectra-archive==0.0.0)
+  Downloading Pillow-10.1.0.tar.gz (50.8 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 50.8/50.8 MB 7.3 MB/s  0:00:06
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'error'
+  error: subprocess-exited-with-error
+  
+  × Getting requirements to build wheel did not run successfully.
+  │ exit code: 1
+  ╰─> [21 lines of output]
+      Traceback (most recent call last):
+        File "/home/john/SPECTRA/.venv/lib/python3.13/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py", line 389, in <module>
+          main()
+          ~~~~^^
+        File "/home/john/SPECTRA/.venv/lib/python3.13/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py", line 373, in main
+          json_out["return_val"] = hook(**hook_input["kwargs"])
+                                   ~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/home/john/SPECTRA/.venv/lib/python3.13/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py", line 143, in get_requires_for_build_wheel
+          return hook(config_settings)
+        File "/tmp/pip-build-env-3txch1oy/overlay/lib/python3.13/site-packages/setuptools/build_meta.py", line 331, in get_requires_for_build_wheel
+          return self._get_build_requires(config_settings, requirements=[])
+                 ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/tmp/pip-build-env-3txch1oy/overlay/lib/python3.13/site-packages/setuptools/build_meta.py", line 301, in _get_build_requires
+          self.run_setup()
+          ~~~~~~~~~~~~~~^^
+        File "/tmp/pip-build-env-3txch1oy/overlay/lib/python3.13/site-packages/setuptools/build_meta.py", line 317, in run_setup
+          exec(code, locals())
+          ~~~~^^^^^^^^^^^^^^^^
+        File "<string>", line 30, in <module>
+        File "<string>", line 27, in get_version
+      KeyError: '__version__'
+      [end of output]
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+error: subprocess-exited-with-error
+
+× Getting requirements to build wheel did not run successfully.
+│ exit code: 1
+╰─> See above for output.
+
+note: This error originates from a subprocess, and is likely not a problem with pip.
+[2025-09-17 19:00:54] [WARNING] Standard installation failed, trying alternative method...
+[2025-09-17 19:00:54] [ERROR] Python dependency installation failed

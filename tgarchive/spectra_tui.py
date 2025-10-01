@@ -1365,6 +1365,39 @@ class OSINTShowNetworkForm(npyscreen.Form):
     def back_to_menu(self):
         self.parentApp.switchForm("OSINT_MENU")
 
+
+# ── Forwarding & Deduplication Settings Form ────────────────────────────────
+class ForwardingSettingsForm(npyscreen.ActionFormV2):
+    """Form for configuring forwarding and deduplication settings."""
+
+    def create(self):
+        self.name = "Forwarding & Deduplication Settings"
+        self.config = self.parentApp.manager.config
+
+        self.add(npyscreen.FixedText, value="Forwarding Settings", editable=False)
+        self.always_prepend_info = self.add(npyscreen.Checkbox, name="Always Prepend Origin Info", value=self.config.data.get("forwarding", {}).get("always_prepend_origin_info", False))
+
+        self.add(npyscreen.FixedText, value="", editable=False)
+        self.add(npyscreen.FixedText, value="Deduplication Settings", editable=False)
+        self.enable_near_duplicates = self.add(npyscreen.Checkbox, name="Enable Near-Duplicate Detection", value=self.config.data.get("deduplication", {}).get("enable_near_duplicates", False))
+
+        self.fuzzy_threshold = self.add(npyscreen.TitleSlider, name="Fuzzy Hash Similarity Threshold:", out_of=100, step=1, value=self.config.data.get("deduplication", {}).get("fuzzy_hash_similarity_threshold", 90))
+        self.phash_threshold = self.add(npyscreen.TitleSlider, name="Perceptual Hash Distance Threshold:", out_of=20, step=1, value=self.config.data.get("deduplication", {}).get("perceptual_hash_distance_threshold", 5))
+
+    def on_ok(self):
+        # Save settings to config
+        self.config.data["forwarding"]["always_prepend_origin_info"] = self.always_prepend_info.value
+        self.config.data["deduplication"]["enable_near_duplicates"] = self.enable_near_duplicates.value
+        self.config.data["deduplication"]["fuzzy_hash_similarity_threshold"] = self.fuzzy_threshold.value
+        self.config.data["deduplication"]["perceptual_hash_distance_threshold"] = self.phash_threshold.value
+        self.config.save()
+        npyscreen.notify_confirm("Settings saved.", title="Success")
+        self.parentApp.switchForm("MAIN")
+
+    def on_cancel(self):
+        self.parentApp.switchForm("MAIN")
+
+
 # ── Main Menu Form ─────────────────────────────────────────────────────────
 class MainMenuForm(npyscreen.Form):
     """Main menu form for the application"""
@@ -1377,7 +1410,7 @@ class MainMenuForm(npyscreen.Form):
         self.add(npyscreen.FixedText, value="Integrated Telegram Intelligence Platform")
         self.add(npyscreen.FixedText, value="")
         
-        # Options
+        # Options - merged from both versions, best features combined
         self.add(npyscreen.ButtonPress, name="1. Archive Channel/Group", when_pressed_function=self.archive_form)
         self.add(npyscreen.ButtonPress, name="2. Discover Groups", when_pressed_function=self.discovery_form)
         self.add(npyscreen.ButtonPress, name="3. Network Analysis", when_pressed_function=self.graph_form)
@@ -1386,9 +1419,10 @@ class MainMenuForm(npyscreen.Form):
         self.add(npyscreen.ButtonPress, name="6. Group Mirroring", when_pressed_function=self.mirror_form)
         self.add(npyscreen.ButtonPress, name="7. Account Management", when_pressed_function=self.account_form)
         self.add(npyscreen.ButtonPress, name="8. Settings (VPS Config)", when_pressed_function=self.vps_config_form)
-        self.add(npyscreen.ButtonPress, name="9. Download Users", when_pressed_function=self.download_users_form)
-        self.add(npyscreen.ButtonPress, name="10. Help & About", when_pressed_function=self.help_form)
-        self.add(npyscreen.ButtonPress, name="11. Exit", when_pressed_function=self.exit_app)
+        self.add(npyscreen.ButtonPress, name="9. Forwarding & Deduplication Settings", when_pressed_function=self.forwarding_settings_form)
+        self.add(npyscreen.ButtonPress, name="10. Download Users", when_pressed_function=self.download_users_form)
+        self.add(npyscreen.ButtonPress, name="11. Help & About", when_pressed_function=self.help_form)
+        self.add(npyscreen.ButtonPress, name="12. Exit", when_pressed_function=self.exit_app)
         
         # Status
         self.add(npyscreen.FixedText, value="")
@@ -1445,6 +1479,10 @@ class MainMenuForm(npyscreen.Form):
     def download_users_form(self):
         """Switch to download users form"""
         self.parentApp.switchForm("DOWNLOAD_USERS")
+
+    def forwarding_settings_form(self):
+        """Switch to forwarding settings form"""
+        self.parentApp.switchForm("FORWARDING_SETTINGS")
     
     def help_form(self):
         """Show help and about information"""
@@ -1499,11 +1537,12 @@ class SpectraApp(npyscreen.NPSAppManaged):
         self.addForm("FORWARDING", ForwardingMenuForm, name="SPECTRA Forwarding")
         self.addForm("SET_FORWARD_DEST", SetForwardDestForm, name="Set Default Forwarding Destination")
         self.addForm("SELECTIVE_FORWARD", SelectiveForwardForm, name="Selective Message Forwarding")
-        self.addForm("TOTAL_FORWARD", TotalForwardForm, name="Total Forward Mode") # New form
+        self.addForm("TOTAL_FORWARD", TotalForwardForm, name="Total Forward Mode")
         self.addForm("REPOST", RepostForm, name="Re-post Messages")
+        self.addForm("FORWARDING_SETTINGS", ForwardingSettingsForm, name="Forwarding & Deduplication Settings")
         self.addForm("DISCOVERY", DiscoveryForm, name="SPECTRA Group Discovery")
         self.addForm("GRAPH", GraphExplorerForm, name="SPECTRA Network Explorer")
-        self.addForm("VPS_CONFIG", VPSConfigForm, name="VPS Configuration") # Add new form
+        self.addForm("VPS_CONFIG", VPSConfigForm, name="VPS Configuration")
         self.addForm("DOWNLOAD_USERS", DownloadUsersForm, name="SPECTRA User Downloader")
         self.addForm("GROUP_MIRROR", GroupMirrorForm, name="SPECTRA Group Mirroring")
         self.addForm("OSINT_MENU", OSINTMenuForm, name="OSINT Utilities")
@@ -1561,4 +1600,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()

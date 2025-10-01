@@ -1,0 +1,20 @@
+2025-09-18 14:43:27,192 [INFO] spectra_gui_launcher: 🔍 Searching for available port starting from 9990
+2025-09-18 14:43:27,192 [INFO] spectra_gui_launcher: ✅ Found available port: 9990
+2025-09-18 14:43:27,222 [INFO] spectra_gui_launcher: ======================================================================
+2025-09-18 14:43:27,222 [INFO] spectra_gui_launcher: 🔒 SPECTRA GUI SECURITY STATUS
+2025-09-18 14:43:27,222 [INFO] spectra_gui_launcher: ======================================================================
+2025-09-18 14:43:27,222 [INFO] spectra_gui_launcher: 🌐 Access URL: http://127.0.0.1:5000
+2025-09-18 14:43:27,222 [INFO] spectra_gui_launcher: 🔐 Security Level: HIGH (localhost only)
+2025-09-18 14:43:27,222 [INFO] spectra_gui_launcher: 📍 README Source: Local file system only
+2025-09-18 14:43:27,222 [INFO] spectra_gui_launcher: ⚡ Port Status: Default port 5000
+2025-09-18 14:43:27,222 [INFO] spectra_gui_launcher: 📋 Security Warnings:
+2025-09-18 14:43:27,222 [INFO] spectra_gui_launcher:    ✅ SECURE: System is configured for localhost access only
+2025-09-18 14:43:27,222 [INFO] spectra_gui_launcher:    ℹ️  🔒 README and system files are protected from external access
+2025-09-18 14:43:27,222 [INFO] spectra_gui_launcher:    ℹ️  📍 README ACCESS IS LOCAL SYSTEM ONLY
+2025-09-18 14:43:27,222 [INFO] spectra_gui_launcher:    ℹ️  🔐 No external file system access provided
+2025-09-18 14:43:27,222 [INFO] spectra_gui_launcher:    ℹ️  💻 All documentation served from local installation only
+2025-09-18 14:43:27,222 [INFO] spectra_gui_launcher:    ℹ️  🚫 No network file sharing or remote access capabilities
+2025-09-18 14:43:27,222 [INFO] spectra_gui_launcher:    ℹ️  🛡️ System files and configuration protected from external access
+2025-09-18 14:43:27,222 [INFO] spectra_gui_launcher: ======================================================================
+2025-09-18 14:43:27,227 [INFO] spectra_gui_launcher: 🔍 Searching for available port starting from 9999
+2025-09-18 14:43:27,228 [INFO] spectra_gui_launcher: ✅ Found available port: 9999

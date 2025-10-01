@@ -1,0 +1,4 @@
+2025-09-18 01:05:05,648 [INFO] __main__: Starting SPECTRA GUI System
+2025-09-18 01:05:05,648 [INFO] __main__: Initializing SPECTRA GUI System
+2025-09-18 01:05:05,648 [INFO] spectra_orchestrator: SPECTRA Orchestrator initialized
+2025-09-18 01:05:05,649 [INFO] tgarchive.config_models: Loaded config from spectra_config.json

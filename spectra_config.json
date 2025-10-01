@@ -127,5 +127,83 @@
   },
   "migration_mode": {
     "use_parallel": false
+  },
+  "topic_organization": {
+    "enabled": true,
+    "mode": "auto_create",
+    "topic_strategy": "content_type",
+    "fallback_strategy": "general_topic",
+    "max_topics_per_channel": 100,
+    "topic_creation_cooldown_seconds": 30,
+    "enable_content_analysis": true,
+    "classification_confidence_threshold": 0.7,
+    "general_topic_title": "General Discussion",
+    "auto_cleanup_empty_topics": false,
+    "enable_statistics": true,
+    "debug_mode": false,
+    "content_type_mapping": {
+      "photo": {
+        "title": "📸 Photos",
+        "icon_color": 3498212,
+        "category": "photos"
+      },
+      "video": {
+        "title": "🎬 Videos",
+        "icon_color": 15158332,
+        "category": "videos"
+      },
+      "audio": {
+        "title": "🎵 Audio",
+        "icon_color": 10181046,
+        "category": "audio"
+      },
+      "document": {
+        "title": "📄 Documents",
+        "icon_color": 15844367,
+        "category": "documents"
+      },
+      "voice": {
+        "title": "🎤 Voice Messages",
+        "icon_color": 1679334,
+        "category": "voice"
+      },
+      "sticker": {
+        "title": "😄 Stickers",
+        "icon_color": 16772608,
+        "category": "stickers"
+      },
+      "animation": {
+        "title": "🎭 GIFs",
+        "icon_color": 3447003,
+        "category": "animations"
+      }
+    },
+    "file_extension_rules": {
+      "pdf": {
+        "category": "pdf_files",
+        "title": "📕 PDF Files",
+        "icon_color": 15158332
+      },
+      "zip,rar,7z,tar,gz": {
+        "category": "archives",
+        "title": "📦 Archives",
+        "icon_color": 6765239
+      },
+      "py,js,java,cpp,c,html,css": {
+        "category": "source_code",
+        "title": "💻 Source Code",
+        "icon_color": 3447003
+      },
+      "mp3,wav,flac,ogg,m4a": {
+        "category": "music",
+        "title": "🎼 Music Files",
+        "icon_color": 10181046
+      }
+    },
+    "date_based_templates": {
+      "daily": "📅 {date}",
+      "weekly": "📆 Week {week_num} - {year}",
+      "monthly": "🗓️ {month} {year}"
+    }
   }
 }

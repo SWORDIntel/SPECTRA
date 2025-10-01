@@ -1,0 +1,11 @@
+2025-09-18 01:04:02,905 [INFO] __main__: Starting SPECTRA GUI System
+2025-09-18 01:04:02,908 [INFO] __main__: Initializing SPECTRA GUI System
+2025-09-18 01:04:02,911 [INFO] spectra_orchestrator: SPECTRA Orchestrator initialized
+2025-09-18 01:04:02,913 [ERROR] spectra_orchestrator: Failed to initialize orchestrator: type object 'Config' has no attribute 'load_from_file'
+Traceback (most recent call last):
+  File "/home/john/SPECTRA/spectra_orchestrator.py", line 204, in initialize
+    self.config = Config.load_from_file(self.config_path)
+                  ^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'Config' has no attribute 'load_from_file'
+2025-09-18 01:04:02,918 [ERROR] __main__: ✗ Failed to initialize orchestrator
+2025-09-18 01:04:02,920 [ERROR] __main__: System initialization failed

@@ -1,0 +1,105 @@
+2025-08-03 08:00:11,740 [INFO] tgarchive.config_models: Loaded config from <MagicMock id='139947221377552'>
+2025-08-03 08:00:11,741 [INFO] tgarchive.forwarding.AttachmentForwarder: File grouping strategy: none
+2025-08-03 08:00:11,743 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication is ENABLED.
+2025-08-03 08:00:11,745 [INFO] tgarchive.forwarding.AttachmentForwarder: Loaded 0 existing file content hashes (SHA256) into memory.
+2025-08-03 08:00:11,761 [INFO] tgarchive.forwarding.AttachmentForwarder: Near-duplicate file found for Msg ID 4 (fuzzy hash similarity: 91% >= 90%, matches file_id: 3).
+2025-08-03 08:00:11,763 [INFO] tgarchive.config_models: Loaded config from <MagicMock id='139947221461968'>
+2025-08-03 08:00:11,764 [INFO] tgarchive.forwarding.AttachmentForwarder: File grouping strategy: none
+2025-08-03 08:00:11,764 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication is ENABLED.
+2025-08-03 08:00:11,765 [INFO] tgarchive.forwarding.AttachmentForwarder: Loaded 0 existing file content hashes (SHA256) into memory.
+2025-08-03 08:00:12,372 [INFO] tgarchive.forwarding.AttachmentForwarder: Near-duplicate image found for Msg ID 2 (pHash distance: 4 <= 5, matches file_id: 1).
+2025-08-03 08:00:12,427 [INFO] spectra_004_db: DB ready at test.db
+2025-08-03 08:00:12,479 [INFO] spectra_004_db: DB ready at test.db
+2025-08-03 08:00:12,526 [INFO] spectra_004_db: DB ready at test.db
+2025-08-03 08:00:12,571 [INFO] spectra_004_db: DB ready at test.db
+2025-08-03 08:00:12,969 [INFO] spectra_004_db: DB ready at test.db
+2025-08-03 08:00:13,021 [INFO] spectra_004_db: DB ready at test.db
+2025-08-03 08:00:13,078 [INFO] spectra_004_db: DB ready at test.db
+2025-08-03 08:00:13,082 [ERROR] tgarchive.file_sorter: Error updating category stats for test.pdf: [Errno 2] No such file or directory: 'test.pdf'
+2025-08-03 08:00:13,084 [ERROR] tgarchive.file_sorter: Error updating category stats for test.jpg: [Errno 2] No such file or directory: 'test.jpg'
+2025-08-03 08:00:13,084 [ERROR] tgarchive.file_sorter: Error getting MIME type for test.unknown: test error
+2025-08-03 08:00:13,084 [ERROR] tgarchive.file_sorter: Error updating category stats for test.unknown: [Errno 2] No such file or directory: 'test.unknown'
+2025-08-03 08:00:13,129 [INFO] spectra_004_db: DB ready at test.db
+2025-08-03 08:00:13,201 [INFO] tgarchive.config_models: Configuration saved to <MagicMock spec='Path' id='139946744100528'>
+2025-08-03 08:00:13,206 [INFO] tgarchive.forwarding.AttachmentForwarder: File grouping strategy: none
+2025-08-03 08:00:13,206 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication is ENABLED.
+2025-08-03 08:00:13,207 [INFO] tgarchive.forwarding.AttachmentForwarder: Loaded 0 existing file content hashes (SHA256) into memory.
+2025-08-03 08:00:13,208 [INFO] tgarchive.forwarding.AttachmentForwarder: File grouping strategy: filename
+2025-08-03 08:00:13,208 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication is ENABLED.
+2025-08-03 08:00:13,210 [INFO] tgarchive.forwarding.AttachmentForwarder: Loaded 0 existing file content hashes (SHA256) into memory.
+2025-08-03 08:00:13,216 [INFO] tgarchive.config_models: Configuration saved to <MagicMock spec='Path' id='139946723077072'>
+2025-08-03 08:00:13,217 [INFO] tgarchive.forwarding.AttachmentForwarder: File grouping strategy: none
+2025-08-03 08:00:13,217 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication is ENABLED.
+2025-08-03 08:00:13,219 [INFO] tgarchive.forwarding.AttachmentForwarder: Loaded 0 existing file content hashes (SHA256) into memory.
+2025-08-03 08:00:13,219 [INFO] tgarchive.forwarding.AttachmentForwarder: File grouping strategy: time
+2025-08-03 08:00:13,219 [INFO] tgarchive.forwarding.AttachmentForwarder: Grouping time window: 60 seconds
+2025-08-03 08:00:13,219 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication is ENABLED.
+2025-08-03 08:00:13,220 [INFO] tgarchive.forwarding.AttachmentForwarder: Loaded 0 existing file content hashes (SHA256) into memory.
+2025-08-03 08:00:13,266 [INFO] tgarchive.config_models: Configuration saved to <MagicMock spec='Path' id='139946712143040'>
+2025-08-03 08:00:13,268 [INFO] tgarchive.forwarding.AttachmentForwarder: File grouping strategy: none
+2025-08-03 08:00:13,268 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication is ENABLED.
+2025-08-03 08:00:13,269 [INFO] tgarchive.forwarding.AttachmentForwarder: Loaded 0 existing file content hashes (SHA256) into memory.
+2025-08-03 08:00:13,272 [INFO] tgarchive.config_models: Loaded config from spectra_config.json
+2025-08-03 08:00:13,316 [INFO] spectra_004_db: DB ready at test.db
+2025-08-03 08:00:13,316 [INFO] tgarchive.forwarding.SortingForwarder: File grouping strategy: none
+2025-08-03 08:00:13,316 [INFO] tgarchive.forwarding.SortingForwarder: Deduplication is ENABLED.
+2025-08-03 08:00:13,316 [INFO] tgarchive.forwarding.SortingForwarder: Loaded 0 existing file content hashes (SHA256) into memory.
+2025-08-03 08:00:13,321 [ERROR] tgarchive.file_sorter: Error getting MIME type for /tmp/tmpe65cq0fk/MagicMock/doc1.pdf.name/139946712138864: [Errno 2] No such file or directory: '/tmp/tmpe65cq0fk/MagicMock/doc1.pdf.name/139946712138864'
+2025-08-03 08:00:13,321 [ERROR] tgarchive.file_sorter: Error updating category stats for /tmp/tmpe65cq0fk/MagicMock/doc1.pdf.name/139946712138864: [Errno 2] No such file or directory: '/tmp/tmpe65cq0fk/MagicMock/doc1.pdf.name/139946712138864'
+2025-08-03 08:00:13,324 [ERROR] tgarchive.file_sorter: Error getting MIME type for /tmp/tmpe65cq0fk/MagicMock/archive1.zip.name/139946712075344: [Errno 2] No such file or directory: '/tmp/tmpe65cq0fk/MagicMock/archive1.zip.name/139946712075344'
+2025-08-03 08:00:13,325 [ERROR] tgarchive.file_sorter: Error updating category stats for /tmp/tmpe65cq0fk/MagicMock/archive1.zip.name/139946712075344: [Errno 2] No such file or directory: '/tmp/tmpe65cq0fk/MagicMock/archive1.zip.name/139946712075344'
+2025-08-03 08:00:13,328 [ERROR] tgarchive.file_sorter: Error getting MIME type for /tmp/tmpe65cq0fk/MagicMock/readme.txt.name/139946743976864: [Errno 2] No such file or directory: '/tmp/tmpe65cq0fk/MagicMock/readme.txt.name/139946743976864'
+2025-08-03 08:00:13,328 [ERROR] tgarchive.file_sorter: Error updating category stats for /tmp/tmpe65cq0fk/MagicMock/readme.txt.name/139946743976864: [Errno 2] No such file or directory: '/tmp/tmpe65cq0fk/MagicMock/readme.txt.name/139946743976864'
+2025-08-03 08:00:13,334 [INFO] tgarchive.config_models: Loaded config from spectra_config.json
+2025-08-03 08:00:13,383 [INFO] spectra_004_db: DB ready at test.db
+2025-08-03 08:00:13,384 [INFO] tgarchive.forwarding.AttachmentForwarder: File grouping strategy: none
+2025-08-03 08:00:13,384 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication is ENABLED.
+2025-08-03 08:00:13,384 [INFO] tgarchive.forwarding.AttachmentForwarder: Loaded 0 existing file content hashes (SHA256) into memory.
+2025-08-03 08:00:13,388 [INFO] tgarchive.config_models: Loaded config from spectra_config.json
+2025-08-03 08:00:13,437 [INFO] spectra_004_db: DB ready at test.db
+2025-08-03 08:00:13,438 [INFO] tgarchive.forwarding.AttachmentForwarder: File grouping strategy: none
+2025-08-03 08:00:13,438 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication is ENABLED.
+2025-08-03 08:00:13,438 [INFO] tgarchive.forwarding.AttachmentForwarder: Loaded 0 existing file content hashes (SHA256) into memory.
+2025-08-03 08:00:13,439 [INFO] tgarchive.config_models: Loaded config from <MagicMock id='139946712088448'>
+2025-08-03 08:00:13,440 [INFO] tgarchive.forwarding.AttachmentForwarder: File grouping strategy: none
+2025-08-03 08:00:13,440 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication is ENABLED.
+2025-08-03 08:00:13,441 [INFO] tgarchive.forwarding.AttachmentForwarder: Loaded 0 existing file content hashes (SHA256) into memory.
+2025-08-03 08:00:13,446 [INFO] tgarchive.forwarding.AttachmentForwarder: Recorded forwarded file (Msg ID 1, SHA256: 54eb06f8ca...) to database.
+2025-08-03 08:00:13,447 [INFO] tgarchive.forwarding.AttachmentForwarder: Duplicate file found (Msg ID 1, SHA256: 54eb06f8ca...) via in-memory cache.
+2025-08-03 08:00:13,448 [INFO] tgarchive.forwarding.AttachmentForwarder: Duplicate file found (Msg ID 1, SHA256: 54eb06f8ca...) via database.
+2025-08-03 08:00:13,450 [INFO] tgarchive.config_models: Loaded config from <MagicMock id='139947219640992'>
+2025-08-03 08:00:13,450 [INFO] tgarchive.forwarding.AttachmentForwarder: File grouping strategy: none
+2025-08-03 08:00:13,450 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication is ENABLED.
+2025-08-03 08:00:13,450 [WARNING] tgarchive.forwarding.AttachmentForwarder: Deduplication is enabled, but no database is configured. Deduplication will be in-memory only for this session.
+2025-08-03 08:00:13,452 [INFO] tgarchive.forwarding.AttachmentForwarder: Attempting to resolve channel: '12345'
+2025-08-03 08:00:13,452 [INFO] tgarchive.forwarding.AttachmentForwarder: Channel '12345' resolved to: 12345
+2025-08-03 08:00:13,453 [INFO] tgarchive.forwarding.AttachmentForwarder: Starting to re-post messages in channel 12345.
+2025-08-03 08:00:13,453 [INFO] tgarchive.forwarding.AttachmentForwarder: Successfully re-posted and deleted message ID: 1
+2025-08-03 08:00:13,454 [INFO] tgarchive.forwarding.AttachmentForwarder: Successfully re-posted and deleted message ID: 2
+2025-08-03 08:00:13,454 [INFO] tgarchive.forwarding.AttachmentForwarder: Finished re-posting messages in channel 12345.
+2025-08-03 08:00:13,455 [INFO] tgarchive.config_models: Loaded config from <MagicMock id='139946831637072'>
+2025-08-03 08:00:13,455 [INFO] tgarchive.forwarding.AttachmentForwarder: File grouping strategy: none
+2025-08-03 08:00:13,455 [INFO] tgarchive.forwarding.AttachmentForwarder: Deduplication is ENABLED.
+2025-08-03 08:00:13,455 [WARNING] tgarchive.forwarding.AttachmentForwarder: Deduplication is enabled, but no database is configured. Deduplication will be in-memory only for this session.
+2025-08-03 08:00:13,457 [INFO] tgarchive.forwarding.AttachmentForwarder: Attempting to resolve channel: '12345'
+2025-08-03 08:00:13,457 [INFO] tgarchive.forwarding.AttachmentForwarder: Channel '12345' resolved to: 12345
+2025-08-03 08:00:13,458 [INFO] tgarchive.forwarding.AttachmentForwarder: Starting to re-post messages in channel 12345.
+2025-08-03 08:00:13,458 [ERROR] tgarchive.forwarding.AttachmentForwarder: Could not delete message 1. Bot is likely not an admin in the channel.
+2025-08-03 08:00:13,458 [INFO] tgarchive.forwarding.AttachmentForwarder: Finished re-posting messages in channel 12345.
+2025-08-03 08:00:13,465 [INFO] tgarchive.forwarding.SortingForwarder: File grouping strategy: none
+2025-08-03 08:00:13,466 [INFO] tgarchive.forwarding.SortingForwarder: Deduplication is ENABLED.
+2025-08-03 08:00:13,466 [ERROR] tgarchive.forwarding.SortingForwarder: Error loading existing file hashes: 'Mock' object is not iterable
+Traceback (most recent call last):
+  File "/app/tgarchive/forwarding.py", line 142, in _load_existing_hashes
+    for row in cursor:
+               ^^^^^^
+TypeError: 'Mock' object is not iterable
+2025-08-03 08:00:13,470 [INFO] tgarchive.forwarding.SortingForwarder: File grouping strategy: none
+2025-08-03 08:00:13,470 [INFO] tgarchive.forwarding.SortingForwarder: Deduplication is ENABLED.
+2025-08-03 08:00:13,470 [ERROR] tgarchive.forwarding.SortingForwarder: Error loading existing file hashes: 'Mock' object is not iterable
+Traceback (most recent call last):
+  File "/app/tgarchive/forwarding.py", line 142, in _load_existing_hashes
+    for row in cursor:
+               ^^^^^^
+TypeError: 'Mock' object is not iterable
+2025-08-03 08:00:13,514 [INFO] spectra_004_db: DB ready at test.db

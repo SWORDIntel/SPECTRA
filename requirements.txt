@@ -22,7 +22,6 @@ tqdm==4.66.1
 PyYAML==6.0.1
 # Fallback: PyYAML>=6.0,<7.0
 
-<<<<<<< HEAD
 # Optional but recommended
 pysocks>=1.7.1  # For SOCKS proxy support
 cryptg>=0.2.post4  # For faster downloads
@@ -33,7 +32,7 @@ aiofiles>=23.2.1
 aiosqlite>=0.20.0
 tqdm>=4.66.1
 watchdog>=2.1.6
-=======
+
 # Image processing and media handling
 Pillow==10.1.0
 # Fallback: Pillow>=10.0.0,<11.0
@@ -205,5 +204,4 @@ pywin32==306; sys_platform == "win32"
 #   pip install telethon rich tqdm PyYAML Pillow npyscreen Jinja2 Flask Flask-SocketIO Markdown networkx matplotlib pandas
 #
 # Strategy 4 - Selective (skip problematic packages):
-#   Comment out packages that fail and install manually later
->>>>>>> master
+

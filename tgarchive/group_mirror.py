@@ -14,7 +14,13 @@ from typing import Optional, Dict
 from telethon import TelegramClient
 from telethon.tl import types, functions
 from telethon.tl.types import User, Channel
-from telethon.errors import FloodWaitError
+from telethon.errors import (
+    FloodWaitError,
+    UserNotParticipantError,
+    ChatAdminRequiredError,
+    ChatWriteForbiddenError,
+    ChannelPrivateError,
+)
 from tgarchive.config_models import Config
 from tgarchive.db.spectra_db import SpectraDB
 
@@ -86,12 +92,12 @@ class GroupMirrorManager:
     def _get_sender_name(self, sender: types.TypeUser | types.TypeChannel) -> str:
         """Constructs a display name for a sender entity."""
         if isinstance(sender, (User, types.User)):
-            name = sender.first_name
+            name = sender.first_name or ""
             if sender.last_name:
-                name = f"{name} {sender.last_name}"
-            return name
+                name = f"{name} {sender.last_name}".strip()
+            return name or "Unknown User"
         elif isinstance(sender, (Channel, types.Channel)):
-            return sender.title
+            return sender.title or "Unknown Channel"
         return "Unknown"
 
     async def _mirror_topics(self, source_channel: Channel, dest_channel: Channel) -> Dict[int, int]:
@@ -154,59 +160,72 @@ class GroupMirrorManager:
 
     async def mirror_group(self, source_entity_id, dest_entity_id):
         """The main method to perform the group mirroring."""
-        if not self.source_client or not self.dest_client:
-            await self.connect()
+        try:
+            if not self.source_client or not self.dest_client:
+                await self.connect()
 
-        self.logger.info(f"Starting mirror from '{source_entity_id}' to '{dest_entity_id}'")
+            self.logger.info(f"Starting mirror from '{source_entity_id}' to '{dest_entity_id}'")
 
-        source_channel = await self.source_client.get_entity(source_entity_id)
-        dest_channel = await self.dest_client.get_entity(dest_entity_id)
+            source_channel = await self.source_client.get_entity(source_entity_id)
+            dest_channel = await self.dest_client.get_entity(dest_entity_id)
 
-        if not (source_channel.forum and dest_channel.forum):
-             self.logger.error("Both source and destination must be supergroups with Topics enabled.")
-             return
+            if not (hasattr(source_channel, 'forum') and source_channel.forum and hasattr(dest_channel, 'forum') and dest_channel.forum):
+                self.logger.error("Both source and destination must be supergroups with Topics enabled.")
+                return
 
-        topic_map = await self._mirror_topics(source_channel, dest_channel)
+            topic_map = await self._mirror_topics(source_channel, dest_channel)
 
-        # State management
-        last_message_id = self.db.get_mirror_progress(str(source_channel.id), str(dest_channel.id))
-        if last_message_id is None:
-            self.logger.info("No previous mirror progress found. Starting new mirror.")
-            self.db.add_mirror_progress(str(source_channel.id), str(dest_channel.id), "in_progress")
-            last_message_id = 0
-        else:
-            self.logger.info(f"Resuming mirror from message ID: {last_message_id}")
+            # State management
+            last_message_id = self.db.get_mirror_progress(str(source_channel.id), str(dest_channel.id))
+            if last_message_id is None or last_message_id == 0:
+                self.logger.info("No previous mirror progress found. Starting new mirror.")
+                self.db.add_mirror_progress(str(source_channel.id), str(dest_channel.id), "in_progress")
+                last_message_id = 0
+            else:
+                self.logger.info(f"Resuming mirror from message ID: {last_message_id}")
 
-        async for message in self.source_client.iter_messages(source_channel, min_id=last_message_id, reverse=True):
-            try:
-                sender = await message.get_sender()
-                sender_name = self._get_sender_name(sender)
+            async for message in self.source_client.iter_messages(source_channel, min_id=last_message_id, reverse=True):
+                try:
+                    sender = await message.get_sender()
+                    sender_name = self._get_sender_name(sender)
 
-                content = f"**{sender_name}**: {message.text or ''}"
+                    content = f"**{sender_name}**: {message.text or ''}"
 
-                # Determine destination topic
-                dest_topic_id = None
-                if message.is_reply and message.reply_to and message.reply_to.forum_topic:
-                    source_topic_id = message.reply_to.reply_to_msg_id
-                    if source_topic_id in topic_map:
-                        dest_topic_id = topic_map[source_topic_id]
+                    # Determine destination topic
+                    dest_topic_id = None
+                    if message.is_reply and hasattr(message.reply_to, 'forum_topic') and message.reply_to.forum_topic:
+                        source_topic_id = message.reply_to.reply_to_msg_id
+                        if source_topic_id in topic_map:
+                            dest_topic_id = topic_map[source_topic_id]
 
-                file_to_send = await self.source_client.download_media(message.media, file=bytes) if message.media else None
+                    file_to_send = await self.source_client.download_media(message.media, file=bytes) if message.media else None
 
-                await self.dest_client.send_file(
-                    dest_channel,
-                    file=file_to_send,
-                    caption=content,
-                    reply_to=dest_topic_id
-                )
+                    await self.dest_client.send_file(
+                        dest_channel,
+                        file=file_to_send,
+                        caption=content,
+                        reply_to=dest_topic_id
+                    )
 
-                self.logger.debug(f"Mirrored message ID {message.id}")
-                self.db.update_mirror_progress(str(source_channel.id), str(dest_channel.id), message.id)
+                    self.logger.debug(f"Mirrored message ID {message.id}")
+                    self.db.update_mirror_progress(str(source_channel.id), str(dest_channel.id), message.id)
 
-            except FloodWaitError as e:
-                self.logger.warning(f"Flood wait error: sleeping for {e.seconds}s")
-                await asyncio.sleep(e.seconds)
-            except Exception as e:
-                self.logger.error(f"Failed to mirror message {message.id}: {e}")
+                except FloodWaitError as e:
+                    self.logger.warning(f"Flood wait error: sleeping for {e.seconds}s")
+                    await asyncio.sleep(e.seconds)
+                except (ChatWriteForbiddenError, ChatAdminRequiredError) as e:
+                    self.logger.error(f"Permissions error in destination group {dest_entity_id}: {e}. Halting mirror.")
+                    break
+                except Exception as e:
+                    self.logger.error(f"Failed to mirror message {message.id}: {e}")
 
-        self.logger.info("Group mirroring process completed.")
+            self.logger.info("Group mirroring process completed.")
+
+        except UserNotParticipantError as e:
+            self.logger.error(f"Source account is not a participant in the source group '{source_entity_id}': {e}")
+        except ChannelPrivateError as e:
+            self.logger.error(f"A group is private and the client is not a participant: {e}")
+        except ValueError as e:
+            self.logger.error(f"Invalid entity ID or account configuration: {e}")
+        except Exception as e:
+            self.logger.critical(f"An unexpected error occurred during the mirroring process: {e}", exc_info=True)

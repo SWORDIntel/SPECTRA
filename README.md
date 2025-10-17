@@ -21,6 +21,24 @@ SPECTRA is an advanced framework for Telegram data collection, network discovery
 - ☁️ **Forwarding Mode:** Traverse a series of channels, discover related channels, and download text/archive files with specific rules, using a single API key.
 - 🛡️ **Red team/OPSEC features**: account/proxy rotation, SQL audit trail, sidecar metadata, persistent stateS
 
+## Documentation Index
+
+- `docs/guides/` — Quick start, launcher usage, integration walkthroughs (`AGENTS.md`, `QUICK_START.md`, etc.).
+- `docs/reference/` — Core architecture references, changelog, and database schema.
+- `docs/design/` — UI mockups and interface planning assets.
+- `docs/reports/` — Security summaries, integration reports, and executive updates.
+- `docs/roadmap/` — Long-term initiatives and backlog material (e.g., deduplication plan).
+- `docs/research/` — Strategic research and enhancement studies.
+
+## Project Layout
+
+- `tgarchive/` — Core Python package (CLI, TUI, backend services).
+- `spectra_app/` — Orchestration, coordination, and GUI modules (importable package).
+- `examples/` — Demonstrations and sample workflows (e.g., `parallel_example.py`).
+- `scripts/` — Operational helpers (`spectra_launch.py`, `spectra_splash.py`, `system_validation_report.py`).
+- `tests/` — System and integration tests (`test_*.py`, `integration_test_suite.py`).
+- `deploy/` — Deployment assets such as `spectra-scheduler.service`.
+
 ## Installation
 
 ```bash
@@ -54,7 +72,7 @@ pip install -e .
 - Fixed critical Git merge conflicts blocking system startup
 - Resolved CLI parser conflicts and syntax errors
 - Validated full system functionality and dependency chain
-- See [CHANGELOG.md](CHANGELOG.md) for complete details
+- See [CHANGELOG.md](docs/reference/CHANGELOG.md) for complete details
 
 ## Configuration
 
@@ -405,7 +423,7 @@ Enabling `--forward-to-all-saved` provides a way to create a distributed backup 
 
 The "Total Forward Mode" (`--total-mode`) relies on the `account_channel_access` table in the SPECTRA database. This table stores a record of which channels are accessible by which of your configured accounts, including their names and access hashes. It is populated by the `tgarchive channels --update-access` command.
 
-For more details on the database schema, please refer to the [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md) file.
+For more details on the database schema, please refer to the [DATABASE_SCHEMA.md](docs/reference/DATABASE_SCHEMA.md) file.
 
 ---
 
@@ -480,11 +498,11 @@ Files will be fetched from the source, grouped according to the strategy, checke
 
 A ready-to-use example script is provided to demonstrate parallel discovery, join, and archive operations:
 
-**`SPECTRA/parallel_example.py`**
+**`examples/parallel_example.py`**
 
 ```bash
 # Run parallel discovery, join, and archive from a list of seeds
-python SPECTRA/parallel_example.py --seeds-file seeds.txt --max-workers 4 --discover --join --archive --export-file discovered.txt
+python examples/parallel_example.py --seeds-file seeds.txt --max-workers 4 --discover --join --archive --export-file discovered.txt
 ```
 
 - Supports importing accounts from `gen_config.py` automatically
@@ -510,7 +528,7 @@ python SPECTRA/parallel_example.py --seeds-file seeds.txt --max-workers 4 --disc
 
 - **`SPECTRA/tgarchive/discovery.py`**: Integration point for group crawling, network analysis, parallel archiving, and SQL-backed state
 - **`SPECTRA/tgarchive/__main__.py`**: Unified CLI/TUI entry point
-- **`SPECTRA/parallel_example.py`**: Example for parallel, multi-account operations
+- **`examples/parallel_example.py`**: Example for parallel, multi-account operations
 - All modules are importable and can be reused in your own scripts or pipelines
 
 ---

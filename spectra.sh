@@ -121,8 +121,8 @@ auto_launch() {
 
         if [[ -f "$PROJECT_ROOT/auto-install.sh" ]]; then
             bash "$PROJECT_ROOT/auto-install.sh" "$@"
-        elif [[ -f "$PROJECT_ROOT/spectra-launch.py" ]]; then
-            "$PYTHON_CMD" "$PROJECT_ROOT/spectra-launch.py" --setup
+        elif [[ -f "$PROJECT_ROOT/scripts/spectra_launch.py" ]]; then
+            "$PYTHON_CMD" "$PROJECT_ROOT/scripts/spectra_launch.py" --setup
         else
             echo -e "${RED}✗ Setup scripts not found${NC}"
             return 1
@@ -134,8 +134,8 @@ auto_launch() {
         echo -e "${YELLOW}⚠ SPECTRA not properly installed${NC}"
         echo -e "${CYAN}→ Running installation repair...${NC}"
 
-        if [[ -f "$PROJECT_ROOT/spectra-launch.py" ]]; then
-            "$PYTHON_CMD" "$PROJECT_ROOT/spectra-launch.py" --repair
+        if [[ -f "$PROJECT_ROOT/scripts/spectra_launch.py" ]]; then
+            "$PYTHON_CMD" "$PROJECT_ROOT/scripts/spectra_launch.py" --repair
         else
             echo -e "${RED}✗ Cannot repair installation${NC}"
             return 1
@@ -151,27 +151,27 @@ auto_launch() {
         "tui"|"")
             echo -e "${CYAN}→ Launching SPECTRA TUI...${NC}"
             # Show splash screen if available
-            if [[ -f "$PROJECT_ROOT/spectra-splash.py" ]]; then
-                "$venv_python" "$PROJECT_ROOT/spectra-splash.py" --progress
+            if [[ -f "$PROJECT_ROOT/scripts/spectra_splash.py" ]]; then
+                "$venv_python" "$PROJECT_ROOT/scripts/spectra_splash.py" --progress
             fi
             cd "$PROJECT_ROOT"
             exec "$venv_python" -m tgarchive
             ;;
         "cli")
             echo -e "${CYAN}→ SPECTRA CLI Commands:${NC}"
-            "$venv_python" "$PROJECT_ROOT/spectra-launch.py" --cli
+            "$venv_python" "$PROJECT_ROOT/scripts/spectra_launch.py" --cli
             ;;
         "setup")
             echo -e "${CYAN}→ Running setup wizard...${NC}"
-            "$venv_python" "$PROJECT_ROOT/spectra-launch.py" --setup
+            "$venv_python" "$PROJECT_ROOT/scripts/spectra_launch.py" --setup
             ;;
         "check")
             echo -e "${CYAN}→ Running system check...${NC}"
-            "$venv_python" "$PROJECT_ROOT/spectra-launch.py" --check
+            "$venv_python" "$PROJECT_ROOT/scripts/spectra_launch.py" --check
             ;;
         "repair")
             echo -e "${CYAN}→ Repairing installation...${NC}"
-            "$venv_python" "$PROJECT_ROOT/spectra-launch.py" --repair
+            "$venv_python" "$PROJECT_ROOT/scripts/spectra_launch.py" --repair
             ;;
         *)
             echo -e "${RED}✗ Unknown mode: $mode${NC}"
@@ -242,9 +242,9 @@ quick_status() {
 # Interactive startup mode
 interactive_mode() {
     # Use splash screen if available
-    if [[ -f "$PROJECT_ROOT/spectra-splash.py" ]]; then
+    if [[ -f "$PROJECT_ROOT/scripts/spectra_splash.py" ]]; then
         if detect_python; then
-            "$PYTHON_CMD" "$PROJECT_ROOT/spectra-splash.py" --interactive
+            "$PYTHON_CMD" "$PROJECT_ROOT/scripts/spectra_splash.py" --interactive
             return $?
         fi
     fi

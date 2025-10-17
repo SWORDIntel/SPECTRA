@@ -70,7 +70,7 @@ setup(
     author="John (SWORD-EPI)",
     author_email="n/a",
     url="https://github.com/SWORDIntel/SPECTRA002",
-    packages=find_packages(include=["tgarchive*"]),
+    packages=find_packages(include=["tgarchive*", "spectra_app*"]),
     install_requires=list_requirements(),
     include_package_data=True,
     license="MIT",

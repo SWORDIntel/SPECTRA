@@ -557,7 +557,7 @@ Version=1.0
 Type=Application
 Name=SPECTRA TUI
 Comment=Telegram Network Discovery & Archiving System
-Exec=$PROJECT_ROOT/spectra-launch.py
+Exec=$PROJECT_ROOT/scripts/spectra_launch.py
 Icon=$PROJECT_ROOT/SPECTRA.png
 Terminal=true
 Categories=Network;Utility;
@@ -571,7 +571,7 @@ Version=1.0
 Type=Application
 Name=SPECTRA CLI
 Comment=SPECTRA Command Line Interface
-Exec=$PROJECT_ROOT/spectra-launch.py --cli
+Exec=$PROJECT_ROOT/scripts/spectra_launch.py --cli
 Icon=$PROJECT_ROOT/SPECTRA.png
 Terminal=true
 Categories=Network;Utility;
@@ -596,7 +596,7 @@ create_macos_shortcuts() {
     cat > "$app_path/Contents/MacOS/SPECTRA" << EOF
 #!/bin/bash
 cd "$PROJECT_ROOT"
-exec "$PROJECT_ROOT/spectra-launch.py"
+exec "$PROJECT_ROOT/scripts/spectra_launch.py"
 EOF
 
     chmod +x "$app_path/Contents/MacOS/SPECTRA"
@@ -655,14 +655,14 @@ show_completion_message() {
     log_message "SUCCESS" "SPECTRA auto-installation completed successfully!"
 
     echo -e "${CYAN}Quick Start:${NC}"
-    echo -e "  ${WHITE}Launch TUI:${NC}     python3 spectra-launch.py"
-    echo -e "  ${WHITE}Setup wizard:${NC}   python3 spectra-launch.py --setup"
-    echo -e "  ${WHITE}CLI commands:${NC}   python3 spectra-launch.py --cli"
-    echo -e "  ${WHITE}System check:${NC}   python3 spectra-launch.py --check"
+    echo -e "  ${WHITE}Launch TUI:${NC}     python3 scripts/spectra_launch.py"
+    echo -e "  ${WHITE}Setup wizard:${NC}   python3 scripts/spectra_launch.py --setup"
+    echo -e "  ${WHITE}CLI commands:${NC}   python3 scripts/spectra_launch.py --cli"
+    echo -e "  ${WHITE}System check:${NC}   python3 scripts/spectra_launch.py --check"
 
     echo -e "\n${CYAN}Configuration:${NC}"
     if [[ -f "$PROJECT_ROOT/gen_config.py" ]]; then
-        echo -e "  ${WHITE}Import accounts:${NC} python3 spectra-launch.py --setup"
+        echo -e "  ${WHITE}Import accounts:${NC} python3 scripts/spectra_launch.py --setup"
     else
         echo -e "  ${WHITE}Configure accounts:${NC} Edit $CONFIG_PATH or run setup wizard"
         echo -e "  ${WHITE}Get API keys:${NC} https://my.telegram.org/apps"

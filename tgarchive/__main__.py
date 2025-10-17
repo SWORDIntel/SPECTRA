@@ -1063,7 +1063,7 @@ async def handle_download_users(args: argparse.Namespace) -> int:
     cfg = Config(Path(args.config))
     if args.import_accounts:
         cfg = enhance_config_with_gen_accounts(cfg)
-    from .utils import get_server_users # Assuming this utility exists
+    from .user_operations import get_server_users
     from telethon import TelegramClient
     account = cfg.auto_select_account()
     if not account:

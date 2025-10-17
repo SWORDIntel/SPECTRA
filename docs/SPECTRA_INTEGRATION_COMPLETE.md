@@ -36,7 +36,7 @@ SPECTRA has been transformed from a basic Telegram archiver into a comprehensive
   - Confidence scoring and fallback mechanisms
 
 #### 3. GUI System Integration (CONSTRUCTOR + DEBUGGER)
-- **Location**: `spectra_gui_launcher.py` and related files
+- **Location**: `spectra_app/spectra_gui_launcher.py` and related files
 - **Purpose**: Auto-launching interactive GUI with dependency management
 - **Features**:
   - Flask-SocketIO web interface with real-time updates
@@ -68,9 +68,9 @@ SPECTRA has been transformed from a basic Telegram archiver into a comprehensive
 ```
 Configuration Layer (spectra_config.json)
     ↓
-Launcher Layer (spectra_gui_launcher.py)
+Launcher Layer (spectra_app/spectra_gui_launcher.py)
     ↓
-Orchestration Layer (spectra_orchestrator.py)
+Orchestration Layer (spectra_app/spectra_orchestrator.py)
     ↓
 Component Layer (5 specialized GUI components)
     ↓
@@ -83,7 +83,7 @@ Data Layer (SQLite → PostgreSQL migration ready)
 - **Features**: Topic tracking, classification history, performance metrics
 
 ### GUI Architecture
-- **Main Interface**: `spectra_coordination_gui.py`
+- **Main Interface**: `spectra_app/spectra_coordination_gui.py`
 - **Components**: 5 specialized interface components for different aspects
 - **Technology**: Flask + SocketIO for real-time web interface
 - **Integration**: Full SPECTRA core system integration
@@ -126,23 +126,23 @@ Data Layer (SQLite → PostgreSQL migration ready)
 ## File Structure Created
 
 ### Core System Files
-- `INTEGRATION_COMPLETE_REPORT.md` - Executive summary
-- `LAUNCHER_GUIDE.md` - GUI launcher documentation
-- `ORCHESTRATION_SYSTEM_DOCUMENTATION.md` - Multi-agent coordination
-- `QUICK_START.md` - User getting started guide
-- `GUI_MOCKUP.md` - Visual interface design
+- `docs/reports/INTEGRATION_COMPLETE_REPORT.md` - Executive summary
+- `docs/guides/LAUNCHER_GUIDE.md` - GUI launcher documentation
+- `docs/reference/ORCHESTRATION_SYSTEM_DOCUMENTATION.md` - Multi-agent coordination overview
+- `docs/guides/QUICK_START.md` - User getting started guide
+- `docs/design/GUI_MOCKUP.md` - Visual interface design
 
 ### Implementation Files
-- `agent_communication.py` - Inter-agent communication protocols
-- `agent_optimization_engine.py` - Intelligent task routing
-- `coordination_interface.py` - Multi-agent coordination interface
-- `implementation_tools.py` - Development utilities
-- `workflow_automation.py` - Automated workflow management
+- `spectra_app/agent_communication.py` - Inter-agent communication protocols
+- `spectra_app/agent_optimization_engine.py` - Intelligent task routing
+- `spectra_app/coordination_interface.py` - Multi-agent coordination interface
+- `spectra_app/implementation_tools.py` - Development utilities
+- `spectra_app/workflow_automation.py` - Automated workflow management
 
 ### Integration & Testing
-- `integration_analysis_report.md` - Technical integration details
-- `integration_test_suite.py` - Comprehensive testing framework
-- `system_validation_report.py` - System validation and health checks
+- `docs/reports/integration_analysis_report.md` - Technical integration details
+- `tests/integration_test_suite.py` - Comprehensive testing framework
+- `scripts/system_validation_report.py` - System validation and health checks
 
 ### Documentation
 - `docs/TOPIC_ORGANIZATION_GUIDE.md` - Topic management documentation
@@ -153,7 +153,7 @@ Data Layer (SQLite → PostgreSQL migration ready)
 ### Examples & Scripts
 - `examples/topic_organization_examples.py` - Usage examples
 - `auto-install.sh` - Automated dependency installation
-- `spectra-launch.py` - System launcher
+- `scripts/spectra_launch.py` - System launcher
 - `spectra.sh` / `spectra.bat` - Cross-platform scripts
 
 ## Deployment Status
@@ -169,10 +169,10 @@ Data Layer (SQLite → PostgreSQL migration ready)
 ### 🚀 Launch Commands
 ```bash
 # Start the full integrated system
-python3 spectra_gui_launcher.py
+python3 -m spectra_app.spectra_gui_launcher
 
 # Run integration tests
-python3 integration_test_suite.py
+python3 tests/integration_test_suite.py
 
 # Launch with auto-install
 ./auto-install.sh

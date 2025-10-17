@@ -63,8 +63,8 @@ if not exist "%VENV_PYTHON%" (
     echo %CYAN%→ Running auto-setup...%NC%
 
     REM Try to run setup
-    if exist "%PROJECT_ROOT%\spectra-launch.py" (
-        "%PYTHON_CMD%" "%PROJECT_ROOT%\spectra-launch.py" --setup
+    if exist "%PROJECT_ROOT%\scripts\spectra_launch.py" (
+        "%PYTHON_CMD%" "%PROJECT_ROOT%\scripts\spectra_launch.py" --setup
     ) else (
         echo %RED%✗ Setup script not found%NC%
         pause
@@ -78,8 +78,8 @@ if !errorlevel! neq 0 (
     echo %YELLOW%⚠ SPECTRA not properly installed%NC%
     echo %CYAN%→ Running installation repair...%NC%
 
-    if exist "%PROJECT_ROOT%\spectra-launch.py" (
-        "%PYTHON_CMD%" "%PROJECT_ROOT%\spectra-launch.py" --repair
+    if exist "%PROJECT_ROOT%\scripts\spectra_launch.py" (
+        "%PYTHON_CMD%" "%PROJECT_ROOT%\scripts\spectra_launch.py" --repair
     ) else (
         echo %RED%✗ Cannot repair installation%NC%
         pause
@@ -111,8 +111,8 @@ goto :show_help
 echo %CYAN%→ Launching SPECTRA TUI...%NC%
 
 REM Show splash screen if available
-if exist "%PROJECT_ROOT%\spectra-splash.py" (
-    "%VENV_PYTHON%" "%PROJECT_ROOT%\spectra-splash.py" --progress
+if exist "%PROJECT_ROOT%\scripts\spectra_splash.py" (
+    "%VENV_PYTHON%" "%PROJECT_ROOT%\scripts\spectra_splash.py" --progress
 )
 
 REM Change to project directory and launch
@@ -122,22 +122,22 @@ goto :end
 
 :launch_cli
 echo %CYAN%→ SPECTRA CLI Commands:%NC%
-"%VENV_PYTHON%" "%PROJECT_ROOT%\spectra-launch.py" --cli
+"%VENV_PYTHON%" "%PROJECT_ROOT%\scripts\spectra_launch.py" --cli
 goto :end
 
 :launch_setup
 echo %CYAN%→ Running setup wizard...%NC%
-"%VENV_PYTHON%" "%PROJECT_ROOT%\spectra-launch.py" --setup
+"%VENV_PYTHON%" "%PROJECT_ROOT%\scripts\spectra_launch.py" --setup
 goto :end
 
 :launch_check
 echo %CYAN%→ Running system check...%NC%
-"%VENV_PYTHON%" "%PROJECT_ROOT%\spectra-launch.py" --check
+"%VENV_PYTHON%" "%PROJECT_ROOT%\scripts\spectra_launch.py" --check
 goto :end
 
 :launch_repair
 echo %CYAN%→ Repairing installation...%NC%
-"%VENV_PYTHON%" "%PROJECT_ROOT%\spectra-launch.py" --repair
+"%VENV_PYTHON%" "%PROJECT_ROOT%\scripts\spectra_launch.py" --repair
 goto :end
 
 :show_status

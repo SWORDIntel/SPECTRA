@@ -2,8 +2,8 @@ import unittest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from tgarchive.group_mirror import GroupMirrorManager
-from tgarchive.config_models import Config
+from tgarchive.services.group_mirror import GroupMirrorManager
+from tgarchive.core.config_models import Config
 from telethon.tl.types import User, Channel, UpdateNewChannelMessage, MessageActionTopicCreate
 
 # Mock objects for Telethon types

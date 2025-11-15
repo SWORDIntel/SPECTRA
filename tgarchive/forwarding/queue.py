@@ -7,11 +7,11 @@ import asyncio
 import logging
 from typing import Optional
 
-from tgarchive.config_models import Config
+from tgarchive.core.config_models import Config
 from tgarchive.db import SpectraDB
 
 from .client import ClientManager
-from .deduplication import Deduplicator
+from ..core.deduplication import Deduplicator
 
 
 class QueueManager:

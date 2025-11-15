@@ -1,6 +1,6 @@
 import unittest
 import json
-from tgarchive.config_models import Config
+from tgarchive.core.config_models import Config
 from pathlib import Path
 
 class TestConfigManagement(unittest.TestCase):

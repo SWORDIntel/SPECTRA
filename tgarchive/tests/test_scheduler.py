@@ -2,7 +2,7 @@ import unittest
 import json
 import os
 from datetime import datetime, timedelta
-from tgarchive.scheduler_service import SchedulerDaemon
+from tgarchive.services.scheduler_service import SchedulerDaemon
 from croniter import croniter
 
 class TestScheduler(unittest.TestCase):

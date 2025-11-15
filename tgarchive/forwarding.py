@@ -21,9 +21,9 @@ from telethon.errors import RPCError, ChannelPrivateError, UserDeactivatedError,
 
 # Local application imports
 from tgarchive.db import SpectraDB
-from tgarchive.config_models import Config, DEFAULT_CFG # Import from new location
-from tgarchive.attribution import AttributionFormatter
-from tgarchive.deduplication import get_sha256_hash, get_perceptual_hash, get_fuzzy_hash, compare_fuzzy_hashes
+from tgarchive.core.config_models import Config, DEFAULT_CFG # Import from new location
+from tgarchive.utils.attribution import AttributionFormatter
+from tgarchive.core.deduplication import get_sha256_hash, get_perceptual_hash, get_fuzzy_hash, compare_fuzzy_hashes
 
 # Conditional import for imagehash
 try:

@@ -1,7 +1,7 @@
 import unittest
 import os
 from tgarchive.db import SpectraDB
-from tgarchive.group_manager import GroupManager
+from tgarchive.utils.group_manager import GroupManager
 
 class TestSortingGroups(unittest.TestCase):
     def setUp(self):

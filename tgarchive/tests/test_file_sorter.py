@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import Mock, patch
 import os
 
-from tgarchive.file_sorter import FileTypeSorter
+from tgarchive.utils.file_sorter import FileTypeSorter
 
 class TestFileTypeSorter(unittest.TestCase):
     def setUp(self):

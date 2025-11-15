@@ -6,7 +6,7 @@ from pathlib import Path # Import Path
 import asyncio
 from tgarchive.forwarding.forwarder import AttachmentForwarder
 from tgarchive.forwarding.grouping import MessageGrouper
-from tgarchive.config_models import Config
+from tgarchive.core.config_models import Config
 
 # Mock TLMessage and related objects for testing grouping logic
 class MockFile:

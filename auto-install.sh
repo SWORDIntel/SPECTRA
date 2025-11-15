@@ -1,38 +1,84 @@
 #!/bin/bash
-# SPECTRA Enhanced Auto-Installer
-# ================================
+# ⚠️  DEPRECATED INSTALLER - PLEASE USE install-spectra.sh INSTEAD ⚠️
 #
-# Comprehensive installation script with:
-# - Cross-platform support (Linux, macOS, Windows WSL)
-# - Virtual environment management
-# - Dependency resolution and conflict handling
-# - Error recovery and system compatibility checks
-# - Desktop integration (optional)
-# - Automatic configuration discovery
+# This installer is deprecated due to a critical bug:
+#   Line 367: return install_dependencies_alternative
+#   Error: "numeric argument required"
+#
+# A new, unified installer has been created with:
+#   ✓ Bug fixes (including the return statement error)
+#   ✓ Real-time dependency progress display
+#   ✓ Better error handling
+#   ✓ Improved documentation
+#
+# Please use: ./install-spectra.sh
+#
+# For detailed installation instructions, see: INSTALLATION_GUIDE.md
 
-set -e  # Exit on error
+set -e
 
 # Color definitions for cross-platform compatibility
 if [[ -t 1 ]] && command -v tput >/dev/null 2>&1; then
-    BLUE=$(tput setaf 4)
-    GREEN=$(tput setaf 2)
     RED=$(tput setaf 1)
     YELLOW=$(tput setaf 3)
     CYAN=$(tput setaf 6)
-    PURPLE=$(tput setaf 5)
-    WHITE=$(tput setaf 7)
     BOLD=$(tput bold)
-    NC=$(tput sgr0) # No Color
+    NC=$(tput sgr0)
 else
-    BLUE='\033[0;34m'
-    GREEN='\033[0;32m'
     RED='\033[0;31m'
     YELLOW='\033[0;33m'
     CYAN='\033[0;36m'
-    PURPLE='\033[0;35m'
-    WHITE='\033[1;37m'
     BOLD='\033[1m'
     NC='\033[0m'
+fi
+
+# Display deprecation notice
+echo -e "\n${BOLD}${RED}╔════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BOLD}${RED}║                  ⚠️  DEPRECATED INSTALLER                   ║${NC}"
+echo -e "${BOLD}${RED}║         THIS INSTALLER HAS A CRITICAL BUG - LINE 367        ║${NC}"
+echo -e "${BOLD}${RED}╚════════════════════════════════════════════════════════════╝${NC}\n"
+
+echo -e "${YELLOW}This installer (auto-install.sh) is deprecated and has a bug.${NC}\n"
+echo -e "Critical Bug: ${RED}return install_dependencies_alternative${NC}"
+echo -e "  Error: ${RED}numeric argument required${NC}\n"
+
+echo -e "A new, unified installer has been created with:"
+echo -e "  ${CYAN}✓${NC} Bug fixes"
+echo -e "  ${CYAN}✓${NC} Real-time dependency progress display"
+echo -e "  ${CYAN}✓${NC} Better error handling"
+echo -e "  ${CYAN}✓${NC} Improved documentation\n"
+
+echo -e "${BOLD}Please use the new installer:${NC}"
+echo -e "  ${CYAN}./install-spectra.sh${NC}\n"
+
+echo -e "${BOLD}For more information:${NC}"
+echo -e "  ${CYAN}cat INSTALLATION_GUIDE.md${NC}"
+echo -e "  ${CYAN}cat HOW_TO_SET_API_KEY.md${NC}\n"
+
+read -p "Do you want to run the new installer instead? (y/n) " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo -e "\n${CYAN}Launching install-spectra.sh...${NC}\n"
+    exec ./install-spectra.sh
+else
+    echo -e "\n${YELLOW}WARNING: Continuing with deprecated and buggy installer...${NC}\n"
+fi
+
+# ────────────────────────────────────────────────────────────────────────────
+# DEPRECATED INSTALLER CODE BELOW - NOT RECOMMENDED
+# ────────────────────────────────────────────────────────────────────────────
+
+# Re-define colors for rest of script
+if [[ -t 1 ]] && command -v tput >/dev/null 2>&1; then
+    BLUE=$(tput setaf 4)
+    GREEN=$(tput setaf 2)
+    PURPLE=$(tput setaf 5)
+    WHITE=$(tput setaf 7)
+else
+    BLUE='\033[0;34m'
+    GREEN='\033[0;32m'
+    PURPLE='\033[0;35m'
+    WHITE='\033[1;37m'
 fi
 
 # Global variables

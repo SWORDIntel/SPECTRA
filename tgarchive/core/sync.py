@@ -41,21 +41,56 @@ from types import TracebackType
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 # ── Third-party ───────────────────────────────────────────────────────────
-import npyscreen  # type: ignore
-import socks      # PySocks for proxy support
-from PIL import Image  # type: ignore
-from rich.console import Console
-from rich.progress import (
-    BarColumn,
-    Progress,
-    TextColumn,
-    TimeElapsedColumn,
-    TimeRemainingColumn,
-)
-from telethon import TelegramClient, errors  # type: ignore
-from telethon.tl.custom.message import Message as TLMessage  # type: ignore
-from telethon.tl.types import InputPeerChannel, InputPeerChat  # type: ignore
-from tqdm.asyncio import tqdm_asyncio  # type: ignore
+# Optional UI
+try:
+    import npyscreen  # type: ignore
+    HAS_NPYSCREEN = True
+except ImportError:
+    HAS_NPYSCREEN = False
+
+# Optional: Proxy support
+try:
+    import socks  # type: ignore
+    HAS_SOCKS = True
+except ImportError:
+    HAS_SOCKS = False
+
+# Optional: Image processing
+try:
+    from PIL import Image  # type: ignore
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
+
+# Core: Rich terminal formatting (should be installed)
+try:
+    from rich.console import Console
+    from rich.progress import (
+        BarColumn,
+        Progress,
+        TextColumn,
+        TimeElapsedColumn,
+        TimeRemainingColumn,
+    )
+except ImportError:
+    print("ERROR: rich library is required. Install with: pip install rich")
+    raise
+
+# Core: Telegram API client (should be installed)
+try:
+    from telethon import TelegramClient, errors  # type: ignore
+    from telethon.tl.custom.message import Message as TLMessage  # type: ignore
+    from telethon.tl.types import InputPeerChannel, InputPeerChat  # type: ignore
+except ImportError:
+    print("ERROR: telethon library is required. Install with: pip install telethon")
+    raise
+
+# Optional: Progress bars
+try:
+    from tqdm.asyncio import tqdm_asyncio  # type: ignore
+    HAS_TQDM = True
+except ImportError:
+    HAS_TQDM = False
 
 # Local application imports
 from tgarchive.db import SpectraDB
@@ -483,131 +518,134 @@ async def shunt_files_mode(cfg: Config, source_channel_id: str, destination_chan
 
 
 # ── npyscreen TUI ────────────────────────────────────────────────────────
-class SpectraApp(npyscreen.NPSAppManaged):
-    def onStart(self):
-        self.addForm("MAIN", MenuForm, name="SPECTRA-002 Archiver")
-        self.addForm("SHUNT", ShuntForm, name="Shunt Mode")
+# Only define TUI classes if npyscreen is available
+if HAS_NPYSCREEN:
+# ── npyscreen TUI ────────────────────────────────────────────────────────
+    class SpectraApp(npyscreen.NPSAppManaged):
+        def onStart(self):
+            self.addForm("MAIN", MenuForm, name="SPECTRA-002 Archiver")
+            self.addForm("SHUNT", ShuntForm, name="Shunt Mode")
 
-class ShuntForm(npyscreen.ActionForm):
-    def create(self):
-        self.cfg = Config()
-        self.add(npyscreen.TitleText, name="Source Channel ID:", value="")
-        self.add(npyscreen.TitleText, name="Destination Channel ID:", value="")
+    class ShuntForm(npyscreen.ActionForm):
+        def create(self):
+            self.cfg = Config()
+            self.add(npyscreen.TitleText, name="Source Channel ID:", value="")
+            self.add(npyscreen.TitleText, name="Destination Channel ID:", value="")
 
-        sessions = [acc["session_name"] for acc in self.cfg.accounts]
-        self.acc_sel = self.add(
-            npyscreen.TitleSelectOne,
-            max_height=min(len(sessions)+2, 8),
-            name="Account to Use:",
-            values=sessions,
-            scroll_exit=True,
-            value=[0]
-        )
+            sessions = [acc["session_name"] for acc in self.cfg.accounts]
+            self.acc_sel = self.add(
+                npyscreen.TitleSelectOne,
+                max_height=min(len(sessions)+2, 8),
+                name="Account to Use:",
+                values=sessions,
+                scroll_exit=True,
+                value=[0]
+            )
 
-        grouping_strategies = ["none", "filename", "time"]
-        current_strategy = self.cfg.data.get("grouping", {}).get("strategy", "none")
-        default_strategy_idx = grouping_strategies.index(current_strategy) if current_strategy in grouping_strategies else 0
-        self.grouping_sel = self.add(
-            npyscreen.TitleSelectOne,
-            max_height=4,
-            name="Grouping Strategy:",
-            values=grouping_strategies,
-            scroll_exit=True,
-            value=[default_strategy_idx]
-        )
+            grouping_strategies = ["none", "filename", "time"]
+            current_strategy = self.cfg.data.get("grouping", {}).get("strategy", "none")
+            default_strategy_idx = grouping_strategies.index(current_strategy) if current_strategy in grouping_strategies else 0
+            self.grouping_sel = self.add(
+                npyscreen.TitleSelectOne,
+                max_height=4,
+                name="Grouping Strategy:",
+                values=grouping_strategies,
+                scroll_exit=True,
+                value=[default_strategy_idx]
+            )
 
-    def on_ok(self):
-        source_channel = self.get_widget(0).value
-        dest_channel = self.get_widget(1).value
+        def on_ok(self):
+            source_channel = self.get_widget(0).value
+            dest_channel = self.get_widget(1).value
 
-        if not source_channel or not dest_channel:
-            npyscreen.notify_confirm("Source and Destination channels cannot be empty.", "Input Error")
-            return
+            if not source_channel or not dest_channel:
+                npyscreen.notify_confirm("Source and Destination channels cannot be empty.", "Input Error")
+                return
 
-        selected_account_idx = self.acc_sel.value[0] if self.acc_sel.value else 0
-        account_identifier = self.cfg.accounts[selected_account_idx]['session_name']
+            selected_account_idx = self.acc_sel.value[0] if self.acc_sel.value else 0
+            account_identifier = self.cfg.accounts[selected_account_idx]['session_name']
 
-        selected_grouping_idx = self.grouping_sel.value[0] if self.grouping_sel.value else 0
-        grouping_strategy = self.grouping_sel.values[selected_grouping_idx]
+            selected_grouping_idx = self.grouping_sel.value[0] if self.grouping_sel.value else 0
+            grouping_strategy = self.grouping_sel.values[selected_grouping_idx]
 
-        # Update config in memory for the shunt function to use
-        self.cfg.data["grouping"]["strategy"] = grouping_strategy
+            # Update config in memory for the shunt function to use
+            self.cfg.data["grouping"]["strategy"] = grouping_strategy
 
-        # Switch back to the main form before running the async task
-        self.parentApp.setNextForm("MAIN")
+            # Switch back to the main form before running the async task
+            self.parentApp.setNextForm("MAIN")
 
-        # A small message to let the user know the process is starting
-        npyscreen.notify_wait(f"Starting shunt from {source_channel} to {dest_channel}...", "Please wait")
+            # A small message to let the user know the process is starting
+            npyscreen.notify_wait(f"Starting shunt from {source_channel} to {dest_channel}...", "Please wait")
 
-        # Since npyscreen is not async-native, running the async function
-        # will block the TUI. This is a limitation of the current structure.
-        # Ideally, this would run in a separate thread.
-        try:
-            asyncio.run(shunt_files_mode(self.cfg, source_channel, dest_channel, account_identifier))
-            npyscreen.notify_confirm("Shunt operation completed successfully!", "Success")
-        except Exception as e:
-            logger.exception(f"Error during TUI shunt operation: {e}")
-            npyscreen.notify_confirm(f"An error occurred: {e}", "Error")
+            # Since npyscreen is not async-native, running the async function
+            # will block the TUI. This is a limitation of the current structure.
+            # Ideally, this would run in a separate thread.
+            try:
+                asyncio.run(shunt_files_mode(self.cfg, source_channel, dest_channel, account_identifier))
+                npyscreen.notify_confirm("Shunt operation completed successfully!", "Success")
+            except Exception as e:
+                logger.exception(f"Error during TUI shunt operation: {e}")
+                npyscreen.notify_confirm(f"An error occurred: {e}", "Error")
 
-    def on_cancel(self):
-        self.parentApp.setNextForm("MAIN")
+        def on_cancel(self):
+            self.parentApp.setNextForm("MAIN")
 
-class MenuForm(npyscreen.ActionForm):
-    def create(self):
-        self.cfg = Config()
+    class MenuForm(npyscreen.ActionForm):
+        def create(self):
+            self.cfg = Config()
         
-        # Auto-select account based on TELESMASHER configs if available
-        self.auto_account = self.cfg.auto_select_account()
+            # Auto-select account based on TELESMASHER configs if available
+            self.auto_account = self.cfg.auto_select_account()
         
-        # Show special notice if using auto-selected account
-        if self.auto_account:
-            self.add(npyscreen.FixedText, value=f"[AUTO-SELECTED ACCOUNT: {self.auto_account.get('session_name')}]")
-            self.add(npyscreen.FixedText, value="")
+            # Show special notice if using auto-selected account
+            if self.auto_account:
+                self.add(npyscreen.FixedText, value=f"[AUTO-SELECTED ACCOUNT: {self.auto_account.get('session_name')}]")
+                self.add(npyscreen.FixedText, value="")
         
-        self.add(npyscreen.FixedText, value="Select Telegram account (or keep auto-selected):")
-        sessions = [acc["session_name"] for acc in self.cfg.accounts]
-        default_idx = sessions.index(self.auto_account["session_name"]) if self.auto_account else 0
-        self.acc_sel = self.add(
-            npyscreen.TitleSelectOne, 
-            max_height=min(len(sessions)+2, 8),  # Limit height but make scrollable
-            values=sessions, 
-            scroll_exit=True,
-            value=[default_idx]
-        )
+            self.add(npyscreen.FixedText, value="Select Telegram account (or keep auto-selected):")
+            sessions = [acc["session_name"] for acc in self.cfg.accounts]
+            default_idx = sessions.index(self.auto_account["session_name"]) if self.auto_account else 0
+            self.acc_sel = self.add(
+                npyscreen.TitleSelectOne, 
+                max_height=min(len(sessions)+2, 8),  # Limit height but make scrollable
+                values=sessions, 
+                scroll_exit=True,
+                value=[default_idx]
+            )
         
-        self.add(npyscreen.FixedText, value="Channel / group (entity):")
-        self.entity = self.add(npyscreen.TitleText, name="@channel or id:", value=self.cfg["entity"])
-        self.proxy_chk = self.add(npyscreen.Checkbox, name="Use rotating proxy", value=bool(self.cfg.proxy_conf.get("host")))
-        self.dl_media = self.add(npyscreen.Checkbox, name="Download media", value=self.cfg["download_media"])
-        self.sidecar = self.add(npyscreen.Checkbox, name="Write sidecar metadata", value=self.cfg["sidecar_metadata"])
-        self.archive_topics = self.add(npyscreen.Checkbox, name="Archive topics/threads", value=self.cfg["archive_topics"])
-        self.auto_mode = self.add(npyscreen.Checkbox, name="Use auto-selected account", value=bool(self.auto_account))
+            self.add(npyscreen.FixedText, value="Channel / group (entity):")
+            self.entity = self.add(npyscreen.TitleText, name="@channel or id:", value=self.cfg["entity"])
+            self.proxy_chk = self.add(npyscreen.Checkbox, name="Use rotating proxy", value=bool(self.cfg.proxy_conf.get("host")))
+            self.dl_media = self.add(npyscreen.Checkbox, name="Download media", value=self.cfg["download_media"])
+            self.sidecar = self.add(npyscreen.Checkbox, name="Write sidecar metadata", value=self.cfg["sidecar_metadata"])
+            self.archive_topics = self.add(npyscreen.Checkbox, name="Archive topics/threads", value=self.cfg["archive_topics"])
+            self.auto_mode = self.add(npyscreen.Checkbox, name="Use auto-selected account", value=bool(self.auto_account))
 
-        self.add(npyscreen.FixedText, value="", editable=False) # Spacer
-        self.shunt_button = self.add(npyscreen.ButtonPress, name="Shunt Files Between Channels")
-        self.shunt_button.whenPressed = self.switch_to_shunt_form
+            self.add(npyscreen.FixedText, value="", editable=False) # Spacer
+            self.shunt_button = self.add(npyscreen.ButtonPress, name="Shunt Files Between Channels")
+            self.shunt_button.whenPressed = self.switch_to_shunt_form
 
-    def switch_to_shunt_form(self):
-        self.parentApp.setNextForm("SHUNT")
+        def switch_to_shunt_form(self):
+            self.parentApp.setNextForm("SHUNT")
 
-    def on_ok(self):
-        if self.auto_mode.value and self.auto_account:
-            selected_account = self.auto_account
-        else:
-            idx = self.acc_sel.value[0] if self.acc_sel.value else 0
-            selected_account = self.cfg.accounts[idx]
+        def on_ok(self):
+            if self.auto_mode.value and self.auto_account:
+                selected_account = self.auto_account
+            else:
+                idx = self.acc_sel.value[0] if self.acc_sel.value else 0
+                selected_account = self.cfg.accounts[idx]
             
-        self.cfg.data["entity"] = self.entity.value
-        self.cfg.data["download_media"] = self.dl_media.value
-        self.cfg.data["sidecar_metadata"] = self.sidecar.value
-        self.cfg.data["archive_topics"] = self.archive_topics.value
-        self.parentApp.setNextForm(None)
-        self.cfg.save()
-        console.clear()
-        asyncio.run(runner(self.cfg, selected_account))
+            self.cfg.data["entity"] = self.entity.value
+            self.cfg.data["download_media"] = self.dl_media.value
+            self.cfg.data["sidecar_metadata"] = self.sidecar.value
+            self.cfg.data["archive_topics"] = self.archive_topics.value
+            self.parentApp.setNextForm(None)
+            self.cfg.save()
+            console.clear()
+            asyncio.run(runner(self.cfg, selected_account))
 
-    def on_cancel(self):
-        self.parentApp.setNextForm(None)
+        def on_cancel(self):
+            self.parentApp.setNextForm(None)
 
 # ── Entrypoint & CLI ─────────────────────────────────────────────────────
 def main():
@@ -669,6 +707,10 @@ def main():
             sys.exit(1)
     # Interactive mode with TUI
     elif not args.no_tui and sys.stdin.isatty():
+        if not HAS_NPYSCREEN:
+            console.print("[bold red]ERROR:[/] npyscreen is required for TUI mode.")
+            console.print("Install with: pip install npyscreen")
+            sys.exit(1)
         SpectraApp().run()
     # CLI mode
     else:

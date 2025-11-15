@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import Mock, AsyncMock, patch
 import asyncio
 
-from tgarchive.deduplication import ChannelScanner
+from tgarchive.core.deduplication import ChannelScanner
 
 class TestChannelScanner(unittest.TestCase):
     def setUp(self):

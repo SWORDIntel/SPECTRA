@@ -242,19 +242,26 @@ setup_virtual_environment() {
     # Set pip command
     PIP_CMD="$VENV_PATH/bin/pip"
 
-    log_message "PROGRESS" "Upgrading pip..."
-    if $PIP_CMD install --upgrade pip >> "$INSTALL_LOG" 2>&1; then
-        log_message "INSTALLED" "pip upgraded"
+    log_message "PROGRESS" "Upgrading pip, setuptools, and wheel..."
+    if $PIP_CMD install --upgrade pip setuptools wheel >> "$INSTALL_LOG" 2>&1; then
+        log_message "INSTALLED" "pip, setuptools, wheel upgraded"
     else
-        log_message "WARNING" "Failed to upgrade pip (continuing anyway)"
+        log_message "WARNING" "Failed to upgrade pip tools (continuing anyway)"
     fi
 }
 
 install_python_dependencies() {
     log_message "PROGRESS" "Installing Python dependencies..."
 
-    # Core dependencies
+    # Pre-install build dependencies (CRITICAL for pandas)
+    log_message "INFO" "Installing build dependencies (needed for pandas compilation)..."
+    $PIP_CMD install --upgrade setuptools wheel >> "$INSTALL_LOG" 2>&1 || true
+
+    # Core dependencies (CRITICAL - must install successfully)
     local core_deps=(
+        "pysocks>=1.7.1"           # CRITICAL: Provides 'socks' module
+        "numpy>=1.21.0"             # CRITICAL: Required by pandas
+        "pandas>=1.3.0"             # CRITICAL: Data processing (use --no-binary for compilation)
         "telethon>=1.34.0"
         "rich>=13.0.0"
         "tqdm>=4.0.0"
@@ -269,9 +276,7 @@ install_python_dependencies() {
     local optional_deps=(
         "networkx>=3.0"
         "matplotlib>=3.6.0"
-        "pandas>=1.5.0"
         "python-magic>=0.4.27"
-        "pysocks>=1.7.1"
         "croniter>=1.3.5"
         "yoyo-migrations>=8.2.0"
         "aiofiles>=23.2.1"
@@ -286,12 +291,24 @@ install_python_dependencies() {
     log_message "INFO" "Installing ${#core_deps[@]} core dependencies..."
     for dep in "${core_deps[@]}"; do
         log_message "INSTALL" "$dep"
-        if $PIP_CMD install "$dep" >> "$INSTALL_LOG" 2>&1; then
-            log_message "INSTALLED" "$dep"
-            ((installed_count++))
+
+        # Special handling for pandas - needs compilation flags
+        if [[ "$dep" == pandas* ]]; then
+            if $PIP_CMD install "$dep" --no-binary pandas >> "$INSTALL_LOG" 2>&1; then
+                log_message "INSTALLED" "$dep (with compilation)"
+                ((installed_count++))
+            else
+                log_message "ERROR" "Failed to install core dependency: $dep"
+                ((failed_count++))
+            fi
         else
-            log_message "ERROR" "Failed to install core dependency: $dep"
-            ((failed_count++))
+            if $PIP_CMD install "$dep" >> "$INSTALL_LOG" 2>&1; then
+                log_message "INSTALLED" "$dep"
+                ((installed_count++))
+            else
+                log_message "ERROR" "Failed to install core dependency: $dep"
+                ((failed_count++))
+            fi
         fi
     done
 
@@ -310,8 +327,20 @@ install_python_dependencies() {
 
     log_message "INFO" "Dependency installation summary: $installed_count installed, $failed_count failed, $skipped_count skipped"
 
-    if [[ $failed_count -gt 3 ]]; then
-        log_message "ERROR" "Too many core dependencies failed. Installation cannot continue."
+    # Check for critical dependencies
+    if [[ $failed_count -gt 0 ]]; then
+        log_message "ERROR" "⚠️  Core dependencies failed to install:"
+        log_message "ERROR" "    - pysocks (provides 'socks' module)"
+        log_message "ERROR" "    - pandas/numpy (data processing)"
+        log_message "ERROR" "    - telethon (Telegram API)"
+        log_message "ERROR" ""
+        log_message "ERROR" "To fix, install system build tools:"
+        log_message "ERROR" "    Ubuntu/Debian: sudo apt-get install build-essential python3-dev libffi-dev libssl-dev"
+        log_message "ERROR" "    CentOS/RHEL: sudo yum groupinstall 'Development Tools' && sudo yum install python3-devel libffi-devel"
+        log_message "ERROR" "    macOS: brew install libffi openssl"
+        log_message "ERROR" ""
+        log_message "ERROR" "Then retry: pip install --upgrade pip setuptools wheel"
+        log_message "ERROR" "           pip install pysocks numpy pandas telethon"
         exit 1
     fi
 

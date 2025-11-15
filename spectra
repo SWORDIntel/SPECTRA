@@ -1,0 +1,88 @@
+#!/bin/bash
+################################################################################
+# SPECTRA Launcher - Smart auto-bootstrap and launch
+################################################################################
+#
+# This is the main entry point for SPECTRA.
+# It automatically:
+# - Detects if setup is needed
+# - Runs bootstrap if required
+# - Launches the TUI
+#
+# Usage: ./spectra [OPTIONS]
+#
+################################################################################
+
+set -euo pipefail
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+print_error() {
+    echo -e "${RED}✗${NC} $1" >&2
+}
+
+print_success() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+print_status() {
+    echo -e "${BLUE}▶${NC} $1"
+}
+
+# Handle command line arguments
+case "${1:-bootstrap}" in
+    "bootstrap")
+        # Full bootstrap (setup + launch)
+        exec "$SCRIPT_DIR/bootstrap"
+        ;;
+    "run"|"launch"|"tui")
+        # Just launch the TUI
+        exec "$SCRIPT_DIR/scripts/launch/spectra-launch.sh"
+        ;;
+    "install")
+        # Just install
+        exec bash "$SCRIPT_DIR/scripts/install/install-spectra.sh"
+        ;;
+    "repair")
+        # Just repair
+        exec bash "$SCRIPT_DIR/scripts/install/repair-installation.sh"
+        ;;
+    "help"|"-h"|"--help")
+        cat << 'EOF'
+SPECTRA - Telegram Network Discovery & Archiving System
+
+Usage: ./spectra [COMMAND]
+
+Commands:
+  bootstrap    Auto-setup and launch SPECTRA (default, recommended)
+  run          Launch SPECTRA TUI immediately
+  install      Install/update SPECTRA
+  repair       Repair broken SPECTRA installation
+  help         Show this help message
+
+Examples:
+  ./spectra              # Full setup + launch
+  ./spectra run          # Just launch
+  ./spectra install      # Just install
+  ./spectra repair       # Fix broken installation
+
+For more options, see:
+  - Makefile (use: make help)
+  - README.md (see: Quick Start section)
+  - docs/INSTALLATION_GUIDE.md
+EOF
+        ;;
+    *)
+        print_error "Unknown command: $1"
+        echo "Use './spectra help' for usage information"
+        exit 1
+        ;;
+esac

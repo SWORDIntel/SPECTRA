@@ -1,6 +1,13 @@
-"""setup.py for the SPECTRA tool-chain.
-Builds and distributes spectra_002 / 003 / 004 as a single installable
-Python package (`spectra-archive`).
+"""setup.py for SPECTRA - Telegram Network Discovery & Archiving System
+
+Builds and distributes SPECTRA as a single installable Python package.
+
+For the best experience, use the bootstrap script:
+    ./bootstrap
+Or use the Makefile:
+    make bootstrap
+
+For detailed setup instructions, see: docs/INSTALLATION_GUIDE.md
 """
 from __future__ import annotations
 
@@ -8,22 +15,26 @@ from pathlib import Path
 from setuptools import setup, find_packages
 
 # ---------------------------------------------------------------------
-# Metadata collected from the core orchestrator (single source of truth)
-# ---------------------------------------------------------------------
-METADATA: dict = {}
+# Version from package
+# -----------------------------------------------------------------------
 root = Path(__file__).parent
-metadata_file = root / "spectra_003_main.py"
+version = "1.0.0"  # Default version
 
-# fallback version
-version = "0.0.0"
-
-if metadata_file.exists():
-    # exec only __version__ to avoid heavy imports
-    for line in metadata_file.read_text().splitlines():
+# Try to get version from package __init__.py
+init_file = root / "tgarchive" / "__init__.py"
+if init_file.exists():
+    for line in init_file.read_text().splitlines():
         if line.startswith("__version__"):
-            exec(line, METADATA)
+            try:
+                # Extract version from __version__ = "x.x.x" (ignoring comments)
+                version_part = line.split("=")[1].strip()
+                # Remove comment if present
+                version_part = version_part.split("#")[0].strip()
+                # Remove quotes
+                version = version_part.strip('"\'')
+            except (IndexError, ValueError):
+                pass
             break
-    version = METADATA.get("__version__", version)
 
 # ---------------------------------------------------------------------
 # Helper for requirements
@@ -70,17 +81,14 @@ setup(
     author="John (SWORD-EPI)",
     author_email="n/a",
     url="https://github.com/SWORDIntel/SPECTRA002",
-    packages=find_packages(include=["tgarchive*", "spectra_app*"]),
+    packages=find_packages(include=["tgarchive*"]),
     install_requires=list_requirements(),
     include_package_data=True,
     license="MIT",
     python_requires=">=3.10",
     entry_points={
         "console_scripts": [
-            "spectra-archiver   = tgarchive.sync:main",
-            "spectra-discovery  = tgarchive.__main__:main",
-            "spectra            = tgarchive.__main__:main",
-            "spectra-site-build = build_site:build_site",
+            "spectra = tgarchive.__main__:main",
         ],
     },
     classifiers=[

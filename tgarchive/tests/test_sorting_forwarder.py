@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import Mock, AsyncMock, patch
 import asyncio
 
-from tgarchive.sorting_forwarder import SortingForwarder
+from tgarchive.utils.sorting_forwarder import SortingForwarder
 
 class TestSortingForwarder(unittest.TestCase):
     def setUp(self):

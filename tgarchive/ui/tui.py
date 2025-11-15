@@ -26,14 +26,14 @@ import npyscreen
 from rich.console import Console
 
 # ── Local Imports ──────────────────────────────────────────────────────────
-from . import discovery
-from .sync import Config, logger
-from .db import SpectraDB
-from .channel_utils import populate_account_channel_access
-from .forwarding import AttachmentForwarder
-from .forms import VPSConfigForm # Import the new form
-from .user_operations import get_server_users
-from .group_mirror import GroupMirrorManager
+from ..utils import discovery
+from ..core.sync import Config, logger
+from ..db import SpectraDB
+from ..utils.channel_utils import populate_account_channel_access
+from ..forwarding import AttachmentForwarder
+from ..forms import VPSConfigForm # Import the new form
+from ..utils.user_operations import get_server_users
+from ..services.group_mirror import GroupMirrorManager
 
 # ── Global Config ──────────────────────────────────────────────────────────
 TZ = timezone.utc

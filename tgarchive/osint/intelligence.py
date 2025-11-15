@@ -7,7 +7,7 @@ from telethon import TelegramClient
 from telethon.tl.types import User
 
 from ..db import SpectraDB
-from ..sync import Config
+from ..core.sync import Config
 
 logger = logging.getLogger(__name__)
 

@@ -4,7 +4,7 @@ import win32event
 import servicemanager
 import socket
 import winreg
-from tgarchive.scheduler_service import SchedulerDaemon
+from tgarchive.services.scheduler_service import SchedulerDaemon
 
 class SpectraSchedulerService(win32serviceutil.ServiceFramework):
     _svc_name_ = "SpectraScheduler"

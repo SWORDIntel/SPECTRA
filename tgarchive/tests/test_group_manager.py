@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import Mock, AsyncMock, patch
 import asyncio
 
-from tgarchive.group_manager import GroupManager
+from tgarchive.utils.group_manager import GroupManager
 
 class TestGroupManager(unittest.TestCase):
     def setUp(self):

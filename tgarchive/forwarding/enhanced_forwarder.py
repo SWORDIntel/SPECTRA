@@ -22,11 +22,11 @@ from telethon.errors import (
 )
 
 from tgarchive.attribution import AttributionFormatter
-from tgarchive.config_models import Config
+from tgarchive.core.config_models import Config
 from tgarchive.db import SpectraDB
 
 from .client import ClientManager
-from .deduplication import Deduplicator
+from ..core.deduplication import Deduplicator
 from .grouping import MessageGrouper
 from .organization_engine import OrganizationEngine, OrganizationConfig, OrganizationMode
 from .topic_manager import TopicCreationStrategy

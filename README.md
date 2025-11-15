@@ -21,6 +21,28 @@ SPECTRA is an advanced framework for Telegram data collection, network discovery
 - ☁️ **Forwarding Mode:** Traverse a series of channels, discover related channels, and download text/archive files with specific rules, using a single API key.
 - 🛡️ **Red team/OPSEC features**: account/proxy rotation, SQL audit trail, sidecar metadata, persistent stateS
 
+## ⚡ Quick Start
+
+**One-command setup and launch:**
+
+```bash
+# Clone and enter directory
+git clone https://github.com/SWORDIntel/SPECTRA.git
+cd SPECTRA
+
+# Bootstrap (automatic setup + launch)
+./bootstrap
+# OR use make
+make bootstrap
+
+# On subsequent runs, just launch the TUI
+make run
+```
+
+For more commands: `make help`
+
+---
+
 ## Documentation Index
 
 - `docs/guides/` — Quick start, launcher usage, integration walkthroughs (`AGENTS.md`, `QUICK_START.md`, etc.).
@@ -32,12 +54,28 @@ SPECTRA is an advanced framework for Telegram data collection, network discovery
 
 ## Project Layout
 
-- `tgarchive/` — Core Python package (CLI, TUI, backend services).
-- `spectra_app/` — Orchestration, coordination, and GUI modules (importable package).
-- `examples/` — Demonstrations and sample workflows (e.g., `parallel_example.py`).
-- `scripts/` — Operational helpers (`spectra_launch.py`, `spectra_splash.py`, `system_validation_report.py`).
-- `tests/` — System and integration tests (`test_*.py`, `integration_test_suite.py`).
-- `deploy/` — Deployment assets such as `spectra-scheduler.service`.
+```
+SPECTRA/
+├── scripts/          ← Executable scripts (install, launch, setup)
+├── docs/             ← Documentation and guides
+├── data/             ← Runtime data (not tracked in git)
+├── src/              ← Archived/deprecated code
+├── tgarchive/        ← Main Python package
+│   ├── core/         ← Core business logic
+│   ├── ui/           ← User interfaces (TUI)
+│   ├── services/     ← Background services
+│   ├── utils/        ← Utility functions
+│   ├── db/           ← Database layer
+│   ├── forwarding/   ← Message forwarding
+│   └── osint/        ← Intelligence gathering
+├── tests/            ← Test suite
+├── examples/         ← Example scripts
+├── bootstrap         ← Auto-setup entry point (recommended)
+├── Makefile          ← Common commands (make help)
+└── setup.py          ← Python package setup
+```
+
+For detailed structure explanation, see [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)
 
 ## Installation
 

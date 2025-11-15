@@ -1,18 +1,57 @@
 #!/bin/bash
-# SPECTRA Integrated Installer
-# Sets up both SPECTRA and telegram-groups-crawler with all dependencies
+# ⚠️  DEPRECATED INSTALLER - PLEASE USE install-spectra.sh INSTEAD ⚠️
+#
+# This installer is deprecated and no longer maintained.
+# A new, unified installer has been created with bug fixes and improvements.
+#
+# Please use: ./install-spectra.sh
+#
+# For detailed installation instructions, see: INSTALLATION_GUIDE.md
 
-set -e  # Exit on error
+set -e
 
-BLUE='\033[0;34m'
-GREEN='\033[0;32m'
+# Color definitions
 RED='\033[0;31m'
 YELLOW='\033[0;33m'
-NC='\033[0m' # No Color
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+# Display deprecation notice
+echo -e "\n${BOLD}${RED}╔════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BOLD}${RED}║                  ⚠️  DEPRECATED INSTALLER                   ║${NC}"
+echo -e "${BOLD}${RED}╚════════════════════════════════════════════════════════════╝${NC}\n"
+
+echo -e "${YELLOW}This installer (install.sh) is deprecated.${NC}\n"
+echo -e "A new, unified installer has been created with:"
+echo -e "  ${CYAN}✓${NC} Bug fixes"
+echo -e "  ${CYAN}✓${NC} Real-time dependency progress display"
+echo -e "  ${CYAN}✓${NC} Better error handling"
+echo -e "  ${CYAN}✓${NC} Improved documentation\n"
+
+echo -e "${BOLD}Please use the new installer:${NC}"
+echo -e "  ${CYAN}./install-spectra.sh${NC}\n"
+
+echo -e "${BOLD}For more information:${NC}"
+echo -e "  ${CYAN}cat INSTALLATION_GUIDE.md${NC}"
+echo -e "  ${CYAN}cat HOW_TO_SET_API_KEY.md${NC}\n"
+
+read -p "Do you want to run the new installer instead? (y/n) " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo -e "\n${CYAN}Launching install-spectra.sh...${NC}\n"
+    exec ./install-spectra.sh
+else
+    echo -e "\n${YELLOW}Continuing with deprecated installer...${NC}\n"
+fi
+
+# ────────────────────────────────────────────────────────────────────────────
+# DEPRECATED INSTALLER CODE BELOW
+# ────────────────────────────────────────────────────────────────────────────
 
 echo -e "${BLUE}=================================================${NC}"
 echo -e "${BLUE}  SPECTRA — Telegram Network Discovery & Archiving${NC}"
-echo -e "${BLUE}  Integrated Installation Script${NC}"
+echo -e "${BLUE}  Integrated Installation Script (DEPRECATED)${NC}"
 echo -e "${BLUE}=================================================${NC}"
 
 # Check Python version

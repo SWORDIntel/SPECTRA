@@ -17,7 +17,7 @@ from datetime import datetime, timezone, timedelta # Added for deduplication tim
 from telethon import TelegramClient, errors as telethon_errors
 from telethon.tl import types
 from telethon.tl.types import Message as TLMessage, InputPeerChannel, User, Channel
-from telethon.errors import RPCError, ChannelPrivateError, UserDeactivatedError, AuthKeyError, UserBannedInChannelError, ChatAdminRequiredError
+from telethon.errors import RPCError, ChannelPrivateError, UserDeactivatedError, AuthKeyError, UserBannedInChannelError, ChatAdminRequiredError, ForwardAccessForbiddenError
 
 # Local application imports
 from tgarchive.db import SpectraDB
@@ -627,16 +627,35 @@ class AttachmentForwarder:
                     )
                     self.logger.info(f"Successfully sent Message ID: {current_message_in_group.id} with origin info from '{origin_entity.id}' to '{destination_entity.id}'.")
                 else:
-                    await client.forward_messages(
-                        entity=destination_entity,
-                        messages=[current_message_in_group.id],
-                        from_peer=origin_entity,
-                        reply_to=self.destination_topic_id
-                    )
-                    log_msg = f"Successfully forwarded Message ID: {current_message_in_group.id} from '{origin_entity.id}' to main destination '{destination_entity.id}'"
-                    if self.destination_topic_id:
-                        log_msg += f" (Topic/ReplyTo: {self.destination_topic_id})"
-                    self.logger.info(log_msg)
+                    try:
+                        await client.forward_messages(
+                            entity=destination_entity,
+                            messages=[current_message_in_group.id],
+                            from_peer=origin_entity,
+                            reply_to=self.destination_topic_id
+                        )
+                        log_msg = f"Successfully forwarded Message ID: {current_message_in_group.id} from '{origin_entity.id}' to main destination '{destination_entity.id}'"
+                        if self.destination_topic_id:
+                            log_msg += f" (Topic/ReplyTo: {self.destination_topic_id})"
+                        self.logger.info(log_msg)
+                    except (ForwardAccessForbiddenError, telethon_errors.WebpageMediaEmptyError) as e_restricted:
+                        # Fallback: Use workaround for channels with forwarding disabled
+                        self.logger.warning(f"Forwarding restricted on source channel (Msg ID {current_message_in_group.id}), using workaround...")
+                        attribution = ""
+                        if self.prepend_origin_info:
+                            origin_title = getattr(origin_entity, 'title', f"ID: {origin_entity.id}")
+                            attribution = f"[Forwarded from {origin_title} (ID: {origin_entity.id})]"
+
+                        workaround_success = await self._repost_message_workaround(
+                            client,
+                            current_message_in_group,
+                            origin_entity,
+                            destination_entity,
+                            attribution
+                        )
+                        if not workaround_success:
+                            raise  # Re-raise if workaround also fails
+
                 if len(message_group) > 1 and msg_in_group_idx < len(message_group) - 1:
                     await asyncio.sleep(1)
             return True
@@ -734,6 +753,98 @@ class AttachmentForwarder:
             return True
         return False
 
+    async def _repost_message_workaround(
+        self,
+        client: TelegramClient,
+        message: TLMessage,
+        origin_entity,
+        destination_entity,
+        attribution: str = ""
+    ) -> bool:
+        """
+        Workaround for channels with forwarding disabled.
+        Re-posts the message by downloading and re-uploading media, instead of using forward.
+
+        Args:
+            client: The Telegram client
+            message: The message to repost
+            origin_entity: The source channel/chat
+            destination_entity: The destination channel/chat
+            attribution: Attribution text to prepend
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            self.logger.info(f"Using workaround for message ID {message.id} (forwarding may be restricted on source channel)")
+
+            # Prepare message text with attribution
+            text = attribution if attribution else ""
+            if message.text:
+                if text:
+                    text += "\n\n" + message.text
+                else:
+                    text = message.text
+
+            # Try to re-post with media if available
+            if message.media:
+                try:
+                    # Download media to temporary location
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+                        tmp_path = tmp_file.name
+
+                    try:
+                        await client.download_media(message.media, file=tmp_path)
+
+                        # Re-upload as new message
+                        await client.send_message(
+                            entity=destination_entity,
+                            message=text or "File",
+                            file=tmp_path,
+                            parse_mode=None
+                        )
+
+                        self.logger.info(f"Successfully reposted message {message.id} with media (workaround)")
+                        return True
+                    finally:
+                        # Clean up temporary file
+                        if os.path.exists(tmp_path):
+                            try:
+                                os.remove(tmp_path)
+                            except Exception as e:
+                                self.logger.debug(f"Failed to clean up temporary file: {e}")
+
+                except Exception as e:
+                    self.logger.warning(f"Workaround failed for message with media (ID {message.id}): {e}")
+                    # Fall back to text-only if media handling fails
+                    if text:
+                        await client.send_message(
+                            entity=destination_entity,
+                            message=text,
+                            parse_mode=None
+                        )
+                        self.logger.info(f"Reposted message {message.id} as text-only (media failed)")
+                        return True
+                    return False
+            else:
+                # Text-only message
+                if text:
+                    await client.send_message(
+                        entity=destination_entity,
+                        message=text,
+                        parse_mode=None
+                    )
+                    self.logger.info(f"Reposted message {message.id} as text-only (workaround)")
+                    return True
+                else:
+                    self.logger.warning(f"Message {message.id} has no text or media, skipping")
+                    return False
+
+        except Exception as e:
+            self.logger.error(f"Workaround repost failed for message ID {message.id}: {e}")
+            return False
+
     async def forward_messages(
         self,
         origin_id: int | str,
@@ -786,10 +897,24 @@ class AttachmentForwarder:
         destination_id: int | str,
         orchestration_account_identifier: Optional[str] = None
     ):
+        """
+        Forward all messages from all accessible channels to a single destination.
+
+        This is designed for scenarios where a channel owner has been banned and needs to
+        recover/move the channel content to a new location. Uses all available accounts
+        to access channels the current account may not have access to.
+
+        Args:
+            destination_id: The destination channel/chat ID to forward messages to
+            orchestration_account_identifier: Optional specific account to use as orchestrator
+        """
         if not self.db:
             self.logger.error("Database instance (self.db) not available. Cannot proceed with total forward mode.")
             return
-        self.logger.info(f"Starting 'Total Forward Mode'. Destination: {destination_id}")
+
+        self.logger.info(f"====== STARTING 'TOTAL FORWARD MODE' (Channel Recovery/Move) ======")
+        self.logger.info(f"Destination channel: {destination_id}")
+
         try:
             if hasattr(self.db, 'get_all_unique_channels'):
                 unique_channels_with_accounts = self.db.get_all_unique_channels()
@@ -799,27 +924,118 @@ class AttachmentForwarder:
         except Exception as e_db:
             self.logger.error(f"Failed to retrieve channels from database: {e_db}", exc_info=True)
             return
+
         if not unique_channels_with_accounts:
             self.logger.warning("No channels found in account_channel_access table to process for total forward mode.")
             return
 
-        self.logger.info(f"Found {len(unique_channels_with_accounts)} unique channels to process.")
-        for channel_id, accessing_account_phone in unique_channels_with_accounts:
-            self.logger.info(f"--- Processing channel ID: {channel_id} using account: {accessing_account_phone} ---")
+        self.logger.info(f"Found {len(unique_channels_with_accounts)} unique channels to process for recovery.")
+
+        # Track results for summary report
+        successful_channels = []
+        failed_channels = []
+        banned_channels = []
+
+        for idx, (channel_id, accessing_account_phone) in enumerate(unique_channels_with_accounts, 1):
+            self.logger.info(f"\n[{idx}/{len(unique_channels_with_accounts)}] Processing channel ID: {channel_id}")
+            self.logger.info(f"  Using account: {accessing_account_phone}")
+
             try:
                 await self.close()
-                await self.forward_messages(
+                last_msg_id, stats = await self.forward_messages(
                     origin_id=channel_id,
                     destination_id=destination_id,
                     account_identifier=accessing_account_phone
                 )
-                self.logger.info(f"--- Finished processing channel ID: {channel_id} ---")
-            except Exception as e_fwd_all:
-                self.logger.error(f"Failed to forward messages for channel ID {channel_id} using account {accessing_account_phone}: {e_fwd_all}", exc_info=True)
-                await self.close()
-                self.logger.info(f"Continuing to the next channel after error with channel ID: {channel_id}.")
+
+                if stats and stats.get('messages_forwarded', 0) > 0:
+                    self.logger.info(f"  ✓ SUCCESS - Forwarded {stats['messages_forwarded']} messages, {stats['files_forwarded']} files ({stats['bytes_forwarded']} bytes)")
+                    successful_channels.append({
+                        'channel_id': channel_id,
+                        'account': accessing_account_phone,
+                        'messages': stats['messages_forwarded'],
+                        'files': stats['files_forwarded'],
+                        'bytes': stats['bytes_forwarded']
+                    })
+                else:
+                    self.logger.info(f"  ✓ COMPLETED - No new messages to forward (already synced or empty)")
+                    successful_channels.append({
+                        'channel_id': channel_id,
+                        'account': accessing_account_phone,
+                        'messages': 0,
+                        'files': 0,
+                        'bytes': 0
+                    })
+
+            except UserBannedInChannelError as e_banned:
+                self.logger.warning(f"  ⚠ BANNED - Account {accessing_account_phone} is banned from channel {channel_id}")
+                self.logger.debug(f"     Ban reason: {e_banned}")
+                banned_channels.append({
+                    'channel_id': channel_id,
+                    'account': accessing_account_phone,
+                    'reason': 'Account banned from channel'
+                })
+                try:
+                    await self.close()
+                except:
+                    pass
                 continue
-        self.logger.info("'Total Forward Mode' completed.")
+
+            except (ChannelPrivateError, ChatAdminRequiredError) as e_perm:
+                self.logger.warning(f"  ⚠ PERMISSION ERROR - Cannot access channel {channel_id}: {e_perm}")
+                failed_channels.append({
+                    'channel_id': channel_id,
+                    'account': accessing_account_phone,
+                    'error': f"Permission error: {type(e_perm).__name__}"
+                })
+                try:
+                    await self.close()
+                except:
+                    pass
+                continue
+
+            except Exception as e_fwd_all:
+                self.logger.error(f"  ✗ ERROR - Failed to forward messages from channel {channel_id}: {type(e_fwd_all).__name__}: {e_fwd_all}")
+                self.logger.debug(f"     Full traceback:", exc_info=True)
+                failed_channels.append({
+                    'channel_id': channel_id,
+                    'account': accessing_account_phone,
+                    'error': f"{type(e_fwd_all).__name__}: {str(e_fwd_all)[:100]}"
+                })
+                try:
+                    await self.close()
+                except:
+                    pass
+                continue
+
+        # Summary Report
+        self.logger.info(f"\n====== TOTAL FORWARD MODE SUMMARY ======")
+        self.logger.info(f"Total channels processed: {len(unique_channels_with_accounts)}")
+        self.logger.info(f"  ✓ Successful: {len(successful_channels)}")
+        self.logger.info(f"  ⚠ Banned from: {len(banned_channels)}")
+        self.logger.info(f"  ✗ Failed: {len(failed_channels)}")
+
+        if successful_channels:
+            total_messages = sum(c.get('messages', 0) for c in successful_channels)
+            total_files = sum(c.get('files', 0) for c in successful_channels)
+            total_bytes = sum(c.get('bytes', 0) for c in successful_channels)
+            self.logger.info(f"\nRecovered content: {total_messages} messages, {total_files} files ({total_bytes} bytes)")
+
+        if banned_channels:
+            self.logger.warning(f"\nChannels inaccessible due to bans:")
+            for ch in banned_channels[:10]:  # Show first 10
+                self.logger.warning(f"  - Channel {ch['channel_id']} (account: {ch['account']})")
+            if len(banned_channels) > 10:
+                self.logger.warning(f"  ... and {len(banned_channels) - 10} more")
+
+        if failed_channels:
+            self.logger.error(f"\nChannels with errors:")
+            for ch in failed_channels[:10]:  # Show first 10
+                self.logger.error(f"  - Channel {ch['channel_id']}: {ch['error']}")
+            if len(failed_channels) > 10:
+                self.logger.error(f"  ... and {len(failed_channels) - 10} more")
+
+        self.logger.info(f"====== TOTAL FORWARD MODE COMPLETED ======\n")
 
     async def forward_files(self, schedule_id: int, source_id: int | str, destination_id: int | str, file_types: Optional[str], min_file_size: Optional[int], max_file_size: Optional[int], account_identifier: Optional[str] = None):
         client = None

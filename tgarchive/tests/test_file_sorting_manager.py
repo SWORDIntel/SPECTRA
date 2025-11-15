@@ -3,8 +3,8 @@ import os
 import shutil
 from pathlib import Path
 
-from tgarchive.file_sorting_manager import FileSortingManager
-from tgarchive.config_models import Config
+from tgarchive.services.file_sorting_manager import FileSortingManager
+from tgarchive.core.config_models import Config
 from tgarchive.db.spectra_db import SpectraDB
 
 class TestFileSortingManager(unittest.TestCase):

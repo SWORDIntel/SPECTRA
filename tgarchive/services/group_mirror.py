@@ -21,7 +21,7 @@ from telethon.errors import (
     ChatWriteForbiddenError,
     ChannelPrivateError,
 )
-from tgarchive.config_models import Config
+from tgarchive.core.config_models import Config
 from tgarchive.db.spectra_db import SpectraDB
 
 

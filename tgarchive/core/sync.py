@@ -60,7 +60,7 @@ from tqdm.asyncio import tqdm_asyncio  # type: ignore
 # Local application imports
 from tgarchive.db import SpectraDB
 from tgarchive.forwarding import AttachmentForwarder
-from tgarchive.config_models import Config, DEFAULT_CFG # Import Config and DEFAULT_CFG
+from tgarchive.core.config_models import Config, DEFAULT_CFG # Import Config and DEFAULT_CFG
 
 
 # ── Globals ───────────────────────────────────────────────────────────────

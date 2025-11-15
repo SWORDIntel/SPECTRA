@@ -14,7 +14,7 @@ from telethon.errors import ChannelPrivateError, RPCError, ChatAdminRequiredErro
 
 # Local application imports
 from tgarchive.db import SpectraDB
-from tgarchive.sync import Config # Config class handles accounts and API details
+from tgarchive.core.sync import Config # Config class handles accounts and API details
 
 logger = logging.getLogger("tgarchive.channel_utils") # Using a more specific logger name
 

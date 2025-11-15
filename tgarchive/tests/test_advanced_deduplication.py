@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, AsyncMock
 from PIL import Image
 
 from tgarchive.forwarding import AttachmentForwarder
-from tgarchive.config_models import Config
+from tgarchive.core.config_models import Config
 from tgarchive.tests.test_forwarding_grouping import MockMessage
 import imagehash
 
@@ -93,7 +93,7 @@ class TestAdvancedDeduplication(unittest.TestCase):
             with open(path2, "w") as f:
                 f.write("This is a test document with a lot of content to make the fuzzy hash meaningful. " * 9 + "Slightly different content.")
 
-            from tgarchive.deduplication import get_fuzzy_hash
+            from tgarchive.core.deduplication import get_fuzzy_hash
             fhash1 = get_fuzzy_hash(path1)
 
             # --- Mock DB to return the first doc's hash ---

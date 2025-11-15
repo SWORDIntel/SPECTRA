@@ -8,7 +8,7 @@ from typing import Optional
 
 from telethon import TelegramClient
 from telethon.tl import types
-from tgarchive.config_models import Config
+from tgarchive.core.config_models import Config
 
 class ClientManager:
     """

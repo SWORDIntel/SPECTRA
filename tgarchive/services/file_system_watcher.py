@@ -6,10 +6,10 @@ This module contains the FileSystemWatcher for monitoring a directory for new fi
 """
 
 import time
+import logging
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from .file_sorting_manager import FileSortingManager
-import logging
 
 logger = logging.getLogger(__name__)
 

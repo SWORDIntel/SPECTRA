@@ -599,13 +599,25 @@ class ForwardingMenuForm(npyscreen.Form):
         # Title
         self.add(npyscreen.FixedText, value="SPECTRA Forwarding Utilities", editable=False)
         self.add(npyscreen.FixedText, value="-" * 40, editable=False) # Separator
+        self.add(npyscreen.FixedText, value="", editable=False)
 
-        # Action Buttons
+        # Primary Action: Channel Recovery (Banned Owner Scenario)
+        self.add(npyscreen.FixedText, value="🔴 RECOVERY MODE (Owner Banned)", editable=False)
+        self.add(npyscreen.ButtonPress, name="► Channel Recovery Wizard", when_pressed_function=self.channel_recovery_wizard)
+        self.add(npyscreen.FixedText, value="  Recover all content when owner is banned", editable=False)
+        self.add(npyscreen.FixedText, value="", editable=False)
+
+        # Configuration Options
+        self.add(npyscreen.FixedText, value="⚙️  CONFIGURATION", editable=False)
         self.add(npyscreen.ButtonPress, name="Configure Default Forwarding Destination", when_pressed_function=self.configure_default_destination)
         self.add(npyscreen.ButtonPress, name="View Default Forwarding Destination", when_pressed_function=self.view_default_destination)
         self.add(npyscreen.ButtonPress, name="Update Channel Access Database", when_pressed_function=self.update_channel_access_db)
+        self.add(npyscreen.FixedText, value="", editable=False)
+
+        # Advanced Forwarding Options
+        self.add(npyscreen.FixedText, value="📤 ADVANCED FORWARDING", editable=False)
         self.add(npyscreen.ButtonPress, name="Selective Attachment Forwarding", when_pressed_function=self.selective_forwarding_form)
-        self.add(npyscreen.ButtonPress, name="Total Forward Mode", when_pressed_function=self.total_forwarding_form)
+        self.add(npyscreen.ButtonPress, name="Total Forward Mode (Manual)", when_pressed_function=self.total_forwarding_form)
         self.add(npyscreen.ButtonPress, name="Re-post Messages in Channel", when_pressed_function=self.repost_form)
 
         self.add(npyscreen.FixedText, value="", editable=False) # Spacer
@@ -622,6 +634,10 @@ class ForwardingMenuForm(npyscreen.Form):
     def back_to_main_menu(self):
         """Returns to the main application menu."""
         self.parentApp.switchForm("MAIN")
+
+    def channel_recovery_wizard(self):
+        """Switches to the Channel Recovery Wizard for banned owner scenarios."""
+        self.parentApp.switchForm("CHANNEL_RECOVERY")
 
     def configure_default_destination(self):
         """Switches to the form to set the default forwarding destination."""
@@ -706,6 +722,218 @@ class ForwardingMenuForm(npyscreen.Form):
     def repost_form(self):
         """Switches to the Re-post form."""
         self.parentApp.switchForm("REPOST")
+
+
+# ── Channel Recovery Wizard Form ──────────────────────────────────
+class ChannelRecoveryWizardForm(npyscreen.Form):
+    """Guided wizard for recovering a channel when the owner has been banned."""
+    def create(self):
+        self.name = "Channel Recovery Wizard"
+        self.current_forwarder = None
+        self.db_instance = None
+        self.step = 1  # Track wizard step
+
+        # Header
+        self.add(npyscreen.FixedText, value="🔴 CHANNEL RECOVERY WIZARD", editable=False)
+        self.add(npyscreen.FixedText, value="=" * 50, editable=False)
+        self.add(npyscreen.FixedText, value="", editable=False)
+
+        # Step 1: Welcome & Information
+        self.add(npyscreen.FixedText, value="STEP 1: Recovery Information", editable=False)
+        self.add(npyscreen.FixedText, value="-" * 50, editable=False)
+        self.add(npyscreen.FixedText, value="This wizard will help you recover all messages from channels", editable=False)
+        self.add(npyscreen.FixedText, value="when the channel owner has been banned. The process will:", editable=False)
+        self.add(npyscreen.FixedText, value="", editable=False)
+        self.add(npyscreen.FixedText, value="  • Forward all accessible channel messages to a destination", editable=False)
+        self.add(npyscreen.FixedText, value="  • Handle channels with forwarding restrictions", editable=False)
+        self.add(npyscreen.FixedText, value="  • Detect and skip duplicate messages", editable=False)
+        self.add(npyscreen.FixedText, value="  • Use all available accounts to maximize coverage", editable=False)
+        self.add(npyscreen.FixedText, value="", editable=False)
+
+        # Step 2: Database Setup
+        self.add(npyscreen.FixedText, value="STEP 2: Database Configuration", editable=False)
+        self.add(npyscreen.FixedText, value="-" * 50, editable=False)
+        self.add(npyscreen.FixedText, value="Before starting recovery, ensure your channel access database", editable=False)
+        self.add(npyscreen.FixedText, value="is up to date. This identifies all channels accessible to your accounts.", editable=False)
+        self.add(npyscreen.FixedText, value="", editable=False)
+        self.db_check_button = self.add(npyscreen.ButtonPress, name="✓ Check & Update Channel Access Database",
+                                        when_pressed_function=self.check_channel_database)
+        self.add(npyscreen.FixedText, value="", editable=False)
+
+        # Step 3: Recovery Configuration
+        self.add(npyscreen.FixedText, value="STEP 3: Recovery Configuration", editable=False)
+        self.add(npyscreen.FixedText, value="-" * 50, editable=False)
+
+        self.destination_id_widget = self.add(npyscreen.TitleText, name="Recovery Destination:",
+                                              footer="Channel ID, username, or invite link for recovery channel")
+        self.add(npyscreen.FixedText, value="", editable=False)
+
+        self.add(npyscreen.FixedText, value="Recovery Options:", editable=False)
+        self.enable_dedup_widget = self.add(npyscreen.Checkbox, name="Enable Deduplication (recommended)",
+                                            value=True,
+                                            footer="Prevent duplicate messages during recovery")
+        self.prepend_origin_widget = self.add(npyscreen.Checkbox, name="Prepend Origin Info to messages",
+                                              value=True,
+                                              footer="Add source channel info for tracking")
+        self.forward_to_saved_widget = self.add(npyscreen.Checkbox, name="Also backup to Saved Messages",
+                                                value=False,
+                                                footer="Create backup in all accounts' Saved Messages")
+        self.add(npyscreen.FixedText, value="", editable=False)
+
+        # Recovery Account Selection
+        self.account_id_widget = self.add(npyscreen.TitleText, name="Orchestration Account (Optional):",
+                                          footer="Leave blank for automatic selection")
+        self.add(npyscreen.FixedText, value="", editable=False)
+
+        # Step 4: Start Recovery
+        self.add(npyscreen.FixedText, value="STEP 4: Start Recovery", editable=False)
+        self.add(npyscreen.FixedText, value="-" * 50, editable=False)
+        self.add(npyscreen.ButtonPress, name="🚀 START RECOVERY", when_pressed_function=self.start_recovery)
+        self.add(npyscreen.FixedText, value="", editable=False)
+
+        # Status and Progress
+        self.status_widget = self.add(StatusMessages, name="Recovery Status", max_height=6, rely=-10)
+        self.status_widget.add_message("Channel recovery wizard ready. Update database first.", "INFO")
+
+        # Navigation
+        self.add(npyscreen.ButtonPress, name="Back to Forwarding Menu", when_pressed_function=self.back_to_forwarding_menu)
+
+    def on_enter(self):
+        """Called when the form is activated."""
+        try:
+            config = self.parentApp.manager.config
+            default_dest = config.default_forwarding_destination_id
+            if default_dest:
+                self.destination_id_widget.value = default_dest
+                self.destination_id_widget.display()
+                self.status_widget.add_message(f"Loaded default destination: {default_dest}", "INFO")
+        except Exception as e:
+            self.status_widget.add_message(f"Error loading config: {e}", "WARNING")
+
+    def check_channel_database(self):
+        """Check and update the channel access database."""
+        if self.current_forwarder or self.db_instance:
+            self.status_widget.add_message("A task is already in progress. Please wait.", "WARNING")
+            return
+
+        self.status_widget.add_message("Checking channel access database...", "INFO")
+        try:
+            config = self.parentApp.manager.config
+            db_path = Path(config.db_path)
+            self.db_instance = SpectraDB(db_path)
+            self.status_widget.add_message("Database connected. Starting update process...", "INFO")
+            self.status_widget.add_message("(This may take a while - check terminal for progress)", "INFO")
+
+            AsyncRunner.run_in_thread(
+                populate_account_channel_access(self.db_instance, config),
+                callback=self._db_update_finished_callback
+            )
+        except Exception as e:
+            self.status_widget.add_message(f"Error updating database: {e}", "ERROR")
+            self.db_instance = None
+
+    def _db_update_finished_callback(self, result=None):
+        """Callback when database update completes."""
+        self.status_widget.add_message("✓ Channel database update completed successfully!", "INFO")
+        self.status_widget.add_message("You can now proceed with channel recovery.", "INFO")
+        if self.db_instance:
+            try:
+                self.db_instance.conn.close()
+            except:
+                pass
+            self.db_instance = None
+
+    def _recovery_finished_callback(self, result=None):
+        """Callback when recovery process completes."""
+        self.status_widget.add_message("=" * 50, "INFO")
+        self.status_widget.add_message("✓ RECOVERY PROCESS COMPLETED", "INFO")
+        self.status_widget.add_message("Check the recovery destination for recovered messages.", "INFO")
+
+        if self.current_forwarder:
+            try:
+                AsyncRunner.run_async(self.current_forwarder.close())
+            except:
+                pass
+
+        if self.db_instance and self.db_instance.conn:
+            try:
+                self.db_instance.conn.close()
+            except:
+                pass
+
+        self.current_forwarder = None
+        self.db_instance = None
+
+    def start_recovery(self):
+        """Start the channel recovery process."""
+        if self.current_forwarder or self.db_instance:
+            self.status_widget.add_message("A recovery task is already in progress. Please wait.", "WARNING")
+            return
+
+        destination_id = self.destination_id_widget.value
+        if not destination_id:
+            self.status_widget.add_message("Recovery destination is required!", "ERROR")
+            npyscreen.notify_confirm("Please enter a recovery destination channel.", title="Missing Configuration")
+            return
+
+        account_identifier = self.account_id_widget.value or None
+        enable_dedup = self.enable_dedup_widget.value
+        prepend_origin = self.prepend_origin_widget.value
+        forward_to_saved = self.forward_to_saved_widget.value
+
+        try:
+            config = self.parentApp.manager.config
+            db_path = Path(config.db_path)
+
+            self.status_widget.add_message("=" * 50, "INFO")
+            self.status_widget.add_message("🚀 STARTING CHANNEL RECOVERY", "INFO")
+            self.status_widget.add_message(f"Destination: {destination_id}", "INFO")
+            self.status_widget.add_message(f"Deduplication: {'ENABLED' if enable_dedup else 'DISABLED'}", "INFO")
+            self.status_widget.add_message(f"Origin Info: {'ENABLED' if prepend_origin else 'DISABLED'}", "INFO")
+            self.status_widget.add_message("", "INFO")
+
+            self.db_instance = SpectraDB(db_path)
+            self.current_forwarder = AttachmentForwarder(
+                config=config,
+                db=self.db_instance,
+                forward_to_all_saved_messages=forward_to_saved,
+                prepend_origin_info=prepend_origin,
+                enable_deduplication=enable_dedup
+            )
+
+            self.status_widget.add_message("Initializing recovery process...", "INFO")
+            AsyncRunner.run_in_thread(
+                self.current_forwarder.forward_all_accessible_channels(
+                    destination_id=destination_id,
+                    orchestration_account_identifier=account_identifier
+                ),
+                callback=self._recovery_finished_callback
+            )
+
+        except Exception as e:
+            self.status_widget.add_message(f"Failed to start recovery: {e}", "ERROR")
+            if self.current_forwarder:
+                try:
+                    AsyncRunner.run_async(self.current_forwarder.close())
+                except:
+                    pass
+            if self.db_instance and self.db_instance.conn:
+                try:
+                    self.db_instance.conn.close()
+                except:
+                    pass
+            self.current_forwarder = None
+            self.db_instance = None
+
+    def back_to_forwarding_menu(self):
+        """Returns to the Forwarding Menu."""
+        if self.current_forwarder or self.db_instance:
+            npyscreen.notify_confirm(
+                "A recovery task is in progress. Are you sure you want to go back?\n"
+                "The task will continue, but you won't see live updates here.",
+                title="Task in Progress"
+            )
+        self.parentApp.switchForm("FORWARDING")
 
 
 # ── Re-post Form ──────────────────────────────────────────────────
@@ -931,7 +1159,7 @@ class TotalForwardForm(npyscreen.Form):
 
             AsyncRunner.run_in_thread(
                 self.current_forwarder.forward_all_accessible_channels(
-                    destination_entity=destination_id,
+                    destination_id=destination_id,
                     orchestration_account_identifier=account_identifier
                 ),
                 callback=lambda res: self._total_forwarding_finished_callback(self.current_forwarder, self.db_instance, res)
@@ -1535,6 +1763,7 @@ class SpectraApp(npyscreen.NPSAppManaged):
         self.addForm("MAIN", MainMenuForm, name="SPECTRA Main Menu")
         self.addForm("ARCHIVE", ArchiveForm, name="SPECTRA Archiver")
         self.addForm("FORWARDING", ForwardingMenuForm, name="SPECTRA Forwarding")
+        self.addForm("CHANNEL_RECOVERY", ChannelRecoveryWizardForm, name="Channel Recovery Wizard")
         self.addForm("SET_FORWARD_DEST", SetForwardDestForm, name="Set Default Forwarding Destination")
         self.addForm("SELECTIVE_FORWARD", SelectiveForwardForm, name="Selective Message Forwarding")
         self.addForm("TOTAL_FORWARD", TotalForwardForm, name="Total Forward Mode")

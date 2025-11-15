@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, AsyncMock
 
 from tgarchive.forwarding import AttachmentForwarder
 from tgarchive.forwarding.deduplication import Deduplicator
-from tgarchive.config_models import Config
+from tgarchive.core.config_models import Config
 from tgarchive.tests.test_forwarding_grouping import MockMessage
 
 class TestNewDeduplication(unittest.TestCase):

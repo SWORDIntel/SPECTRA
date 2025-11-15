@@ -6,7 +6,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from tgarchive.config_models import Config
+from tgarchive.core.config_models import Config
 from tgarchive.db import SpectraDB
 
 from .forwarder import AttachmentForwarder

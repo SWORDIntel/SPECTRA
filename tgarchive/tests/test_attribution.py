@@ -1,7 +1,7 @@
 import unittest
 import os
 from unittest.mock import MagicMock
-from tgarchive.attribution import AttributionFormatter
+from tgarchive.utils.attribution import AttributionFormatter
 from tgarchive.db import SpectraDB
 
 class TestAttribution(unittest.TestCase):

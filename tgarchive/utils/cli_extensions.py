@@ -12,11 +12,11 @@ import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-from .config_models import Config
-from .db import SpectraDB
-from .forwarding.enhanced_forwarder import EnhancedAttachmentForwarder
-from .forwarding.organization_engine import OrganizationConfig, OrganizationMode
-from .forwarding.topic_manager import TopicCreationStrategy
+from ..core.config_models import Config
+from ..db import SpectraDB
+from ..forwarding.enhanced_forwarder import EnhancedAttachmentForwarder
+from ..forwarding.organization_engine import OrganizationConfig, OrganizationMode
+from ..forwarding.topic_manager import TopicCreationStrategy
 from .discovery import enhance_config_with_gen_accounts
 
 

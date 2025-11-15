@@ -2,11 +2,11 @@ import unittest
 import os
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
-from tgarchive.sorting_forwarder import SortingForwarder
-from tgarchive.file_sorter import FileTypeSorter
-from tgarchive.group_manager import GroupManager
+from tgarchive.utils.sorting_forwarder import SortingForwarder
+from tgarchive.utils.file_sorter import FileTypeSorter
+from tgarchive.utils.group_manager import GroupManager
 from tgarchive.db import SpectraDB
-from tgarchive.config_models import Config
+from tgarchive.core.config_models import Config
 
 class TestIntegrationSorting(unittest.TestCase):
     def setUp(self):

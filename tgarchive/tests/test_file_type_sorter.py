@@ -1,6 +1,6 @@
 import unittest
 import os
-from tgarchive.file_sorter import FileTypeSorter
+from tgarchive.utils.file_sorter import FileTypeSorter
 from tgarchive.db import SpectraDB
 
 class TestFileTypeSorter(unittest.TestCase):

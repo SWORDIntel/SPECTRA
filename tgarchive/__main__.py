@@ -16,8 +16,8 @@ import time
 from pathlib import Path
 
 # ── Local Imports ──────────────────────────────────────────────────────────
-from .sync import Config, runner, logger
-from .discovery import (
+from .core.sync import Config, runner, logger
+from .utils.discovery import (
     GroupDiscovery,
     NetworkAnalyzer,
     GroupManager,
@@ -26,14 +26,14 @@ from .discovery import (
     enhance_config_with_gen_accounts
 )
 from .db import SpectraDB
-from .channel_utils import populate_account_channel_access
+from .utils.channel_utils import populate_account_channel_access
 from .forwarding import AttachmentForwarder
-from .scheduler_service import SchedulerDaemon
-from .mass_migration import MassMigrationManager
-from .group_mirror import GroupMirrorManager
+from .services.scheduler_service import SchedulerDaemon
+from .services.mass_migration import MassMigrationManager
+from .services.group_mirror import GroupMirrorManager
 from .osint.intelligence import IntelligenceCollector
-from .file_sorting_manager import FileSortingManager
-from .file_system_watcher import start_watching
+from .services.file_sorting_manager import FileSortingManager
+from .services.file_system_watcher import start_watching
 
 # ── Conditional Imports ──────────────────────────────────────────────────
 try:
@@ -43,7 +43,7 @@ except ImportError:
     logger.debug("CloudProcessor could not be imported. A portion of forwarding functionality might be unavailable.")
 
 try:
-    from .spectra_tui import main as tui_main
+    from .ui.tui import main as tui_main
     HAS_TUI = True
 except ImportError:
     HAS_TUI = False

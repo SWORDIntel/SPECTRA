@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from telethon.errors.rpcerrorlist import MessageDeleteForbiddenError
 
 from tgarchive.forwarding import AttachmentForwarder
-from tgarchive.config_models import Config
+from tgarchive.core.config_models import Config
 from tgarchive.tests.test_forwarding_grouping import MockMessage
 
 class TestReposting(unittest.TestCase):

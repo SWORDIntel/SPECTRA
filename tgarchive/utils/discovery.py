@@ -35,7 +35,7 @@ from telethon.tl.functions.messages import (
 )
 
 # ── Local Imports ──────────────────────────────────────────────────────────
-from .sync import Config, runner, logger
+from ..core.sync import Config, runner, logger
 
 # ── Globals ───────────────────────────────────────────────────────────────
 TZ = timezone.utc

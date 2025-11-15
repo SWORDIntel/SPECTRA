@@ -2,9 +2,9 @@ import unittest
 import os
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
-from tgarchive.mass_migration import MassMigrationManager
+from tgarchive.services.mass_migration import MassMigrationManager
 from tgarchive.db import SpectraDB
-from tgarchive.config_models import Config
+from tgarchive.core.config_models import Config
 
 class TestMassMigration(unittest.TestCase):
     def setUp(self):

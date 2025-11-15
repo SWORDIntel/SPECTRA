@@ -1,0 +1,113 @@
+#!/bin/bash
+################################################################################
+# SPECTRA Bootstrap - Automatic Setup & Launch
+################################################################################
+#
+# This script automatically:
+# 1. Detects your OS
+# 2. Checks for dependencies
+# 3. Sets up the environment (if needed)
+# 4. Launches the TUI
+#
+# Usage: ./bootstrap  (or just run from the SPECTRA directory)
+#
+################################################################################
+
+set -euo pipefail
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LAUNCH_SCRIPT="$SCRIPT_DIR/scripts/launch/spectra-launch.sh"
+
+# Print colored output
+print_status() {
+    echo -e "${BLUE}▶${NC} $1"
+}
+
+print_success() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}✗${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠${NC} $1"
+}
+
+# Banner
+print_banner() {
+    clear
+    echo -e "${BLUE}"
+    cat << 'EOF'
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                          ███████╗██████╗ ███████╗ ██████╗████████╗██████╗  ║
+║                          ██╔════╝██╔══██╗██╔════╝██╔════╝╚══██╔══╝██╔══██╗ ║
+║                          ███████╗██████╔╝█████╗  ██║        ██║   ██████╔╗ ║
+║                          ╚════██║██╔═══╝ ██╔══╝  ██║        ██║   ██╔══██║ ║
+║                          ███████║██║     ███████╗╚██████╗   ██║   ██║  ██║ ║
+║                          ╚══════╝╚═╝     ╚══════╝ ╚═════╝   ╚═╝   ╚═╝  ╚═╝ ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+              Telegram Network Discovery & Archiving System
+EOF
+    echo -e "${NC}\n"
+}
+
+# Check if launch script exists
+check_launch_script() {
+    if [[ ! -f "$LAUNCH_SCRIPT" ]]; then
+        print_error "Launch script not found: $LAUNCH_SCRIPT"
+        print_error "Are you running from the SPECTRA project root?"
+        exit 1
+    fi
+
+    if [[ ! -x "$LAUNCH_SCRIPT" ]]; then
+        print_status "Making launch script executable..."
+        chmod +x "$LAUNCH_SCRIPT"
+        print_success "Launch script is now executable"
+    fi
+}
+
+# Check if already configured
+is_configured() {
+    if [[ -f "data/config/spectra_config.json" ]] || [[ -f "spectra_config.json" ]]; then
+        return 0
+    fi
+    return 1
+}
+
+# Main bootstrap flow
+main() {
+    print_banner
+
+    print_status "Checking SPECTRA installation..."
+    check_launch_script
+    print_success "Launch script found"
+
+    # Check if config exists
+    if is_configured; then
+        print_success "Configuration found - launching TUI immediately"
+        echo ""
+        sleep 1
+        exec "$LAUNCH_SCRIPT"
+    else
+        print_warning "Configuration not found - running full setup"
+        echo ""
+        print_status "Starting SPECTRA setup wizard..."
+        sleep 1
+
+        # Run the launch script which handles full setup
+        exec "$LAUNCH_SCRIPT"
+    fi
+}
+
+# Run main
+main "$@"

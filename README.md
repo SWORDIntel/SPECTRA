@@ -562,6 +562,116 @@ python examples/parallel_example.py --seeds-file seeds.txt --max-workers 4 --dis
 
 ---
 
+## AI/ML Intelligence & Threat Scoring
+
+SPECTRA includes advanced AI/ML capabilities for intelligence analysis:
+
+### Threat Scoring System
+
+Automatically identifies and scores threat actors on a 1-10 scale based on message content, behavior patterns, and network associations:
+
+```bash
+# Run the threat scoring demo
+python examples/threat_scoring_demo.py
+```
+
+**Features:**
+- **Multi-factor Scoring**: Combines keyword detection (30%), pattern matching (25%), behavioral analysis (20%), network associations (15%), and temporal patterns (10%)
+- **Threat Classifications**: Harmless (1-2), Low Risk (3-4), Medium (5-6), High Risk (7-8), Critical/Nation-State (9-10)
+- **Network Tracking**: "Guilt by association" scoring and community detection
+- **Mermaid Visualizations**: Color-coded network graphs, community clusters, and activity timelines
+- **Intelligence Reports**: Executive summaries with top threat actors and recommended actions
+
+**Detection Capabilities:**
+- 100+ critical security keywords (zero-day, APT groups, ransomware, etc.)
+- Pattern matching for CVEs, crypto addresses, malware hashes, Tor addresses, IPs
+- Behavioral flags for OPSEC awareness, code sharing, coordinated activity
+- Network relationship tracking with 6 interaction types
+
+**Usage:**
+```python
+from tgarchive.threat import (
+    ThreatIndicatorDetector,
+    ThreatScorer,
+    ThreatNetworkTracker,
+    MermaidGenerator
+)
+
+# Analyze messages for threat indicators
+detector = ThreatIndicatorDetector()
+indicators = detector.analyze_message(message_text, message_id)
+
+# Calculate threat scores
+threat_score, confidence = ThreatScorer.calculate_threat_score(
+    keyword_indicators=indicators,
+    # ... other parameters
+)
+
+# Generate network visualization
+mermaid_graph = MermaidGenerator.generate_network_graph(
+    profiles=threat_profiles,
+    network_tracker=network_tracker
+)
+```
+
+**Documentation:**
+- **Usage Guide**: See `docs/THREAT_SCORING_USAGE.md`
+- **System Architecture**: See `docs/THREAT_SCORING_SYSTEM_PLAN.md`
+- **Demo Script**: See `examples/threat_scoring_demo.py`
+
+### Semantic Search & RAG
+
+Vector-based semantic search with Retrieval-Augmented Generation:
+
+```python
+from tgarchive.ai import SemanticSearchEngine
+
+# Initialize search engine
+search_engine = SemanticSearchEngine(
+    model_name="all-MiniLM-L6-v2",
+    device="cpu"
+)
+
+# Index messages
+search_engine.index_messages(messages, batch_size=100)
+
+# Search semantically
+results = search_engine.search(
+    query="discuss zero-day vulnerabilities",
+    top_k=10
+)
+```
+
+**Features:**
+- Vector embeddings with sentence-transformers
+- ChromaDB integration with numpy fallback
+- Hybrid semantic + keyword search
+- RAG pipeline for question answering
+
+### Entity Extraction & Knowledge Graphs
+
+Named Entity Recognition and relationship mapping:
+
+```python
+from tgarchive.ai import NERModel, KnowledgeGraph
+
+# Extract entities
+ner = NERModel(model_name="en_core_web_lg")
+entities = ner.extract_entities(text)
+
+# Build knowledge graph
+kg = KnowledgeGraph()
+kg.add_entities_from_messages(messages)
+influential = kg.pagerank(top_k=100)
+```
+
+**AI/ML Documentation:**
+- **Full Feature Plan**: See `docs/AI_INTELLIGENCE_ENHANCEMENTS.md`
+- **Requirements**: Install with `pip install -r requirements-ai.txt`
+- **Demo**: See `examples/ai_features_demo.py`
+
+---
+
 ## Integration & Architecture
 
 - **`SPECTRA/tgarchive/discovery.py`**: Integration point for group crawling, network analysis, parallel archiving, and SQL-backed state

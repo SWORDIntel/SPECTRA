@@ -1,0 +1,23 @@
+[Unit]
+Description=SPECTRA Health Check Service
+Documentation=https://github.com/SWORDIntel/SPECTRA
+After=network.target
+
+[Service]
+Type=simple
+User=spectra
+Group=spectra
+WorkingDirectory=/opt/spectra
+
+# Environment
+Environment="PYTHONUNBUFFERED=1"
+
+# Service execution
+ExecStart=/opt/spectra/venv/bin/python -m tgarchive.core.health_server --port 8080 --config /etc/spectra/config.json
+
+# Restart policy
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

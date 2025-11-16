@@ -1,0 +1,60 @@
+[Unit]
+Description=SPECTRA Telegram Archiver Service
+Documentation=https://github.com/SWORDIntel/SPECTRA
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=spectra
+Group=spectra
+WorkingDirectory=/opt/spectra
+
+# Environment configuration
+Environment="PYTHONUNBUFFERED=1"
+Environment="TG_API_ID="
+Environment="TG_API_HASH="
+
+# Load environment from file (override above if present)
+EnvironmentFile=-/etc/spectra/environment
+
+# Security hardening (TEMPEST Class C considerations)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/spectra/data /opt/spectra/logs /opt/spectra/media
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+
+# Resource limits
+MemoryMax=4G
+CPUQuota=200%
+TasksMax=100
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=spectra
+
+# Service execution
+ExecStart=/opt/spectra/venv/bin/python -m tgarchive --config /etc/spectra/config.json --daemon
+ExecReload=/bin/kill -HUP $MAINPID
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+StartLimitInterval=5min
+StartLimitBurst=3
+
+# Graceful shutdown
+TimeoutStopSec=30s
+KillMode=mixed
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

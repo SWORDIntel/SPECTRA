@@ -1,0 +1,63 @@
+# SPECTRA AI/ML Enhancement Dependencies
+# ========================================
+# Install with: pip install -r requirements-ai.txt
+
+# === CORE AI/ML FRAMEWORKS ===
+torch>=2.0.0
+transformers>=4.35.0
+sentence-transformers>=2.2.2
+
+# === NLP & TEXT PROCESSING ===
+spacy>=3.7.0
+# Download models: python -m spacy download en_core_web_sm ru_core_news_sm
+
+# === VECTOR DATABASES ===
+chromadb>=0.4.18
+# Alternative: qdrant-client>=1.7.0
+
+# === GRAPH ANALYSIS ===
+networkx>=3.2.1
+python-louvain>=0.16  # Community detection
+
+# === COMPUTER VISION (Optional) ===
+# Uncomment if using multi-modal analysis
+# opencv-python>=4.8.1
+# Pillow>=10.1.0
+# timm>=0.9.12  # Image models
+
+# === AUDIO PROCESSING (Optional) ===
+# Uncomment if using voice intelligence
+# openai-whisper>=20231117
+# pyannote.audio>=3.1.1  # Speaker diarization
+
+# === UTILITIES ===
+numpy>=1.24.0
+scikit-learn>=1.3.2
+scipy>=1.11.4
+
+# === PROGRESS & VISUALIZATION ===
+tqdm>=4.66.1
+
+# === OPTIONAL: API INTEGRATIONS ===
+# Uncomment if using commercial APIs
+# openai>=1.6.1  # For GPT-4, embeddings
+# anthropic>=0.8.0  # For Claude
+
+# === NOTES ===
+# 1. For GPU support, install pytorch with CUDA:
+#    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+#
+# 2. spaCy models must be downloaded separately:
+#    python -m spacy download en_core_web_sm  # English
+#    python -m spacy download ru_core_news_sm  # Russian
+#    python -m spacy download de_core_news_sm  # German
+#
+# 3. For production, consider using model quantization to reduce memory:
+#    - ONNX Runtime
+#    - TensorRT
+#    - Optimum
+#
+# 4. ChromaDB alternatives:
+#    - Qdrant (more scalable)
+#    - Milvus (production-grade)
+#    - Weaviate (with vector search)

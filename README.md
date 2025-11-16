@@ -672,6 +672,203 @@ influential = kg.pagerank(top_k=100)
 
 ---
 
+## Advanced Intelligence Features
+
+SPECTRA includes enterprise-grade enhancements for high-scale intelligence operations:
+
+### 🔍 Vector Database Integration
+
+Scale to billions of messages with high-dimensional similarity search:
+
+```bash
+# Install vector database support
+pip install -r requirements-advanced.txt
+```
+
+**Features:**
+- **Qdrant/ChromaDB Integration**: Production-grade vector storage (384-2048D embeddings)
+- **Dual-Database Architecture**: SQLite for metadata + Vector DB for semantic search
+- **Semantic Search**: Find similar messages across millions of documents
+- **Actor Similarity**: Identify actors with similar behavioral patterns
+- **Anomaly Detection**: Flag messages that don't match normal patterns
+- **Scalability**: Handle billions of vectors with quantization and sharding
+
+**Usage:**
+```python
+from tgarchive.db.vector_store import VectorStoreManager, VectorStoreConfig
+
+# Initialize vector store
+config = VectorStoreConfig(
+    backend="qdrant",  # or "chromadb", "numpy"
+    vector_size=384,
+    distance_metric="cosine"
+)
+
+store = VectorStoreManager(config)
+
+# Index messages with embeddings
+store.index_message(
+    message_id=123,
+    embedding=message_embedding,
+    metadata={"user_id": 1001, "threat_score": 8.5}
+)
+
+# Semantic search
+results = store.semantic_search(
+    query_embedding=query_emb,
+    top_k=10,
+    filters={"threat_score": {"gte": 7.0}}
+)
+```
+
+### 🛡️ CNSA 2.0 Quantum-Resistant Cryptography
+
+Post-quantum cryptography for future-proof security:
+
+**Standards Compliance:**
+- **ML-KEM-1024** (FIPS 203): Quantum-resistant key encapsulation
+- **ML-DSA-87** (FIPS 204): Quantum-resistant digital signatures
+- **SHA-384** (FIPS 180-4): 384-bit secure hashing
+- **NSA CNSA 2.0 Compliant**: Future-proof against quantum attacks
+
+**Features:**
+- Hybrid encryption (ML-KEM-1024 + AES-256-GCM)
+- Digital signatures for threat reports (ML-DSA-87)
+- Secure key management with encrypted keystore
+- Archive encryption with quantum resistance
+- Database integrity verification
+
+**Usage:**
+```python
+from tgarchive.crypto import CNSA20CryptoManager, CNSAKeyManager
+
+# Initialize crypto manager
+crypto = CNSA20CryptoManager()
+
+# Generate quantum-resistant keys
+kem_keys = crypto.generate_kem_keypair()
+sig_keys = crypto.generate_signature_keypair()
+
+# Encrypt data
+encrypted = crypto.encrypt_data(plaintext, recipient_public_key)
+
+# Sign threat reports
+signed_report = crypto.create_signed_package(
+    report_data,
+    signing_key,
+    signer_id="analyst_001"
+)
+
+# Verify signature
+is_valid = crypto.verify_signed_package(signed_report, public_key)
+
+# Secure key management
+key_manager = CNSAKeyManager("./keys/keystore.enc")
+key_manager.create_keystore(password="SecurePassword")
+```
+
+### ⏱️ Temporal Analysis & Prediction
+
+Analyze time-based patterns in threat actor behavior:
+
+**Capabilities:**
+- Activity timeline analysis with burst detection
+- Timezone inference from peak activity hours
+- Sleep pattern analysis for geolocation
+- Campaign periodicity detection
+- Predictive activity forecasting
+- Coordinated campaign detection
+
+**Usage:**
+```python
+from tgarchive.threat.temporal import TemporalAnalyzer
+
+analyzer = TemporalAnalyzer()
+
+# Analyze activity patterns
+patterns = analyzer.analyze_activity_patterns(messages)
+# Returns: peak_hours, peak_days, inferred_timezone, burst_periods, regularity_score
+
+# Detect coordinated campaigns
+campaigns = analyzer.detect_coordinated_campaigns(
+    actor_messages,
+    time_window_minutes=30,
+    min_actors=3
+)
+
+# Predict next activity
+prediction = analyzer.predict_next_activity(messages, forecast_hours=24)
+# Returns: likely_active_hours, probability_by_hour, confidence
+```
+
+### 🎭 Attribution Engine
+
+Cross-platform identity correlation and behavioral analysis:
+
+**Features:**
+- Writing style analysis (stylometry)
+- Vocabulary richness and sentence complexity
+- Tool/technique fingerprinting (Metasploit, Cobalt Strike, etc.)
+- Operational pattern matching (recon → exploit → post-exploit)
+- AI-generated content detection
+- Cross-account correlation
+- Language proficiency assessment
+
+**Usage:**
+```python
+from tgarchive.threat.attribution import AttributionEngine
+
+engine = AttributionEngine()
+
+# Analyze writing style
+profile = engine.analyze_writing_style(messages)
+# Returns: vocabulary_size, avg_sentence_length, technical_density, language
+
+# Find similar actors (potential sock puppets)
+similar = engine.find_similar_actors_by_style(
+    target_profile,
+    candidate_profiles,
+    threshold=0.85
+)
+
+# Detect tool fingerprints
+tools = engine.detect_tool_fingerprints(messages)
+# Returns: {"Metasploit": [...matches...], "Cobalt Strike": [...]}
+
+# Detect AI-generated content
+ai_analysis = engine.detect_ai_generated_content(messages)
+# Returns: ai_likelihood, indicators, confidence
+
+# Correlate accounts
+account_clusters = engine.correlate_accounts(profiles, min_similarity=0.85)
+# Returns: [[1001, 1005, 1009], [2003, 2015]]  # Likely same actor
+```
+
+### 📊 Advanced Features Demo
+
+```bash
+# Run comprehensive demo of all advanced features
+python examples/advanced_features_demo.py
+```
+
+**Demonstrates:**
+- Vector database operations (indexing, searching, clustering)
+- Post-quantum encryption and digital signatures
+- Temporal pattern analysis and prediction
+- Attribution analysis and tool fingerprinting
+- AI content detection
+
+### 📚 Advanced Features Documentation
+
+- **Architecture & Planning**: `docs/ADVANCED_ENHANCEMENTS_PLAN.md`
+  - Vector database evaluation (Qdrant vs ChromaDB vs Milvus)
+  - CNSA 2.0 implementation strategy
+  - Enhanced threat tracking roadmap
+- **Requirements**: `requirements-advanced.txt`
+- **Demo Script**: `examples/advanced_features_demo.py`
+
+---
+
 ## Integration & Architecture
 
 - **`SPECTRA/tgarchive/discovery.py`**: Integration point for group crawling, network analysis, parallel archiving, and SQL-backed state

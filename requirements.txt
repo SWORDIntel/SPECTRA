@@ -148,11 +148,21 @@ aiosqlite==0.20.0
 pywin32==306; sys_platform == "win32"
 # Fallback: pywin32>=300; sys_platform == "win32"
 
-# === DEVELOPMENT & TESTING (OPTIONAL) ===
-# Uncomment for development environment
+# === PRODUCTION MONITORING & MANAGEMENT ===
+# Required for production deployment
 
-# pytest==7.4.3
-# pytest-asyncio==0.21.1
+# System resource monitoring
+psutil==5.9.6
+# Fallback: psutil>=5.9.0,<6.0
+
+# === DEVELOPMENT & TESTING ===
+# Required for testing and development
+
+pytest==7.4.3
+pytest-asyncio==0.21.1
+# Fallback: pytest>=7.0.0,<8.0
+
+# Optional development tools
 # black==23.11.0
 # flake8==6.1.0
 # mypy==1.7.1

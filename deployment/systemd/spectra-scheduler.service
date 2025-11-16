@@ -1,0 +1,44 @@
+[Unit]
+Description=SPECTRA Scheduler Service
+Documentation=https://github.com/SWORDIntel/SPECTRA
+After=network-online.target spectra.service
+Requires=spectra.service
+
+[Service]
+Type=simple
+User=spectra
+Group=spectra
+WorkingDirectory=/opt/spectra
+
+# Environment
+Environment="PYTHONUNBUFFERED=1"
+EnvironmentFile=-/etc/spectra/environment
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/spectra/data /opt/spectra/logs
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictNamespaces=true
+
+# Resource limits
+MemoryMax=1G
+CPUQuota=50%
+
+# Service execution
+ExecStart=/opt/spectra/venv/bin/python -m tgarchive.services.scheduler_service --config /etc/spectra/config.json
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+
+# Graceful shutdown
+TimeoutStopSec=30s
+
+[Install]
+WantedBy=multi-user.target

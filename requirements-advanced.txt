@@ -1,0 +1,89 @@
+# SPECTRA Advanced Enhancements Requirements
+# Vector databases, post-quantum cryptography, and advanced analytics
+
+# ========================================
+# VECTOR DATABASES
+# ========================================
+
+# Qdrant - Recommended vector database
+qdrant-client>=1.7.0
+
+# ChromaDB - Alternative/fallback vector database
+chromadb>=0.4.0
+
+# ========================================
+# POST-QUANTUM CRYPTOGRAPHY (CNSA 2.0)
+# ========================================
+
+# liboqs - Open Quantum Safe library (ML-KEM-1024, ML-DSA-87)
+liboqs-python>=0.8.0
+
+# Cryptography - For AES-GCM and key derivation
+cryptography>=41.0.0
+
+# ========================================
+# ENHANCED ANALYTICS
+# ========================================
+
+# Machine Learning
+scikit-learn>=1.3.0      # Clustering, classification
+hdbscan>=0.8.0           # Density-based clustering
+
+# Natural Language Processing
+textstat>=0.7.0          # Stylometric analysis
+langdetect>=1.0.9        # Language detection
+
+# Geolocation
+phonenumbers>=8.13.0     # Phone number parsing and validation
+geoip2>=4.7.0            # IP geolocation (requires MaxMind database)
+
+# Time series analysis
+scipy>=1.11.0            # Statistical functions
+statsmodels>=0.14.0      # Time series forecasting
+
+# ========================================
+# EXISTING AI/ML DEPENDENCIES (from requirements-ai.txt)
+# ========================================
+
+# Embeddings and semantic search
+sentence-transformers>=2.2.0
+transformers>=4.30.0
+torch>=2.0.0
+
+# Named Entity Recognition
+spacy>=3.6.0
+
+# Knowledge graphs
+networkx>=3.1
+
+# ========================================
+# DATA PROCESSING
+# ========================================
+
+# Numerical computing
+numpy>=1.24.0
+pandas>=2.0.0
+
+# ========================================
+# UTILITIES
+# ========================================
+
+# Progress bars
+tqdm>=4.65.0
+
+# Logging
+colorlog>=6.7.0
+
+# ========================================
+# NOTES
+# ========================================
+
+# For spaCy NER, also run after installation:
+#   python -m spacy download en_core_web_lg
+
+# For GeoIP2, download MaxMind GeoLite2 database:
+#   https://dev.maxmind.com/geoip/geolite2-free-geolocation-data
+
+# For full post-quantum crypto support:
+#   Some systems may need to compile liboqs from source
+#   See: https://github.com/open-quantum-safe/liboqs-python

@@ -1,0 +1,168 @@
+version: '3.8'
+
+services:
+  spectra:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/Dockerfile
+    container_name: spectra-archiver
+    restart: unless-stopped
+
+    # Environment variables
+    environment:
+      - TG_API_ID=${TG_API_ID}
+      - TG_API_HASH=${TG_API_HASH}
+      - SPECTRA_DB_PATH=/app/data/spectra.db
+      - SPECTRA_MEDIA_DIR=/app/media
+      - SPECTRA_LOG_DIR=/app/logs
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
+    # Alternative: Load from .env file
+    env_file:
+      - .env
+
+    # Volumes for persistent data
+    volumes:
+      - spectra-data:/app/data
+      - spectra-media:/app/media
+      - spectra-logs:/app/logs
+      - spectra-checkpoints:/app/checkpoints
+      - ./config:/app/config:ro  # Mount config directory as read-only
+
+    # Security options (TEMPEST Class C)
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE  # Only if binding to privileged ports
+    read_only: false  # Need write access to volumes
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+
+    # Network
+    networks:
+      - spectra-network
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "from tgarchive.db.integrity_checker import quick_integrity_check; import sys; sys.exit(0 if quick_integrity_check('/app/data/spectra.db') else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  spectra-health:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/Dockerfile
+    container_name: spectra-health
+    restart: unless-stopped
+
+    environment:
+      - PYTHONUNBUFFERED=1
+
+    volumes:
+      - spectra-data:/app/data:ro  # Read-only access
+      - spectra-logs:/app/logs
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+    networks:
+      - spectra-network
+
+    ports:
+      - "8080:8080"
+
+    command: ["python", "-m", "tgarchive.core.health_server", "--port", "8080"]
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  spectra-scheduler:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/Dockerfile
+    container_name: spectra-scheduler
+    restart: unless-stopped
+
+    environment:
+      - TG_API_ID=${TG_API_ID}
+      - TG_API_HASH=${TG_API_HASH}
+      - SPECTRA_DB_PATH=/app/data/spectra.db
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
+    env_file:
+      - .env
+
+    volumes:
+      - spectra-data:/app/data
+      - spectra-media:/app/media
+      - spectra-logs:/app/logs
+      - ./config:/app/config:ro
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+    networks:
+      - spectra-network
+
+    command: ["python", "-m", "tgarchive.services.scheduler_service"]
+
+    depends_on:
+      - spectra
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+volumes:
+  spectra-data:
+    driver: local
+  spectra-media:
+    driver: local
+  spectra-logs:
+    driver: local
+  spectra-checkpoints:
+    driver: local
+
+networks:
+  spectra-network:
+    driver: bridge

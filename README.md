@@ -867,6 +867,40 @@ python examples/advanced_features_demo.py
 - **Requirements**: `requirements-advanced.txt`
 - **Demo Script**: `examples/advanced_features_demo.py`
 
+### ⚡ INT8 Neural Acceleration (Planned)
+
+**Leverage 130 TOPS INT8 compute for real-time intelligence at scale:**
+
+**Capabilities:**
+- **10,000+ messages/second** continuous psycho-forensic analysis
+- **<10ms** actor correlation across 10 million profiles
+- **Real-time radicalization detection** with sub-second alerting
+- **GPU/NPU acceleration** (NVIDIA/Intel/AMD support)
+
+**Psycho-Forensic Linguistics:**
+- Big Five personality profiling (OCEAN model)
+- Dark Triad detection (Narcissism, Machiavellianism, Psychopathy)
+- Deception detection (hedging, distancing, verbosity)
+- Radicalization stage tracking (0-5 scale progression)
+- Emotional state analysis (anger, fear, confidence)
+
+**Hardware-Accelerated Operations:**
+- INT8 quantization (4x throughput vs FP32)
+- GPU tensor cores for vector similarity
+- NPU acceleration for linguistic models
+- Batch inference at 100μs/message latency
+
+**Documentation:**
+- **Master Plan**: `docs/INT8_ACCELERATION_PLAN.md` (13 sections, comprehensive architecture)
+- **Implementation Status**: `docs/INT8_IMPLEMENTATION_STATUS.md`
+- **Timeline**: 10-week phased implementation
+- **Target Performance**: 90% utilization of 130 TOPS, <2% accuracy loss
+
+**Deployment Scenarios:**
+- Workstation: NVIDIA RTX 4070 (150 TOPS) - $600
+- Laptop: Intel Core Ultra 7 (134 TOPS combined) - Mobile ops
+- Cloud: 4× NVIDIA A10G (600+ TOPS) - Auto-scaling
+
 ---
 
 ## Integration & Architecture

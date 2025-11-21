@@ -13,6 +13,8 @@ from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple, Union
 from dataclasses import dataclass, asdict
 from enum import Enum
+from collections import deque
+import time
 
 from telethon import TelegramClient
 from telethon.tl.types import Message
@@ -20,6 +22,97 @@ from telethon.tl.types import Message
 from .topic_manager import TopicManager, TopicCreationStrategy, TopicCreationRule
 from .content_classifier import ContentClassifier, ContentMetadata, ClassificationRule
 from ..db import SpectraDB
+from ..utils.progress import ProgressTracker
+
+
+class AdaptiveRateLimiter:
+    """
+    Adaptive rate limiter that adjusts delays based on success/failure rates.
+
+    Monitors operation success rates and dynamically adjusts the delay between
+    operations to optimize throughput while respecting rate limits.
+    """
+
+    def __init__(self, base_delay: float = 0.5, window_size: int = 100):
+        """
+        Initialize the adaptive rate limiter.
+
+        Args:
+            base_delay: Base delay in seconds between operations
+            window_size: Number of recent operations to track for success rate
+        """
+        self.base_delay = base_delay
+        self.window_size = window_size
+        self.success_window = deque(maxlen=window_size)
+        self.last_delay = base_delay
+        self.consecutive_failures = 0
+        self.last_operation_time = 0.0
+
+    def record_success(self):
+        """Record a successful operation."""
+        self.success_window.append(True)
+        self.consecutive_failures = 0
+
+    def record_failure(self):
+        """Record a failed operation."""
+        self.success_window.append(False)
+        self.consecutive_failures += 1
+
+    def get_success_rate(self) -> float:
+        """Calculate current success rate."""
+        if not self.success_window:
+            return 1.0
+        return sum(self.success_window) / len(self.success_window)
+
+    def calculate_delay(self) -> float:
+        """
+        Calculate adaptive delay based on recent success rate.
+
+        Returns:
+            Delay in seconds to wait before next operation
+        """
+        success_rate = self.get_success_rate()
+
+        # Aggressive backoff on consecutive failures
+        if self.consecutive_failures >= 3:
+            return self.base_delay * (2 ** min(self.consecutive_failures - 2, 5))
+
+        # Adjust based on success rate
+        if success_rate > 0.95:
+            # High success rate - speed up
+            delay = self.base_delay * 0.5
+        elif success_rate > 0.85:
+            # Good success rate - maintain
+            delay = self.base_delay
+        elif success_rate > 0.7:
+            # Moderate issues - slow down a bit
+            delay = self.base_delay * 1.5
+        else:
+            # Low success rate - slow down significantly
+            delay = self.base_delay * 2.5
+
+        self.last_delay = delay
+        return max(0.1, min(delay, 10.0))  # Clamp between 0.1 and 10 seconds
+
+    async def wait(self):
+        """Wait with adaptive delay."""
+        delay = self.calculate_delay()
+
+        # Ensure minimum time between operations
+        elapsed = time.time() - self.last_operation_time
+        if elapsed < delay:
+            await asyncio.sleep(delay - elapsed)
+
+        self.last_operation_time = time.time()
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get rate limiter statistics."""
+        return {
+            'success_rate': self.get_success_rate(),
+            'last_delay': self.last_delay,
+            'consecutive_failures': self.consecutive_failures,
+            'window_size': len(self.success_window)
+        }
 
 
 class OrganizationMode(Enum):
@@ -120,6 +213,9 @@ class OrganizationEngine:
 
         # Organization queue for retry operations
         self._retry_queue: List[Tuple[Message, ContentMetadata]] = []
+
+        # Adaptive rate limiting for optimal throughput
+        self.rate_limiter = AdaptiveRateLimiter(base_delay=0.5, window_size=100)
 
         self.logger.info(f"OrganizationEngine initialized for channel {channel_id}")
 
@@ -378,33 +474,66 @@ class OrganizationEngine:
         except Exception as e:
             self.logger.error(f"Error loading configuration rules: {e}")
 
-    async def batch_organize(self, messages: List[Message]) -> List[OrganizationResult]:
+    async def batch_organize(self, messages: List[Message], show_progress: bool = True) -> List[OrganizationResult]:
         """
-        Organize multiple messages in batch.
+        Organize multiple messages in batch with progress tracking.
 
         Args:
             messages: List of messages to organize
+            show_progress: Whether to show progress bar (default: True)
 
         Returns:
             List[OrganizationResult]: Results for each message
         """
         results = []
+        progress = ProgressTracker(
+            total=len(messages),
+            description="Organizing messages",
+            show_bar=show_progress
+        ) if show_progress else None
 
-        for message in messages:
+        for i, message in enumerate(messages):
             try:
                 result = await self.organize_message(message)
                 results.append(result)
 
-                # Add small delay to avoid rate limiting
-                if len(results) % 10 == 0:
-                    await asyncio.sleep(0.5)
+                # Update progress tracker
+                if progress:
+                    progress.update(success=result.success)
+
+                # Record success/failure for adaptive rate limiting
+                if result.success:
+                    self.rate_limiter.record_success()
+                else:
+                    self.rate_limiter.record_failure()
+
+                # Use adaptive delay based on success rate
+                if (i + 1) % 10 == 0:
+                    await self.rate_limiter.wait()
+
+                    # Log rate limiter stats periodically
+                    if self.config.debug_mode and (i + 1) % 50 == 0:
+                        stats = self.rate_limiter.get_stats()
+                        self.logger.debug(
+                            f"Rate limiter stats: success_rate={stats['success_rate']:.2%}, "
+                            f"delay={stats['last_delay']:.2f}s, "
+                            f"consecutive_failures={stats['consecutive_failures']}"
+                        )
 
             except Exception as e:
                 self.logger.error(f"Error in batch processing message {message.id}: {e}")
+                self.rate_limiter.record_failure()
                 results.append(OrganizationResult(
                     success=False,
                     error_message=str(e)
                 ))
+                if progress:
+                    progress.update(success=False)
+
+        # Finish progress tracking with summary
+        if progress:
+            successful = len([r for r in results if r.success])
+            progress.finish(f"✓ Completed: {successful}/{len(messages)} messages organized successfully")
 
         return results
 

@@ -113,6 +113,121 @@ class StatusMessages(npyscreen.BoxTitle):
         self.display()
 
 
+# ── Dashboard Form ────────────────────────────────────────────────────────────
+class DashboardForm(npyscreen.Form):
+    """Dashboard showing system status and recent activity"""
+
+    def create(self):
+        self.name = "SPECTRA Dashboard"
+
+        # Title
+        self.add(npyscreen.FixedText, value=TITLE)
+        self.add(npyscreen.FixedText, value="System Dashboard - Real-time Status & Activity")
+        self.add(npyscreen.FixedText, value="")
+
+        # System Status Section
+        self.add(npyscreen.FixedText, value="═" * 70)
+        self.add(npyscreen.FixedText, value="System Status:")
+        self.add(npyscreen.FixedText, value="─" * 70)
+
+        self.accounts_status = self.add(npyscreen.TitleFixedText, name="Accounts:", value="Loading...")
+        self.db_status = self.add(npyscreen.TitleFixedText, name="Database:", value="Loading...")
+        self.api_status = self.add(npyscreen.TitleFixedText, name="API Status:", value="Checking...")
+
+        self.add(npyscreen.FixedText, value="")
+
+        # Quick Stats Section
+        self.add(npyscreen.FixedText, value="═" * 70)
+        self.add(npyscreen.FixedText, value="Quick Stats:")
+        self.add(npyscreen.FixedText, value="─" * 70)
+
+        self.total_channels = self.add(npyscreen.TitleFixedText, name="Archived Channels:", value="0")
+        self.total_messages = self.add(npyscreen.TitleFixedText, name="Total Messages:", value="0")
+        self.discovered_groups = self.add(npyscreen.TitleFixedText, name="Discovered Groups:", value="0")
+
+        self.add(npyscreen.FixedText, value="")
+
+        # Recent Activity Section
+        self.add(npyscreen.FixedText, value="═" * 70)
+        self.add(npyscreen.FixedText, value="Recent Activity:")
+        self.add(npyscreen.FixedText, value="─" * 70)
+
+        self.recent_activity = self.add(npyscreen.Pager, height=8)
+
+        self.add(npyscreen.FixedText, value="")
+
+        # Action Buttons
+        self.add(npyscreen.ButtonPress, name="Refresh Stats", when_pressed_function=self.refresh_stats)
+        self.add(npyscreen.ButtonPress, name="Back to Main Menu", when_pressed_function=self.back_to_main)
+
+        # Load initial stats
+        self.refresh_stats()
+
+    def refresh_stats(self):
+        """Refresh dashboard statistics"""
+        try:
+            # Get manager from parent app
+            manager = self.parentApp.manager
+
+            # Update account status
+            active_accounts = len(manager.config.active_accounts)
+            total_accounts = len(manager.config.data.get('accounts', []))
+            self.accounts_status.value = f"{active_accounts} active / {total_accounts} total"
+
+            # Update database status
+            if manager.db:
+                self.db_status.value = "✓ Connected"
+
+                # Get stats from database
+                try:
+                    # Query archived channels count
+                    channels_count = manager.db.execute(
+                        "SELECT COUNT(DISTINCT channel_id) FROM archived_channels"
+                    ).fetchone()[0] if hasattr(manager.db, 'execute') else 0
+
+                    # Query discovered groups count
+                    groups_count = manager.db.execute(
+                        "SELECT COUNT(*) FROM discovered_groups"
+                    ).fetchone()[0] if hasattr(manager.db, 'execute') else 0
+
+                    self.total_channels.value = f"{channels_count:,}"
+                    self.discovered_groups.value = f"{groups_count:,}"
+
+                except Exception as e:
+                    logger.debug(f"Error fetching stats: {e}")
+            else:
+                self.db_status.value = "⚠ Not Connected"
+
+            # Update API status
+            self.api_status.value = "✓ Ready"
+
+            # Update recent activity
+            activity_lines = [
+                f"• System initialized at {datetime.now(TZ).strftime('%Y-%m-%d %H:%M:%S')}",
+                f"• Configuration loaded from {manager.config.config_path.name}",
+                f"• {active_accounts} accounts ready for operations",
+            ]
+
+            if hasattr(manager, 'last_operation'):
+                activity_lines.append(f"• Last operation: {manager.last_operation}")
+
+            self.recent_activity.values = activity_lines
+
+            # Refresh display
+            self.display()
+
+        except Exception as e:
+            logger.error(f"Error refreshing dashboard: {e}")
+            npyscreen.notify_confirm(
+                f"Error refreshing dashboard: {str(e)}",
+                title="Error"
+            )
+
+    def back_to_main(self):
+        """Return to main menu"""
+        self.parentApp.switchForm("MAIN")
+
+
 # ── Graph Explorer Form ──────────────────────────────────────────────────────
 class GraphExplorerForm(npyscreen.Form):
     """Form for visualizing and exploring the network graph"""
@@ -1639,18 +1754,19 @@ class MainMenuForm(npyscreen.Form):
         self.add(npyscreen.FixedText, value="")
         
         # Options - merged from both versions, best features combined
-        self.add(npyscreen.ButtonPress, name="1. Archive Channel/Group", when_pressed_function=self.archive_form)
-        self.add(npyscreen.ButtonPress, name="2. Discover Groups", when_pressed_function=self.discovery_form)
-        self.add(npyscreen.ButtonPress, name="3. Network Analysis", when_pressed_function=self.graph_form)
-        self.add(npyscreen.ButtonPress, name="4. Forwarding Utilities", when_pressed_function=self.forwarding_form)
-        self.add(npyscreen.ButtonPress, name="5. OSINT Utilities", when_pressed_function=self.osint_form)
-        self.add(npyscreen.ButtonPress, name="6. Group Mirroring", when_pressed_function=self.mirror_form)
-        self.add(npyscreen.ButtonPress, name="7. Account Management", when_pressed_function=self.account_form)
-        self.add(npyscreen.ButtonPress, name="8. Settings (VPS Config)", when_pressed_function=self.vps_config_form)
-        self.add(npyscreen.ButtonPress, name="9. Forwarding & Deduplication Settings", when_pressed_function=self.forwarding_settings_form)
-        self.add(npyscreen.ButtonPress, name="10. Download Users", when_pressed_function=self.download_users_form)
-        self.add(npyscreen.ButtonPress, name="11. Help & About", when_pressed_function=self.help_form)
-        self.add(npyscreen.ButtonPress, name="12. Exit", when_pressed_function=self.exit_app)
+        self.add(npyscreen.ButtonPress, name="1. Dashboard", when_pressed_function=self.dashboard_form)
+        self.add(npyscreen.ButtonPress, name="2. Archive Channel/Group", when_pressed_function=self.archive_form)
+        self.add(npyscreen.ButtonPress, name="3. Discover Groups", when_pressed_function=self.discovery_form)
+        self.add(npyscreen.ButtonPress, name="4. Network Analysis", when_pressed_function=self.graph_form)
+        self.add(npyscreen.ButtonPress, name="5. Forwarding Utilities", when_pressed_function=self.forwarding_form)
+        self.add(npyscreen.ButtonPress, name="6. OSINT Utilities", when_pressed_function=self.osint_form)
+        self.add(npyscreen.ButtonPress, name="7. Group Mirroring", when_pressed_function=self.mirror_form)
+        self.add(npyscreen.ButtonPress, name="8. Account Management", when_pressed_function=self.account_form)
+        self.add(npyscreen.ButtonPress, name="9. Settings (VPS Config)", when_pressed_function=self.vps_config_form)
+        self.add(npyscreen.ButtonPress, name="10. Forwarding & Deduplication Settings", when_pressed_function=self.forwarding_settings_form)
+        self.add(npyscreen.ButtonPress, name="11. Download Users", when_pressed_function=self.download_users_form)
+        self.add(npyscreen.ButtonPress, name="12. Help & About", when_pressed_function=self.help_form)
+        self.add(npyscreen.ButtonPress, name="13. Exit", when_pressed_function=self.exit_app)
         
         # Status
         self.add(npyscreen.FixedText, value="")
@@ -1662,6 +1778,10 @@ class MainMenuForm(npyscreen.Form):
         self.status.value = f"Ready. {len(self.parentApp.manager.config.active_accounts)} accounts available."
         self.status.display()
     
+    def dashboard_form(self):
+        """Switch to dashboard form"""
+        self.parentApp.switchForm("DASHBOARD")
+
     def osint_form(self):
         """Switch to OSINT form"""
         self.parentApp.switchForm("OSINT_MENU")
@@ -1761,6 +1881,7 @@ class SpectraApp(npyscreen.NPSAppManaged):
         
         # Register forms
         self.addForm("MAIN", MainMenuForm, name="SPECTRA Main Menu")
+        self.addForm("DASHBOARD", DashboardForm, name="SPECTRA Dashboard")
         self.addForm("ARCHIVE", ArchiveForm, name="SPECTRA Archiver")
         self.addForm("FORWARDING", ForwardingMenuForm, name="SPECTRA Forwarding")
         self.addForm("CHANNEL_RECOVERY", ChannelRecoveryWizardForm, name="Channel Recovery Wizard")

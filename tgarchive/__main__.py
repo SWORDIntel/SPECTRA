@@ -49,10 +49,68 @@ except ImportError:
     HAS_TUI = False
 
 # ── CLI Parser ─────────────────────────────────────────────────────────────
+class GroupedHelpFormatter(argparse.RawDescriptionHelpFormatter):
+    """Custom help formatter that groups commands by category"""
+
+    def _format_action(self, action):
+        # Store original metavar
+        original_metavar = action.metavar
+
+        # For subparsers, group commands by category
+        if action.choices is not None:
+            # Define command groups
+            command_groups = {
+                'Core Operations': ['archive', 'discover', 'network'],
+                'Batch/Parallel Operations': ['batch', 'parallel'],
+                'Account Management': ['accounts'],
+                'Forwarding': ['forward'],
+                'Configuration': ['config'],
+                'Channel Management': ['channels'],
+                'Scheduling': ['schedule'],
+                'Migration': ['migrate', 'migrate-report', 'rollback'],
+                'Advanced Tools': ['download-users', 'mirror', 'osint', 'sort']
+            }
+
+            # Build grouped help text
+            parts = ['\nAvailable commands (grouped by category):\n']
+
+            for group_name, commands in command_groups.items():
+                parts.append(f'\n  {group_name}:')
+                for cmd in commands:
+                    if cmd in action.choices:
+                        subaction = action.choices[cmd]
+                        help_text = subaction.help if subaction.help else ''
+                        parts.append(f'    {cmd:<20}  {help_text}')
+
+            parts.append('\nUse "spectra <command> --help" for more information on a specific command.\n')
+            action.metavar = ''.join(parts)
+
+        result = super()._format_action(action)
+        action.metavar = original_metavar
+        return result
+
+
 def setup_parser() -> argparse.ArgumentParser:
     """Set up command-line argument parser"""
     parser = argparse.ArgumentParser(
-        description="SPECTRA - Telegram Network Discovery & Archiving System"
+        description="SPECTRA - Telegram Network Discovery & Archiving System",
+        formatter_class=GroupedHelpFormatter,
+        epilog="""
+Examples:
+  # Archive a channel
+  spectra archive --entity @channel_name
+
+  # Discover groups with depth 2
+  spectra discover --seed @seed_channel --depth 2
+
+  # Forward messages for recovery
+  spectra forward --origin @source --destination @dest --total-mode
+
+  # Run in TUI mode (default)
+  spectra
+
+For more help, visit: https://github.com/SWORDIntel/SPECTRA
+        """
     )
 
     # Main mode selection

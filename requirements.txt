@@ -57,6 +57,19 @@ PyJWT>=2.8.0
 # CORS support for API
 Flask-CORS>=4.0.0
 
+# === SEMANTIC SEARCH & VECTOR DATABASE (NEW) ===
+# Vector database for semantic search
+qdrant-client>=2.7.0
+# Fallback: qdrant-client>=2.0.0,<3.0
+
+# Embedding models for semantic search
+sentence-transformers>=2.2.0
+# Fallback: sentence-transformers>=2.0.0,<3.0
+
+# Machine learning for clustering, anomaly detection
+scikit-learn>=1.3.0
+# Fallback: scikit-learn>=1.0.0,<2.0
+
 # Markdown processing for documentation
 Markdown==3.5.1
 # Fallback: Markdown>=3.4.0,<4.0

@@ -1,0 +1,180 @@
+version: '3.8'
+
+services:
+  # SPECTRA Web Server
+  spectra:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: spectra-web
+    environment:
+      # Core Settings
+      SPECTRA_DEBUG: "false"
+      SPECTRA_HOST: "0.0.0.0"
+      SPECTRA_PORT: "5000"
+
+      # Security - CHANGE THESE IN PRODUCTION!
+      SPECTRA_JWT_SECRET: "${SPECTRA_JWT_SECRET:-change-me-in-production-use-strong-secret}"
+      SPECTRA_CORS_ORIGINS: "http://localhost:3000,http://localhost:5000"
+
+      # Database
+      SPECTRA_DATABASE_PATH: "/app/data/spectra.db"
+
+      # Logging
+      SPECTRA_LOG_LEVEL: "INFO"
+      SPECTRA_LOG_FILE: "/app/logs/spectra.log"
+
+      # Rate Limiting
+      SPECTRA_RATE_LIMIT: "100"
+      SPECTRA_RATE_LIMIT_WINDOW: "60"
+
+      # Session
+      SPECTRA_SESSION_TIMEOUT: "3600"
+      SPECTRA_REMEMBER_ME_TIMEOUT: "2592000"  # 30 days
+
+      # Features
+      SPECTRA_ENABLE_FTS: "true"
+      SPECTRA_ENABLE_SEARCH: "true"
+      SPECTRA_ENABLE_EXPORT: "true"
+      SPECTRA_ENABLE_ANALYTICS: "true"
+
+      # Vector Database (Qdrant)
+      SPECTRA_QDRANT_ENABLED: "true"
+      SPECTRA_QDRANT_URL: "http://qdrant:6333"
+      SPECTRA_EMBEDDING_MODEL: "all-MiniLM-L6-v2"
+      SPECTRA_EMBEDDING_DIM: "384"
+
+    ports:
+      - "5000:5000"
+
+    volumes:
+      # Data persistence
+      - spectra-data:/app/data
+      - spectra-logs:/app/logs
+      - spectra-config:/app/config
+
+      # Optional: Mount config file
+      # - ./config/spectra.yaml:/app/config/spectra.yaml:ro
+
+    # Restart policy
+    restart: unless-stopped
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Network
+    networks:
+      - spectra-network
+
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+
+    # Read-only root filesystem (optional, for production)
+    # read_only: true
+    # tmpfs:
+    #   - /tmp
+    #   - /run
+
+  # Qdrant Vector Database for Semantic Search (Enabled by default)
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: spectra-qdrant
+    ports:
+      - "6333:6333"     # REST API
+      - "6334:6334"     # gRPC API
+    volumes:
+      - spectra-qdrant:/qdrant/storage
+    environment:
+      QDRANT_API_KEY: "${QDRANT_API_KEY:-optional-api-key-change-in-production}"
+    networks:
+      - spectra-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # Optional: Redis for caching and WebSocket support
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: spectra-redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - spectra-redis:/data
+  #   networks:
+  #     - spectra-network
+  #   restart: unless-stopped
+  #   command: redis-server --appendonly yes
+  #   security_opt:
+  #     - no-new-privileges:true
+
+  # Optional: Nginx reverse proxy for production
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: spectra-nginx
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./certs:/etc/nginx/certs:ro
+  #     - spectra-logs:/var/log/nginx
+  #   networks:
+  #     - spectra-network
+  #   depends_on:
+  #     - spectra
+  #   restart: unless-stopped
+  #   security_opt:
+  #     - no-new-privileges:true
+
+volumes:
+  spectra-data:
+    driver: local
+  spectra-logs:
+    driver: local
+  spectra-config:
+    driver: local
+  spectra-qdrant:
+    driver: local
+  # spectra-redis:
+  #   driver: local
+
+networks:
+  spectra-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

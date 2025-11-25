@@ -21,12 +21,12 @@ from telethon.errors import (
     UserDeactivatedError,
 )
 
-from tgarchive.attribution import AttributionFormatter
+from tgarchive.utils.attribution import AttributionFormatter
 from tgarchive.core.config_models import Config
 from tgarchive.db import SpectraDB
 
 from .client import ClientManager
-from ..core.deduplication import Deduplicator
+from .deduplication import Deduplicator
 from .grouping import MessageGrouper
 from .organization_engine import OrganizationEngine, OrganizationConfig, OrganizationMode
 from .topic_manager import TopicCreationStrategy

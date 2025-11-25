@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPECTRA - Intelligence Platform</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
+            color: #00ff88;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Animated background grid */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image:
+                linear-gradient(0deg, transparent 24%, rgba(0, 255, 136, 0.05) 25%, rgba(0, 255, 136, 0.05) 26%, transparent 27%, transparent 74%, rgba(0, 255, 136, 0.05) 75%, rgba(0, 255, 136, 0.05) 76%, transparent 77%, transparent),
+                linear-gradient(90deg, transparent 24%, rgba(0, 255, 136, 0.05) 25%, rgba(0, 255, 136, 0.05) 26%, transparent 27%, transparent 74%, rgba(0, 255, 136, 0.05) 75%, rgba(0, 255, 136, 0.05) 76%, transparent 77%, transparent);
+            background-size: 50px 50px;
+            animation: grid-shift 20s linear infinite;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        @keyframes grid-shift {
+            0% { background-position: 0 0; }
+            100% { background-position: 50px 50px; }
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 500px;
+            padding: 40px;
+            background: rgba(10, 14, 39, 0.8);
+            border: 2px solid #00ff88;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.3), inset 0 0 20px rgba(0, 255, 136, 0.05);
+            backdrop-filter: blur(10px);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 1px solid #00ff8844;
+            padding-bottom: 20px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            color: #00ffff;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            margin-bottom: 5px;
+            text-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+        }
+
+        .header p {
+            color: #00ff88;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        .form-group label {
+            display: block;
+            color: #00ffff;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            background: rgba(0, 255, 136, 0.05);
+            border: 1px solid #00ff8844;
+            color: #00ff88;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #00ffff;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.5), inset 0 0 10px rgba(0, 255, 136, 0.1);
+            background: rgba(0, 255, 136, 0.1);
+        }
+
+        .form-group input::placeholder {
+            color: #00ff8844;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+
+        button {
+            flex: 1;
+            padding: 12px;
+            background: linear-gradient(135deg, #00ff88 0%, #00ffff 100%);
+            border: none;
+            color: #0a0e27;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+        }
+
+        button:hover {
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.5);
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .button-reset {
+            background: rgba(0, 255, 136, 0.1);
+            color: #00ff88;
+            border: 1px solid #00ff88;
+            box-shadow: none;
+        }
+
+        .button-reset:hover {
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+            background: rgba(0, 255, 136, 0.2);
+        }
+
+        .error-message {
+            display: none;
+            background: rgba(255, 0, 0, 0.1);
+            border: 1px solid #ff0044;
+            color: #ff0088;
+            padding: 12px;
+            margin-bottom: 20px;
+            font-size: 12px;
+            text-align: center;
+            animation: pulse-error 0.5s ease;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        @keyframes pulse-error {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #00ff8844;
+            text-align: center;
+            font-size: 11px;
+            color: #00ff8844;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            color: #00ffff;
+            font-size: 12px;
+        }
+
+        .loader {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #00ff8844;
+            border-top: 2px solid #00ffff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 10px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>◆ SPECTRA ◆</h1>
+            <p>Intelligence Gathering Platform</p>
+        </div>
+
+        <div class="error-message" id="errorMessage"></div>
+
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" placeholder="Enter username" required>
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" placeholder="Enter password" required>
+            </div>
+
+            <div class="loading" id="loading">
+                <div class="loader"></div>
+                <p>Authenticating...</p>
+            </div>
+
+            <div class="button-group">
+                <button type="submit" id="loginBtn">Log In</button>
+                <button type="reset" class="button-reset">Clear</button>
+            </div>
+        </form>
+
+        <div class="footer">
+            <p>SPECTRA v1.0.0</p>
+            <p style="margin-top: 5px;">Secure. Classified. National.</p>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('loginForm');
+        const loginBtn = document.getElementById('loginBtn');
+        const loading = document.getElementById('loading');
+        const errorMessage = document.getElementById('errorMessage');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            // Hide error message
+            errorMessage.classList.remove('show');
+
+            // Show loading
+            loginBtn.style.display = 'none';
+            loading.style.display = 'block';
+
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Store tokens
+                    localStorage.setItem('access_token', data.access_token);
+                    localStorage.setItem('refresh_token', data.refresh_token);
+                    localStorage.setItem('user', JSON.stringify(data.user));
+
+                    // Redirect to dashboard
+                    window.location.href = '/dashboard';
+                } else {
+                    throw new Error(data.error || 'Login failed');
+                }
+            } catch (error) {
+                errorMessage.textContent = error.message;
+                errorMessage.classList.add('show');
+                loginBtn.style.display = 'block';
+                loading.style.display = 'none';
+            }
+        });
+
+        // Demo: Show default credentials
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('username').value = 'admin';
+            document.getElementById('password').value = 'admin';
+        });
+    </script>
+</body>
+</html>

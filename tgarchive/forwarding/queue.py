@@ -11,7 +11,7 @@ from tgarchive.core.config_models import Config
 from tgarchive.db import SpectraDB
 
 from .client import ClientManager
-from ..core.deduplication import Deduplicator
+from .deduplication import Deduplicator
 
 
 class QueueManager:

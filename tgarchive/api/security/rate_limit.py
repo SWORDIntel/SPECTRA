@@ -11,7 +11,7 @@ from collections import defaultdict
 from functools import wraps
 from typing import Callable, Dict, Tuple
 
-from flask import request, jsonify
+from flask import request, jsonify, current_app
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +126,7 @@ def rate_limit(limit: int = 100, per: str = 'ip') -> Callable:
             endpoint_id = f"{identifier}:{request.endpoint}"
 
             # Check rate limit
-            rate_limiter = request.app.rate_limiter
+            rate_limiter = current_app.rate_limiter
             allowed, rate_info = rate_limiter.is_allowed(endpoint_id, limit)
 
             if not allowed:

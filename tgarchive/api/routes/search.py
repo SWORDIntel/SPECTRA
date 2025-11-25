@@ -11,6 +11,9 @@ from ..security import require_auth, rate_limit, validate_input, ValidationError
 
 logger = logging.getLogger(__name__)
 
+# Import enhanced search routes (hybrid, semantic, clustering, anomalies, etc.)
+from . import search_enhanced  # noqa: F401 - registers additional routes with search_bp
+
 
 @search_bp.route('', methods=['POST'])
 @require_auth

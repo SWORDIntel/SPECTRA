@@ -1,0 +1,185 @@
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                                                                           ║
+║                    SPECTRA QUICKSTART REFERENCE                          ║
+║                                                                           ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+🚀 START SPECTRA WEB SERVER
+───────────────────────────────────────────────────────────────────────────
+
+Option 1: Docker Compose (Recommended)
+  $ docker-compose up -d
+  $ open http://localhost:5000
+
+Option 2: Docker Direct
+  $ docker build -t spectra:latest .
+  $ docker run -p 5000:5000 spectra:latest
+
+Option 3: Python Direct
+  $ pip install -r requirements.txt
+  $ python -m tgarchive.web --port 5000
+
+🔐 DEFAULT CREDENTIALS (CHANGE IN PRODUCTION!)
+───────────────────────────────────────────────────────────────────────────
+
+Username: admin
+Password: admin
+
+⚠️  SECURITY WARNING: Change SPECTRA_JWT_SECRET before production!
+
+  $ export SPECTRA_JWT_SECRET="your-32-char-random-string-here"
+
+🌐 WEB INTERFACE
+───────────────────────────────────────────────────────────────────────────
+
+Dashboard:     http://localhost:5000
+Login:         http://localhost:5000/login
+API Docs:      http://localhost:5000/api/docs
+Health Check:  http://localhost:5000/health
+
+📡 API QUICK REFERENCE
+───────────────────────────────────────────────────────────────────────────
+
+1. Login & Get Token
+   POST /api/auth/login
+   {
+     "username": "admin",
+     "password": "admin"
+   }
+
+2. Use Token in Requests
+   Authorization: Bearer <access_token>
+
+3. Search Messages
+   POST /api/search
+   {
+     "query": "search term",
+     "type": "message",
+     "limit": 20
+   }
+
+4. List Channels
+   GET /api/channels
+   Authorization: Bearer <token>
+
+5. Export Data
+   POST /api/export
+   {
+     "channels": [-1001234567890],
+     "format": "json"
+   }
+
+📚 DOCUMENTATION
+───────────────────────────────────────────────────────────────────────────
+
+WEB_INTERFACE_GUIDE.md  - Complete API documentation with examples
+SECURITY_CSNA_2_0.md   - Security architecture and compliance
+IMPLEMENTATION_SUMMARY.md - Feature inventory and status
+
+🔧 COMMON COMMANDS
+───────────────────────────────────────────────────────────────────────────
+
+# View logs
+docker-compose logs -f spectra
+
+# Stop server
+docker-compose down
+
+# Rebuild image
+docker-compose build --no-cache
+
+# Access database directly
+sqlite3 data/spectra.db
+
+# Test API with curl
+curl -X GET http://localhost:5000/health
+
+# Full login example
+TOKEN=$(curl -s -X POST http://localhost:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin"}' | jq -r .access_token)
+
+curl http://localhost:5000/api/channels \
+  -H "Authorization: Bearer $TOKEN"
+
+⚙️  ENVIRONMENT VARIABLES
+───────────────────────────────────────────────────────────────────────────
+
+SPECTRA_JWT_SECRET=         JWT secret key (REQUIRED for production)
+SPECTRA_DEBUG=false         Enable debug mode
+SPECTRA_HOST=0.0.0.0       Listen address
+SPECTRA_PORT=5000          Listen port
+SPECTRA_CORS_ORIGINS=...   Allowed origins (comma-separated)
+
+See SECURITY_CSNA_2_0.md for complete list
+
+🐛 TROUBLESHOOTING
+───────────────────────────────────────────────────────────────────────────
+
+Port already in use?
+  $ docker-compose down
+  $ docker-compose up -d
+
+Can't login?
+  - Check default credentials (admin/admin)
+  - Verify SPECTRA_JWT_SECRET is set
+  - Check logs: docker-compose logs spectra
+
+API returning 401?
+  - Token expired? Get new one with /api/auth/refresh
+  - Check Authorization header format: Bearer <token>
+
+Database locked?
+  - Close all connections
+  - Check for running operations
+  - Restart container
+
+📋 PRODUCTION CHECKLIST
+───────────────────────────────────────────────────────────────────────────
+
+Security:
+  ☐ Set SPECTRA_JWT_SECRET (32+ random chars)
+  ☐ Enable HTTPS/TLS with valid certificate
+  ☐ Change all default passwords
+  ☐ Configure CORS for production domain
+  ☐ Enable database encryption
+  ☐ Set up backup encryption
+
+Operations:
+  ☐ Configure log rotation
+  ☐ Set up monitoring/alerting
+  ☐ Test disaster recovery
+  ☐ Document runbooks
+  ☐ Create admin user
+  ☐ Configure firewall rules
+
+Compliance:
+  ☐ Enable audit logging
+  ☐ Set up SIEM integration
+  ☐ Implement WAF rules
+  ☐ Enable security scanning
+  ☐ Test SSL/TLS config
+  ☐ Verify CSNA 2.0 compliance
+
+🆘 SUPPORT
+───────────────────────────────────────────────────────────────────────────
+
+Issues:    https://github.com/SWORDIntel/SPECTRA/issues
+Security:  security@spectra.local
+Docs:      See WEB_INTERFACE_GUIDE.md and SECURITY_CSNA_2_0.md
+
+═══════════════════════════════════════════════════════════════════════════
+
+PHASE 1 COMPLETE ✅
+  ✓ REST API (20+ endpoints)
+  ✓ Security (CSNA 2.0)
+  ✓ Docker (ready for production)
+  ✓ Web UI (TEMPEST themed)
+
+PHASE 2 PLANNED 🔄
+  □ Vue 3 Dashboard
+  □ Full-Text Search
+  □ Correlation Analysis
+  □ Advanced Export
+
+═══════════════════════════════════════════════════════════════════════════

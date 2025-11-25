@@ -51,6 +51,12 @@ Flask==2.3.3
 Flask-SocketIO==5.3.6
 # Fallback: Flask-SocketIO>=5.0.0,<6.0
 
+# JWT for API authentication
+PyJWT>=2.8.0
+
+# CORS support for API
+Flask-CORS>=4.0.0
+
 # Markdown processing for documentation
 Markdown==3.5.1
 # Fallback: Markdown>=3.4.0,<4.0

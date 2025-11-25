@@ -7,7 +7,11 @@ This module contains functions for file deduplication.
 
 import hashlib
 import imagehash
-import ssdeep
+try:
+    import ssdeep
+    HAS_SSDEEP = True
+except ImportError:
+    HAS_SSDEEP = False
 from PIL import Image
 from functools import lru_cache
 @lru_cache(maxsize=1024)
@@ -42,6 +46,8 @@ def get_fuzzy_hash(file_path):
     """
     Generates a fuzzy hash for a file.
     """
+    if not HAS_SSDEEP:
+        return None
     try:
         return ssdeep.hash_from_file(file_path)
     except Exception:
@@ -51,7 +57,12 @@ def compare_fuzzy_hashes(hash1, hash2):
     """
     Compares two fuzzy hashes and returns a similarity percentage.
     """
-    return ssdeep.compare(hash1, hash2)
+    if not HAS_SSDEEP:
+        return 0
+    try:
+        return ssdeep.compare(hash1, hash2)
+    except Exception:
+        return 0
 
 def is_exact_match(db, sha256_hash, channel_id=None):
     """

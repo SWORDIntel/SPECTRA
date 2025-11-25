@@ -38,6 +38,12 @@ services:
       SPECTRA_ENABLE_EXPORT: "true"
       SPECTRA_ENABLE_ANALYTICS: "true"
 
+      # Vector Database (Qdrant)
+      SPECTRA_QDRANT_ENABLED: "true"
+      SPECTRA_QDRANT_URL: "http://qdrant:6333"
+      SPECTRA_EMBEDDING_MODEL: "all-MiniLM-L6-v2"
+      SPECTRA_EMBEDDING_DIM: "384"
+
     ports:
       - "5000:5000"
 
@@ -84,6 +90,42 @@ services:
     #   - /tmp
     #   - /run
 
+  # Qdrant Vector Database for Semantic Search (Enabled by default)
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: spectra-qdrant
+    ports:
+      - "6333:6333"     # REST API
+      - "6334:6334"     # gRPC API
+    volumes:
+      - spectra-qdrant:/qdrant/storage
+    environment:
+      QDRANT_API_KEY: "${QDRANT_API_KEY:-optional-api-key-change-in-production}"
+    networks:
+      - spectra-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
   # Optional: Redis for caching and WebSocket support
   # redis:
   #   image: redis:7-alpine
@@ -124,6 +166,8 @@ volumes:
   spectra-logs:
     driver: local
   spectra-config:
+    driver: local
+  spectra-qdrant:
     driver: local
   # spectra-redis:
   #   driver: local

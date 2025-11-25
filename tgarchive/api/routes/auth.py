@@ -6,7 +6,7 @@ Handles login, logout, token refresh, and user management.
 """
 
 import logging
-from flask import request, jsonify
+from flask import request, jsonify, current_app
 
 from . import auth_bp
 from ..security import TokenManager, require_auth, validate_input, ValidationError
@@ -74,7 +74,7 @@ def login():
         return {'error': 'Invalid credentials'}, 401
 
     # Generate tokens
-    token_manager = request.app.token_manager
+    token_manager = current_app.token_manager
     access_token = token_manager.create_access_token(
         user_id=user_id,
         username=username,
@@ -120,7 +120,7 @@ def refresh():
         if not refresh_token:
             return {'error': 'Refresh token required'}, 400
 
-        token_manager = request.app.token_manager
+        token_manager = current_app.token_manager
         new_access_token = token_manager.refresh_access_token(refresh_token)
 
         if not new_access_token:

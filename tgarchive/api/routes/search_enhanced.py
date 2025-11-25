@@ -7,13 +7,43 @@ Also includes semantic analysis endpoints for clustering, anomaly detection, etc
 """
 
 import logging
-from flask import request, jsonify
+import sqlite3
+from flask import request, jsonify, current_app
 from datetime import datetime
 
 from . import search_bp
 from ..security import require_auth, rate_limit, validate_input, ValidationError
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# DATABASE CONNECTION HELPER
+# ============================================================================
+
+def get_database_connection():
+    """
+    Get SQLite database connection from app context or create new one.
+
+    Returns:
+        sqlite3.Connection: Database connection
+
+    Raises:
+        RuntimeError: If database path cannot be determined
+    """
+    try:
+        # Try to get database path from Flask app config
+        db_path = current_app.config.get('DATABASE_PATH', 'spectra.db')
+
+        # Create connection with row factory for dict-like access
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+
+        logger.debug(f"Database connection established: {db_path}")
+        return conn
+    except Exception as e:
+        logger.error(f"Failed to get database connection: {str(e)}")
+        raise RuntimeError(f"Database connection failed: {str(e)}")
 
 
 # ============================================================================
@@ -71,8 +101,10 @@ def hybrid_search():
         # Initialize search engine
         from tgarchive.search import HybridSearchEngine, SearchType
 
-        # TODO: Get from app context
-        engine = HybridSearchEngine(None, qdrant_url="http://localhost:6333")
+        # Get database connection from app context
+        db_conn = get_database_connection()
+        qdrant_url = current_app.config.get('QDRANT_URL', 'http://localhost:6333')
+        engine = HybridSearchEngine(db_conn, qdrant_url=qdrant_url)
 
         # Perform search
         start_time = datetime.now()

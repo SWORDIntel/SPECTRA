@@ -1188,11 +1188,29 @@ class TotalForwardForm(npyscreen.Form):
 
         self.destination_id_widget = self.add(npyscreen.TitleText, name="Dest. ID/Username:")
         self.account_id_widget = self.add(npyscreen.TitleText, name="Orchestration Account (Optional):",
-                                          footer="Leave blank for default/any.")
-        
+                                          footer="Session name or phone for the client connection.")
+        self.source_accounts_widget = self.add(
+            npyscreen.TitleText,
+            name="Source Accounts Filter (Optional):",
+            footer="Comma-separated session names/phones to restrict total forwarding. Leave blank for all accounts.",
+        )
+
+        self.dialog_sweep_widget = self.add(
+            npyscreen.Checkbox,
+            name="Use live dialog sweep (groups/channels/private/Saved)",
+            value=False,
+        )
+        self.include_private_widget = self.add(npyscreen.Checkbox, name="Include private chats in sweep", value=True)
+        self.include_saved_widget = self.add(npyscreen.Checkbox, name="Include Saved Messages in sweep", value=False)
+
         self.add(npyscreen.FixedText, value="", editable=False) # Spacer
         self.to_all_saved_widget = self.add(npyscreen.Checkbox, name="Forward to all Saved Messages accounts", value=False)
         self.prepend_info_widget = self.add(npyscreen.Checkbox, name="Prepend Origin Info to messages", value=True)
+        self.copy_into_destination_widget = self.add(
+            npyscreen.Checkbox,
+            name="Copy into destination (posted as this account, no 'Forwarded from' tag)",
+            value=True,
+        )
         self.add(npyscreen.FixedText, value="", editable=False) # Spacer
 
         self.add(npyscreen.ButtonPress, name="Start Total Forwarding", when_pressed_function=self.start_total_forwarding)
@@ -1242,43 +1260,94 @@ class TotalForwardForm(npyscreen.Form):
             return
 
         destination_id = self.destination_id_widget.value
-        account_identifier = self.account_id_widget.value or None
+        account_identifier = (self.account_id_widget.value or "").strip() or None
+        raw_source_accounts = self.source_accounts_widget.value or ""
+        allowed_accounts = [acc.strip() for acc in raw_source_accounts.replace(",", " ").split() if acc.strip()]
+        if not allowed_accounts:
+            allowed_accounts = None
+        use_dialog_sweep = self.dialog_sweep_widget.value
+        include_private = self.include_private_widget.value
+        include_saved = self.include_saved_widget.value
         to_all_saved = self.to_all_saved_widget.value
         prepend_info = self.prepend_info_widget.value
+        copy_into_destination = self.copy_into_destination_widget.value
 
-        if not destination_id and not to_all_saved:
-            self.status_widget.add_message("Destination ID/Username is required if not forwarding to all Saved Messages.", "ERROR")
+        if not destination_id:
+            self.status_widget.add_message("Destination ID/Username is required for forwarding.", "ERROR")
             return
-        
+
         if to_all_saved:
-            self.status_widget.add_message("Forwarding to all Saved Messages accounts.", "INFO")
-            destination_id = None # Forwarder should handle this
+            self.status_widget.add_message(
+                "Primary forwarding will target the destination and also copy into all Saved Messages accounts.",
+                "INFO",
+            )
 
         try:
             config = self.parentApp.manager.config
             db_path = Path(config.db_path)
 
-            self.status_widget.add_message(f"Initializing database at {db_path}...", "INFO")
-            self.db_instance = SpectraDB(db_path)
-            # Assuming SpectraDB connects on init or populate_account_channel_access handles it.
+            if use_dialog_sweep:
+                self.current_forwarder = AttachmentForwarder(
+                    config=config,
+                    db=None,
+                    forward_to_all_saved_messages=to_all_saved,
+                    prepend_origin_info=prepend_info,
+                    copy_messages_into_destination=copy_into_destination,
+                )
+                display_dest = "all Saved Messages" if to_all_saved else destination_id
+                self.status_widget.add_message(
+                    f"Starting dialog sweep forwarding to {display_dest} across accessible dialogs...",
+                    "INFO",
+                )
+                if allowed_accounts:
+                    self.status_widget.add_message(
+                        f"Limiting dialog sweep to {len(allowed_accounts)} account(s): {', '.join(allowed_accounts)}",
+                        "INFO",
+                    )
+                if include_saved:
+                    self.status_widget.add_message("Including Saved Messages in dialog sweep.", "INFO")
+                if not include_private:
+                    self.status_widget.add_message("Private chats will be excluded from dialog sweep.", "INFO")
 
-            self.current_forwarder = AttachmentForwarder(
-                config=config,
-                db=self.db_instance, # Pass the initialized SpectraDB instance
-                forward_to_all_saved_messages=to_all_saved,
-                prepend_origin_info=prepend_info
-            )
-            
-            display_dest = "all Saved Messages" if to_all_saved else destination_id
-            self.status_widget.add_message(f"Starting total forwarding to {display_dest} from all accessible channels...", "INFO")
+                AsyncRunner.run_in_thread(
+                    self.current_forwarder.forward_all_dialogs(
+                        destination_id=destination_id,
+                        orchestration_account_identifier=account_identifier,
+                        allowed_accounts=allowed_accounts,
+                        include_private_chats=include_private,
+                        include_saved_messages=include_saved,
+                    ),
+                    callback=lambda res: self._total_forwarding_finished_callback(self.current_forwarder, self.db_instance, res)
+                )
+            else:
+                self.status_widget.add_message(f"Initializing database at {db_path}...", "INFO")
+                self.db_instance = SpectraDB(db_path)
+                # Assuming SpectraDB connects on init or populate_account_channel_access handles it.
 
-            AsyncRunner.run_in_thread(
-                self.current_forwarder.forward_all_accessible_channels(
-                    destination_id=destination_id,
-                    orchestration_account_identifier=account_identifier
-                ),
-                callback=lambda res: self._total_forwarding_finished_callback(self.current_forwarder, self.db_instance, res)
-            )
+                self.current_forwarder = AttachmentForwarder(
+                    config=config,
+                    db=self.db_instance, # Pass the initialized SpectraDB instance
+                    forward_to_all_saved_messages=to_all_saved,
+                    prepend_origin_info=prepend_info,
+                    copy_messages_into_destination=copy_into_destination,
+                )
+
+                display_dest = "all Saved Messages" if to_all_saved else destination_id
+                self.status_widget.add_message(f"Starting total forwarding to {display_dest} from all accessible channels...", "INFO")
+                if allowed_accounts:
+                    self.status_widget.add_message(
+                        f"Limiting total forward mode to {len(allowed_accounts)} source account(s): {', '.join(allowed_accounts)}",
+                        "INFO",
+                    )
+
+                AsyncRunner.run_in_thread(
+                    self.current_forwarder.forward_all_accessible_channels(
+                        destination_id=destination_id,
+                        orchestration_account_identifier=account_identifier,
+                        allowed_accounts=allowed_accounts,
+                    ),
+                    callback=lambda res: self._total_forwarding_finished_callback(self.current_forwarder, self.db_instance, res)
+                )
         except Exception as e:
             self.status_widget.add_message(f"Failed to start total forwarding: {e}", "ERROR")
             if self.current_forwarder:
@@ -1319,6 +1388,11 @@ class SelectiveForwardForm(npyscreen.Form):
         self.add(npyscreen.FixedText, value="", editable=False) # Spacer
         self.to_all_saved_widget = self.add(npyscreen.Checkbox, name="Forward to all Saved Messages accounts", value=False)
         self.prepend_info_widget = self.add(npyscreen.Checkbox, name="Prepend Origin Info to messages", value=True)
+        self.copy_into_destination_widget = self.add(
+            npyscreen.Checkbox,
+            name="Copy into destination (no 'Forwarded from' tag)",
+            value=True,
+        )
         self.add(npyscreen.FixedText, value="", editable=False) # Spacer
 
         self.add(npyscreen.ButtonPress, name="Start Selective Forwarding", when_pressed_function=self.start_forwarding)
@@ -1364,26 +1438,30 @@ class SelectiveForwardForm(npyscreen.Form):
         account_identifier = self.account_id_widget.value or None # Ensure None if empty
         to_all_saved = self.to_all_saved_widget.value
         prepend_info = self.prepend_info_widget.value
+        copy_into_destination = self.copy_into_destination_widget.value
 
         if not origin_id:
             self.status_widget.add_message("Origin ID/Username is required.", "ERROR")
             return
-        if not destination_id and not to_all_saved:
-            self.status_widget.add_message("Destination ID/Username is required if not forwarding to all Saved Messages.", "ERROR")
+        if not destination_id:
+            self.status_widget.add_message("Destination ID/Username is required for forwarding.", "ERROR")
             return
-        if to_all_saved: # If to_all_saved is true, destination_id might be ignored by forwarder logic
-            self.status_widget.add_message("Forwarding to all Saved Messages accounts.", "INFO")
-            destination_id = None # Explicitly set to None or a special value if your forwarder expects one
+        if to_all_saved:
+            self.status_widget.add_message(
+                "Primary forwarding will target the destination and also copy into all Saved Messages accounts.",
+                "INFO",
+            )
 
         try:
             config = self.parentApp.manager.config
             
             # Initialize AttachmentForwarder, db is None as per plan
             self.current_forwarder = AttachmentForwarder(
-                config=config, 
+                config=config,
                 db=None,  # Passing db=None
                 forward_to_all_saved_messages=to_all_saved,
-                prepend_origin_info=prepend_info
+                prepend_origin_info=prepend_info,
+                copy_messages_into_destination=copy_into_destination,
             )
 
             display_dest = "all Saved Messages" if to_all_saved else destination_id
@@ -1391,8 +1469,8 @@ class SelectiveForwardForm(npyscreen.Form):
 
             AsyncRunner.run_in_thread(
                 self.current_forwarder.forward_messages(
-                    origin_entity=origin_id, 
-                    destination_entity=destination_id, 
+                    origin_id=origin_id,
+                    destination_id=destination_id,
                     account_identifier=account_identifier
                 ),
                 callback=lambda res: self._forwarding_finished_callback(self.current_forwarder, res)

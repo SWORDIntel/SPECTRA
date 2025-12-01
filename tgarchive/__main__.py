@@ -207,9 +207,23 @@ For more help, visit: https://github.com/SWORDIntel/SPECTRA
     forward_parser.add_argument("--destination", help="Destination channel/chat ID for direct forwarding. Can be channel ID, username, or invite link. (uses config default if not set)")
     forward_parser.add_argument("--account", help="Specific account (phone or session name) to use for forwarding")
     forward_parser.add_argument("--total-mode", action="store_true", help="[RECOVERY MODE] Forward from ALL accessible channels in the database to the destination. Used when channel owner is banned and needs to recover all content.")
+    forward_parser.add_argument("--all-dialogs", action="store_true", help="Sweep and forward every accessible dialog (groups, channels, private chats) to the destination.")
     forward_parser.add_argument("--forward-to-all-saved", action="store_true", help="Also forward to 'Saved Messages' of all configured accounts (for backup)")
     forward_parser.add_argument("--prepend-origin-info", action="store_true", help="Prepend origin channel info to the message text (useful for recovery tracking)")
+    forward_parser.add_argument(
+        "--copy-into-destination",
+        action="store_true",
+        help=(
+            "Copy messages into the destination using the active account so they look native (no 'Forwarded from'"
+            " header). Leave unset to preserve origin attribution."
+        ),
+    )
     forward_parser.add_argument("--secondary-unique-destination", type=str, default=None, help="Secondary destination for unique messages only (deduplication required)")
+    forward_parser.add_argument("--source-accounts", nargs="+", help="Limit total-mode forwarding to these account identifiers (phone number or session name). Uses all accounts if omitted.")
+    forward_parser.add_argument("--include-saved-messages", action="store_true", help="Include Saved Messages when sweeping all dialogs.")
+    dialog_private_group = forward_parser.add_mutually_exclusive_group()
+    dialog_private_group.add_argument("--include-private-chats", action="store_true", dest="include_private_chats", default=True, help="Include private chats when sweeping all dialogs (default).")
+    dialog_private_group.add_argument("--exclude-private-chats", action="store_false", dest="include_private_chats", help="Exclude private chats when sweeping all dialogs.")
     dedup_group = forward_parser.add_mutually_exclusive_group()
     dedup_group.add_argument("--enable-deduplication", action="store_true", dest="enable_deduplication", default=None, help="Enable message deduplication to avoid duplicates (overrides config, recommended for recovery)")
     dedup_group.add_argument("--disable-deduplication", action="store_false", dest="enable_deduplication", help="Disable message deduplication (overrides config)")
@@ -745,26 +759,46 @@ async def handle_attachment_forwarding(args: argparse.Namespace) -> int:
 
         secondary_dest = args.secondary_unique_destination or cfg.data.get("forwarding", {}).get("secondary_unique_destination")
 
+        allowed_accounts = args.source_accounts if args.source_accounts else None
+
+        include_private_chats = args.include_private_chats if hasattr(args, "include_private_chats") else True
+        include_saved_messages = args.include_saved_messages if hasattr(args, "include_saved_messages") else False
+        copy_into_destination = args.copy_into_destination if hasattr(args, "copy_into_destination") else False
+
         forwarder = AttachmentForwarder(
             config=cfg,
             db=db,
             forward_to_all_saved_messages=args.forward_to_all_saved,
             prepend_origin_info=args.prepend_origin_info,
             enable_deduplication=enable_dedup,
-            secondary_unique_destination=secondary_dest
+            secondary_unique_destination=secondary_dest,
+            copy_messages_into_destination=copy_into_destination,
         )
         try:
-            if args.total_mode:
+            if args.all_dialogs:
+                logger.info("Starting dialog sweep forwarding across all accessible dialogs.")
+                await forwarder.forward_all_dialogs(
+                    destination_id=destination,
+                    orchestration_account_identifier=args.account,
+                    allowed_accounts=allowed_accounts,
+                    include_private_chats=include_private_chats,
+                    include_saved_messages=include_saved_messages,
+                )
+                logger.info("Dialog sweep forwarding completed.")
+            elif args.total_mode:
                 if not db:
                     logger.error("Database connection required for --total-mode.")
                     return 1
                 logger.info(f"Starting 'Total Forward Mode' to '{destination}'.")
                 await forwarder.forward_all_accessible_channels(
                     destination_id=destination,
-                    orchestration_account_identifier=args.account
+                    orchestration_account_identifier=args.account,
+                    allowed_accounts=allowed_accounts,
                 )
                 logger.info("'Total Forward Mode' completed.")
             else:
+                if allowed_accounts:
+                    logger.warning("--source-accounts is only applied in --total-mode. Ignoring for single origin forwarding.")
                 if not args.origin:
                     logger.error("--origin is required when not using --total-mode.")
                     return 1

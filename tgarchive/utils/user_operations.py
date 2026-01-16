@@ -74,15 +74,81 @@ async def get_server_users(client: TelegramClient, server_id: int, output_file: 
             logger.error(f"Error downloading user list for server {server_id}: {e}")
             break
 
-async def rotate_ip_address():
+async def rotate_ip_address(vpn_provider: str = "auto"):
     """
-    Rotates the IP address using NordVPN or Mullvad.
+    Rotates the IP address using VPN provider CLI tools.
+    
+    Args:
+        vpn_provider: VPN provider to use ("nordvpn", "mullvad", "auto" for auto-detect)
+    
+    Returns:
+        bool: True if rotation was successful, False otherwise
+    
+    Note:
+        Requires VPN provider CLI tools to be installed and configured.
+        For NordVPN: Install nordvpn package and authenticate
+        For Mullvad: Install mullvad CLI and authenticate
     """
-    # This is a placeholder for the actual implementation.
-    # The user would need to have NordVPN or Mullvad installed and configured.
-    # The commands to connect to a new server would be executed here.
-    # For example:
-    # os.system("nordvpn connect")
-    # or
-    # os.system("mullvad connect")
-    logger.info("IP rotation is not yet implemented.")
+    import subprocess
+    import shutil
+    
+    # Auto-detect VPN provider
+    if vpn_provider == "auto":
+        if shutil.which("nordvpn"):
+            vpn_provider = "nordvpn"
+        elif shutil.which("mullvad"):
+            vpn_provider = "mullvad"
+        else:
+            logger.warning("No VPN provider CLI found. Install NordVPN or Mullvad CLI tools.")
+            return False
+    
+    try:
+        if vpn_provider == "nordvpn":
+            # Disconnect first
+            subprocess.run(["nordvpn", "disconnect"], check=False, timeout=10)
+            await asyncio.sleep(2)
+            # Connect to random server
+            result = subprocess.run(
+                ["nordvpn", "connect"],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            if result.returncode == 0:
+                logger.info("IP rotated successfully using NordVPN")
+                return True
+            else:
+                logger.error(f"Failed to rotate IP with NordVPN: {result.stderr}")
+                return False
+        
+        elif vpn_provider == "mullvad":
+            # Disconnect first
+            subprocess.run(["mullvad", "disconnect"], check=False, timeout=10)
+            await asyncio.sleep(2)
+            # Connect to random server
+            result = subprocess.run(
+                ["mullvad", "connect"],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            if result.returncode == 0:
+                logger.info("IP rotated successfully using Mullvad")
+                return True
+            else:
+                logger.error(f"Failed to rotate IP with Mullvad: {result.stderr}")
+                return False
+        
+        else:
+            logger.warning(f"Unsupported VPN provider: {vpn_provider}")
+            return False
+    
+    except subprocess.TimeoutExpired:
+        logger.error(f"VPN connection timeout for {vpn_provider}")
+        return False
+    except FileNotFoundError:
+        logger.error(f"VPN CLI tool not found: {vpn_provider}. Please install and configure it.")
+        return False
+    except Exception as e:
+        logger.error(f"Error rotating IP address: {e}")
+        return False

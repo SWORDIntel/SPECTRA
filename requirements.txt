@@ -99,7 +99,7 @@ python-magic==0.4.27
 # Cryptographic primitives
 # pyaes==1.6.1  # Commented out due to setup.py compatibility issues
 pyasn1==0.6.0
-rsa==4.9
+# rsa==4.9  # Removed: RSA is phased out per CNSA 2.0. Use ECC-based cryptography (cryptography library) if needed.
 
 # === MEDIA & CONTENT PROCESSING ===
 # For advanced media handling

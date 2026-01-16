@@ -828,13 +828,30 @@ class AgentOptimizationEngine:
 
     # Placeholder implementations for remaining helper methods
     def _calculate_efficiency_score(self, agent_name: str) -> float:
-        """Calculate agent efficiency score"""
+        """Calculate agent efficiency score based on success rate and execution time"""
         agent = self.agents[agent_name]
-        return min(1.0, agent.success_rate * 1.2)  # Simplified calculation
+        # Base efficiency from success rate
+        base_efficiency = agent.success_rate
+        # Adjust for execution time (faster is better, normalized)
+        time_factor = 1.0 / (1.0 + agent.average_execution_time / 3600.0)  # Normalize by hour
+        return min(1.0, base_efficiency * time_factor)
 
     def _calculate_adaptability_score(self, agent_name: str) -> float:
-        """Calculate agent adaptability score"""
-        return 0.7  # Placeholder
+        """Calculate agent adaptability score based on capability diversity and success across different task types"""
+        agent = self.agents[agent_name]
+        profile = self.agent_profiles.get(agent_name)
+        
+        if not profile:
+            # Fallback: use capability count as proxy
+            capability_diversity = min(1.0, len(agent.capabilities) / 10.0)
+            return capability_diversity * agent.success_rate
+        
+        # Adaptability = capability breadth * success rate * specialization balance
+        capability_breadth = len(profile.capabilities) / max(1, len(self.agent_profiles))
+        specialization_balance = 1.0 - abs(profile.specialization_breadth - 0.5) * 2  # Prefer balanced agents
+        success_factor = agent.success_rate
+        
+        return min(1.0, (capability_breadth * 0.4 + specialization_balance * 0.3 + success_factor * 0.3))
 
     def _estimate_agent_cost(self, agent_name: str) -> float:
         """Estimate agent cost per hour"""
@@ -844,17 +861,69 @@ class AgentOptimizationEngine:
         return base_cost + complexity_multiplier
 
     def _calculate_availability_probability(self, agent_name: str) -> float:
-        """Calculate agent availability probability"""
+        """Calculate agent availability probability based on success rate and historical data"""
         agent = self.agents[agent_name]
-        return agent.success_rate * 0.9  # Simplified
+        
+        # Base availability from success rate
+        base_availability = agent.success_rate
+        
+        # Adjust based on historical data if available
+        if self.historical_data and agent_name in self.historical_data:
+            hist = self.historical_data[agent_name]
+            uptime = hist.get('uptime', base_availability)
+            recent_success = hist.get('recent_success_rate', base_availability)
+            # Weight recent performance more heavily
+            return min(1.0, (uptime * 0.3 + recent_success * 0.7))
+        
+        # Default: success rate with conservative adjustment
+        return min(1.0, base_availability * 0.95)
 
     def _estimate_learning_rate(self, agent_name: str) -> float:
-        """Estimate agent learning rate"""
-        return 0.1  # Placeholder
+        """Estimate agent learning rate based on performance improvement over time"""
+        agent = self.agents[agent_name]
+        
+        # Check historical data for improvement trends
+        if self.historical_data and agent_name in self.historical_data:
+            hist = self.historical_data[agent_name]
+            improvement_trend = hist.get('improvement_trend', 0.0)
+            # Normalize improvement trend to 0-1 range
+            return min(1.0, max(0.0, improvement_trend))
+        
+        # Estimate based on agent characteristics
+        # Agents with diverse capabilities tend to learn faster
+        capability_count = len(agent.capabilities)
+        diversity_factor = min(1.0, capability_count / 10.0)
+        
+        # Success rate indicates ability to learn from mistakes
+        success_factor = agent.success_rate
+        
+        # Base learning rate calculation
+        return min(1.0, (diversity_factor * 0.6 + success_factor * 0.4) * 0.3)
 
     def _estimate_stress_tolerance(self, agent_name: str) -> float:
-        """Estimate agent stress tolerance"""
-        return 0.8  # Placeholder
+        """Estimate agent stress tolerance based on concurrent task capacity and performance under load"""
+        agent = self.agents[agent_name]
+        profile = self.agent_profiles.get(agent_name)
+        
+        # Base tolerance from concurrent task capacity
+        capacity_factor = min(1.0, agent.max_concurrent_tasks / 10.0)
+        
+        # Success rate under load (if historical data available)
+        if self.historical_data and agent_name in self.historical_data:
+            hist = self.historical_data[agent_name]
+            high_load_success = hist.get('high_load_success_rate', agent.success_rate)
+            load_factor = high_load_success
+        else:
+            load_factor = agent.success_rate
+        
+        # Execution time consistency (lower variance = better stress tolerance)
+        if agent.average_execution_time > 0:
+            time_consistency = 1.0 / (1.0 + agent.average_execution_time / 3600.0)
+        else:
+            time_consistency = 0.8
+        
+        # Combine factors
+        return min(1.0, (capacity_factor * 0.4 + load_factor * 0.4 + time_consistency * 0.2))
 
     def _calculate_specialization_breadth(self, agent_name: str) -> float:
         """Calculate specialization vs generalization score"""
@@ -862,19 +931,86 @@ class AgentOptimizationEngine:
         return min(1.0, len(agent.capabilities) / 10.0)
 
     def _train_prediction_models(self):
-        """Train ML models for performance prediction"""
-        # Placeholder for ML model training
+        """Train ML models for performance prediction using historical data"""
         if OPTIMIZATION_LIBS_AVAILABLE:
             self.performance_predictor = RandomForestRegressor(n_estimators=100)
-            # Would train with historical data if available
+            # Train with historical data if available
+            if self.historical_data and len(self.historical_data) > 5:
+                # Prepare training data from historical performance
+                X, y = self._prepare_training_data()
+                if len(X) > 0:
+                    self.performance_predictor.fit(X, y)
+                    self.logger.info("Performance prediction model trained successfully")
 
     def _calculate_spof_risk(self, team_members: List[str]) -> float:
-        """Calculate single point of failure risk"""
-        return 0.3  # Placeholder
+        """Calculate single point of failure risk based on critical capability concentration"""
+        if len(team_members) <= 1:
+            return 1.0  # Single agent = high SPOF risk
+        
+        # Identify critical capabilities (required by tasks but held by few agents)
+        all_capabilities = set()
+        capability_holders = defaultdict(list)
+        
+        for agent_name in team_members:
+            agent = self.agents.get(agent_name)
+            if agent:
+                for cap in agent.capabilities:
+                    all_capabilities.add(cap)
+                    capability_holders[cap].append(agent_name)
+        
+        # Calculate risk: capabilities held by only one agent
+        critical_capabilities = 0
+        for cap, holders in capability_holders.items():
+            if len(holders) == 1:
+                critical_capabilities += 1
+        
+        # Risk increases with critical capability concentration
+        if len(all_capabilities) > 0:
+            concentration_risk = critical_capabilities / len(all_capabilities)
+        else:
+            concentration_risk = 0.0
+        
+        # Team size factor (smaller teams = higher SPOF risk)
+        size_risk = 1.0 / max(1, len(team_members))
+        
+        return min(1.0, (concentration_risk * 0.7 + size_risk * 0.3))
 
     def _calculate_skill_concentration_risk(self, team_members: List[str]) -> float:
-        """Calculate skill concentration risk"""
-        return 0.2  # Placeholder
+        """Calculate skill concentration risk based on capability distribution across team"""
+        if len(team_members) <= 1:
+            return 0.0  # No concentration risk with single agent
+        
+        # Collect all capabilities and their distribution
+        capability_distribution = defaultdict(int)
+        total_capabilities = 0
+        
+        for agent_name in team_members:
+            agent = self.agents.get(agent_name)
+            if agent:
+                for cap in agent.capabilities:
+                    capability_distribution[cap] += 1
+                    total_capabilities += 1
+        
+        if total_capabilities == 0:
+            return 0.0
+        
+        # Calculate Gini coefficient for capability distribution
+        # Higher Gini = more concentration = higher risk
+        capability_counts = sorted(capability_distribution.values())
+        n = len(capability_counts)
+        
+        if n == 0:
+            return 0.0
+        
+        # Simplified Gini calculation
+        cumsum = 0
+        for i, count in enumerate(capability_counts):
+            cumsum += count * (i + 1)
+        
+        gini = (2 * cumsum) / (n * sum(capability_counts)) - (n + 1) / n
+        gini = max(0.0, min(1.0, gini))  # Normalize to 0-1
+        
+        return gini
 
     def _calculate_communication_overhead(self, team_members: List[str]) -> float:
         """Calculate communication overhead based on team size"""
@@ -890,20 +1026,240 @@ class AgentOptimizationEngine:
         return 1.0 - overall_availability
 
     def _identify_capability_gaps(self, team_members: List[str]) -> List[Dict[str, Any]]:
-        """Identify capability gaps in the team"""
-        return []  # Placeholder
+        """Identify capability gaps in the team based on required vs available capabilities"""
+        gaps = []
+        
+        # Collect team capabilities
+        team_capabilities = set()
+        for agent_name in team_members:
+            agent = self.agents.get(agent_name)
+            if agent:
+                team_capabilities.update(agent.capabilities)
+        
+        # Check against known capability requirements (if available)
+        if hasattr(self, 'capability_requirements') and self.capability_requirements:
+            for req in self.capability_requirements:
+                req_cap = req.capability_name
+                if req_cap not in team_capabilities:
+                    gaps.append({
+                        'capability': req_cap,
+                        'required_level': req.required_level,
+                        'is_critical': req.is_critical,
+                        'severity': 'critical' if req.is_critical else 'moderate',
+                        'suggested_agents': self._find_agents_with_capability(req_cap)
+                    })
+        
+        # Also identify weak capabilities (low proficiency)
+        for agent_name in team_members:
+            agent = self.agents.get(agent_name)
+            if agent:
+                profile = self.agent_profiles.get(agent_name)
+                if profile:
+                    for cap, level in profile.capabilities.items():
+                        if level < 0.5:  # Low proficiency threshold
+                            gaps.append({
+                                'capability': cap,
+                                'current_level': level,
+                                'agent': agent_name,
+                                'severity': 'low',
+                                'suggestion': 'Improve proficiency or add specialist'
+                            })
+        
+        return gaps
 
     def _suggest_team_splits(self, current_team: Dict[str, List[str]]) -> List[Dict[str, Any]]:
-        """Suggest how to split large teams"""
-        return []  # Placeholder
+        """Suggest how to split large teams based on communication overhead and capability distribution"""
+        suggestions = []
+        
+        for role, agents in current_team.items():
+            if len(agents) <= 4:  # No need to split small teams
+                continue
+            
+            # Calculate communication overhead
+            overhead = self._calculate_communication_overhead(agents)
+            
+            if overhead > 0.7:  # High overhead threshold
+                # Suggest split based on capability clusters
+                capability_clusters = self._cluster_agents_by_capabilities(agents)
+                
+                if len(capability_clusters) > 1:
+                    suggestions.append({
+                        'role': role,
+                        'current_size': len(agents),
+                        'recommended_splits': len(capability_clusters),
+                        'clusters': capability_clusters,
+                        'reason': 'High communication overhead and natural capability clusters',
+                        'expected_overhead_reduction': overhead - 0.3
+                    })
+                else:
+                    # Split evenly if no natural clusters
+                    split_size = max(2, len(agents) // 2)
+                    suggestions.append({
+                        'role': role,
+                        'current_size': len(agents),
+                        'recommended_splits': 2,
+                        'split_size': split_size,
+                        'reason': 'High communication overhead, suggest even split',
+                        'expected_overhead_reduction': overhead * 0.5
+                    })
+        
+        return suggestions
 
     def _generate_improvement_plan(self, agent: str) -> Dict[str, Any]:
-        """Generate improvement plan for underperforming agent"""
-        return {'training': 'general_performance', 'mentoring': True}  # Placeholder
+        """Generate improvement plan for underperforming agent based on performance gaps"""
+        agent_obj = self.agents.get(agent)
+        profile = self.agent_profiles.get(agent)
+        
+        if not agent_obj:
+            return {'error': 'Agent not found'}
+        
+        plan = {
+            'agent': agent,
+            'training': [],
+            'mentoring': False,
+            'resource_allocation': {},
+            'timeline': '4-6 weeks'
+        }
+        
+        # Identify performance gaps
+        if agent_obj.success_rate < 0.8:
+            plan['training'].append('error_handling')
+            plan['training'].append('quality_assurance')
+        
+        if agent_obj.average_execution_time > 3600:  # > 1 hour
+            plan['training'].append('performance_optimization')
+            plan['resource_allocation']['compute'] = 'increase'
+        
+        if profile:
+            # Identify weak capabilities
+            weak_caps = [cap for cap, level in profile.capabilities.items() if level < 0.6]
+            if weak_caps:
+                plan['training'].extend([f'capability_{cap}' for cap in weak_caps[:3]])  # Top 3
+        
+        # Suggest mentoring if success rate is very low
+        if agent_obj.success_rate < 0.7:
+            plan['mentoring'] = True
+            plan['mentor_criteria'] = 'High-performing agent with similar capabilities'
+        
+        # Resource recommendations
+        if agent_obj.max_concurrent_tasks < 3:
+            plan['resource_allocation']['concurrency'] = 'increase'
+        
+        if not plan['training']:
+            plan['training'] = ['general_performance']
+        
+        return plan
 
     def _calculate_transfer_feasibility(self, from_agent: str, to_agent: str) -> float:
-        """Calculate feasibility of transferring work between agents"""
-        return 0.7  # Placeholder
+        """Calculate feasibility of transferring work between agents based on capability overlap"""
+        agent1 = self.agents.get(from_agent)
+        agent2 = self.agents.get(to_agent)
+        
+        if not agent1 or not agent2:
+            return 0.0
+        
+        # Calculate capability overlap
+        caps1 = set(agent1.capabilities)
+        caps2 = set(agent2.capabilities)
+        
+        if not caps1:
+            return 0.0
+        
+        # Jaccard similarity for capability overlap
+        intersection = caps1 & caps2
+        union = caps1 | caps2
+        overlap = len(intersection) / len(union) if union else 0.0
+        
+        # Consider success rates (both should be capable)
+        success_factor = min(agent1.success_rate, agent2.success_rate)
+        
+        # Consider specialization (generalists transfer better)
+        profile1 = self.agent_profiles.get(from_agent)
+        profile2 = self.agent_profiles.get(to_agent)
+        
+        specialization_factor = 1.0
+        if profile1 and profile2:
+            # Average specialization breadth (higher = more generalist = easier transfer)
+            avg_breadth = (profile1.specialization_breadth + profile2.specialization_breadth) / 2.0
+            specialization_factor = avg_breadth
+        
+        # Combined feasibility score
+        return min(1.0, (overlap * 0.5 + success_factor * 0.3 + specialization_factor * 0.2))
+    
+    def _find_agents_with_capability(self, capability: str) -> List[str]:
+        """Find all agents that have a specific capability"""
+        matching_agents = []
+        for agent_name, agent in self.agents.items():
+            if capability in agent.capabilities:
+                matching_agents.append(agent_name)
+        return matching_agents
+    
+    def _cluster_agents_by_capabilities(self, agents: List[str]) -> List[List[str]]:
+        """Cluster agents by similar capability sets"""
+        if len(agents) <= 1:
+            return [agents]
+        
+        # Build capability vectors for each agent
+        agent_caps = {}
+        all_caps = set()
+        
+        for agent_name in agents:
+            agent = self.agents.get(agent_name)
+            if agent:
+                caps = set(agent.capabilities)
+                agent_caps[agent_name] = caps
+                all_caps.update(caps)
+        
+        if not all_caps:
+            return [agents]
+        
+        # Simple clustering: group agents with high capability overlap
+        clusters = []
+        remaining = set(agents)
+        
+        while remaining:
+            # Start new cluster with first remaining agent
+            seed = list(remaining)[0]
+            cluster = [seed]
+            remaining.remove(seed)
+            seed_caps = agent_caps.get(seed, set())
+            
+            # Find similar agents
+            for agent_name in list(remaining):
+                agent_caps_set = agent_caps.get(agent_name, set())
+                # Calculate overlap
+                if seed_caps and agent_caps_set:
+                    overlap = len(seed_caps & agent_caps_set) / len(seed_caps | agent_caps_set)
+                    if overlap > 0.5:  # 50% overlap threshold
+                        cluster.append(agent_name)
+                        remaining.remove(agent_name)
+            
+            clusters.append(cluster)
+        
+        return clusters if clusters else [agents]
+    
+    def _prepare_training_data(self) -> Tuple[List[List[float]], List[float]]:
+        """Prepare training data for ML models from historical data"""
+        X = []
+        y = []
+        
+        for agent_name, hist in self.historical_data.items():
+            if agent_name not in self.agents:
+                continue
+            
+            agent = self.agents[agent_name]
+            features = [
+                len(agent.capabilities),
+                agent.success_rate,
+                agent.max_concurrent_tasks,
+                agent.average_execution_time / 3600.0,  # Normalize to hours
+                hist.get('uptime', 0.9),
+                hist.get('recent_success_rate', agent.success_rate),
+            ]
+            X.append(features)
+            y.append(hist.get('performance_score', agent.success_rate))
+        
+        return X, y
 
 
 # Example usage and testing

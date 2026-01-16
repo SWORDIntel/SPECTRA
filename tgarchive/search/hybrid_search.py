@@ -17,6 +17,24 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
 from enum import Enum
+import numpy as np
+
+# ── QIHSE Integration ─────────────────────────────────────────────────────
+try:
+    from .qihse_bindings import (
+        QihseSearchEngine,
+        qihse_available,
+        QIHSE_TYPE_DOUBLE,
+    )
+    from .qihse_config import (
+        create_qihse_config,
+        configure_qihse_for_semantic_search,
+    )
+    QIHSE_ENABLED = True
+except ImportError:
+    QIHSE_ENABLED = False
+    logger = logging.getLogger(__name__)
+    logger.warning("QIHSE bindings not available. Using Qdrant only.")
 
 logger = logging.getLogger(__name__)
 
@@ -241,14 +259,16 @@ class QdrantVectorManager:
         qdrant_url: str = "http://localhost:6333",
         collection_name: str = "spectra_messages",
         embedding_model: str = "all-MiniLM-L6-v2",
+        use_qihse: bool = True,
     ):
         """
-        Initialize Qdrant vector manager.
+        Initialize Qdrant vector manager with optional QIHSE acceleration.
 
         Args:
             qdrant_url: Qdrant server URL
             collection_name: Collection name in Qdrant
             embedding_model: HuggingFace model for embeddings
+            use_qihse: Enable QIHSE acceleration if available
         """
         from qdrant_client import QdrantClient
         from sentence_transformers import SentenceTransformer
@@ -257,6 +277,21 @@ class QdrantVectorManager:
         self.model = SentenceTransformer(embedding_model)
         self.collection_name = collection_name
         self.embedding_dim = self.model.get_sentence_embedding_dimension()
+        self.use_qihse = use_qihse and QIHSE_ENABLED and qihse_available()
+        
+        # Initialize QIHSE if available
+        self.qihse_engine = None
+        if self.use_qihse:
+            try:
+                self.qihse_engine = QihseSearchEngine(QIHSE_TYPE_DOUBLE, 10000)
+                configure_qihse_for_semantic_search(
+                    self.qihse_engine.config, self.embedding_dim, 0.95
+                )
+                logger.info("QIHSE engine initialized for semantic search acceleration")
+            except Exception as e:
+                logger.warning(f"Failed to initialize QIHSE: {e}. Using Qdrant only.")
+                self.use_qihse = False
+                self.qihse_engine = None
 
         self._initialize_collection()
 
@@ -354,9 +389,10 @@ class QdrantVectorManager:
         filter_channel: Optional[int] = None,
         filter_user: Optional[int] = None,
         score_threshold: float = 0.3,
+        use_qihse: Optional[bool] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Semantic search using vector similarity.
+        Semantic search using vector similarity with optional QIHSE acceleration.
 
         Args:
             query: Natural language search query
@@ -364,10 +400,23 @@ class QdrantVectorManager:
             filter_channel: Filter by channel
             filter_user: Filter by user
             score_threshold: Minimum similarity score (0-1)
+            use_qihse: Override QIHSE usage (None = use default)
 
         Returns:
             List of similar messages with scores
         """
+        use_qihse_override = use_qihse if use_qihse is not None else self.use_qihse
+        
+        # Try QIHSE first if enabled
+        if use_qihse_override and self.qihse_engine:
+            try:
+                return self._search_semantic_qihse(
+                    query, limit, filter_channel, filter_user, score_threshold
+                )
+            except Exception as e:
+                logger.warning(f"QIHSE search failed, falling back to Qdrant: {e}")
+        
+        # Fallback to Qdrant
         try:
             # Generate query embedding
             query_vector = self.embed_message(query)
@@ -417,6 +466,78 @@ class QdrantVectorManager:
         except Exception as e:
             logger.error(f"Semantic search failed: {e}")
             return []
+    
+    def _search_semantic_qihse(
+        self,
+        query: str,
+        limit: int,
+        filter_channel: Optional[int],
+        filter_user: Optional[int],
+        score_threshold: float,
+    ) -> List[Dict[str, Any]]:
+        """Semantic search using QIHSE quantum-inspired algorithm"""
+        # Generate query embedding
+        query_vector = np.array(self.embed_message(query), dtype=np.float64)
+        
+        # Get all vectors from Qdrant matching filters
+        collection_info = self.client.get_collection(self.collection_name)
+        total_vectors = collection_info.points_count
+        
+        # Retrieve vectors with filters
+        vectors = []
+        message_ids = []
+        point_data = []
+        batch_size = 1000
+        
+        for offset in range(0, min(total_vectors, 10000), batch_size):  # Limit for performance
+            points, _ = self.client.scroll(
+                collection_name=self.collection_name,
+                limit=batch_size,
+                offset=offset,
+            )
+            
+            for point in points:
+                # Apply filters
+                if filter_channel is not None:
+                    if point.payload.get("channel_id") != filter_channel:
+                        continue
+                if filter_user is not None:
+                    if point.payload.get("user_id") != filter_user:
+                        continue
+                
+                vectors.append(point.vector)
+                message_ids.append(point.payload.get("message_id"))
+                point_data.append(point.payload)
+        
+        if not vectors:
+            return []
+        
+        # Convert to numpy array
+        vectors_array = np.array(vectors, dtype=np.float64)
+        
+        # Use QIHSE for quantum-inspired search
+        results = self.qihse_engine.search_vectors(
+            vectors_array, query_vector, None, score_threshold
+        )
+        
+        # Format results
+        search_results = []
+        for idx, confidence in results:
+            if idx < len(point_data):
+                payload = point_data[idx]
+                search_results.append({
+                    "message_id": payload.get("message_id"),
+                    "content": payload.get("content"),
+                    "channel_id": payload.get("channel_id"),
+                    "user_id": payload.get("user_id"),
+                    "date": payload.get("date"),
+                    "relevance_score": float(confidence),
+                    "match_type": SearchType.SEMANTIC,
+                })
+        
+        # Sort by relevance and limit
+        search_results.sort(key=lambda x: x["relevance_score"], reverse=True)
+        return search_results[:limit]
 
     def get_statistics(self) -> Dict[str, Any]:
         """Get vector database statistics."""
@@ -434,29 +555,52 @@ class QdrantVectorManager:
 
 class HybridSearchEngine:
     """
-    Unified search engine combining FTS5 and Qdrant.
+    Enhanced hybrid search engine combining NOT_STISLA + QIHSE + FTS5.
 
     Strategy:
-    1. Execute both FTS5 (keyword) and semantic (vector) searches in parallel
-    2. Normalize and combine scores
-    3. Rank results by combined relevance
-    4. Return unified result set
+    1. Execute NOT_STISLA for structured data (timestamps, IDs)
+    2. Execute QIHSE for semantic/vector searches
+    3. Execute FTS5 for keyword searches
+    4. Intelligently combine and rank results
+    5. Return unified result set with algorithm metadata
     """
 
     def __init__(
         self,
         db_connection,
         qdrant_url: str = "http://localhost:6333",
+        use_not_stisla: bool = True,
+        use_qihse: bool = True,
     ):
         """
-        Initialize hybrid search engine.
+        Initialize enhanced hybrid search engine.
 
         Args:
             db_connection: SQLite connection
             qdrant_url: Qdrant server URL
+            use_not_stisla: Enable NOT_STISLA optimizations
+            use_qihse: Enable QIHSE optimizations
         """
         self.fts5 = SQLiteFTS5IndexManager(db_connection)
-        self.vector = QdrantVectorManager(qdrant_url)
+        self.vector = QdrantVectorManager(qdrant_url, use_qihse=use_qihse)
+        
+        # Initialize NOT_STISLA engines
+        self.not_stisla_timestamp = None
+        self.not_stisla_message_id = None
+        if use_not_stisla:
+            try:
+                from .not_stisla_bindings import (
+                    NotStislaSearchEngine,
+                    not_stisla_available,
+                    NOT_STISLA_WORKLOAD_TELEMETRY,
+                    NOT_STISLA_WORKLOAD_IDS,
+                )
+                if not_stisla_available():
+                    self.not_stisla_timestamp = NotStislaSearchEngine(NOT_STISLA_WORKLOAD_TELEMETRY)
+                    self.not_stisla_message_id = NotStislaSearchEngine(NOT_STISLA_WORKLOAD_IDS)
+                    logger.info("NOT_STISLA engines initialized for hybrid search")
+            except ImportError:
+                logger.warning("NOT_STISLA not available for hybrid search")
 
     def search(
         self,
@@ -465,81 +609,143 @@ class HybridSearchEngine:
         search_type: SearchType = SearchType.HYBRID,
         filter_channel: Optional[int] = None,
         filter_user: Optional[int] = None,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
     ) -> List[SearchResult]:
         """
-        Perform hybrid search.
+        Enhanced hybrid search with NOT_STISLA + QIHSE + FTS5.
 
         Args:
-            query: Search query (handles both keyword and semantic)
+            query: Search query (handles keyword, semantic, timestamp, ID)
             limit: Max results
             search_type: KEYWORD, SEMANTIC, or HYBRID
             filter_channel: Filter by channel
             filter_user: Filter by user
+            date_from: Start date for temporal filtering
+            date_to: End date for temporal filtering
 
         Returns:
-            Ranked list of SearchResult objects
+            Ranked list of SearchResult objects with algorithm metadata
         """
         results = {}
 
+        # 1. NOT_STISLA for structured data (timestamps, IDs)
+        if (date_from or date_to) and self.not_stisla_timestamp:
+            try:
+                from ..db import SpectraDB
+                if isinstance(self.fts5.db, SpectraDB):
+                    start_ts = int(date_from.timestamp()) if date_from else None
+                    end_ts = int(date_to.timestamp()) if date_to else None
+                    
+                    if start_ts and end_ts:
+                        message_ids = self.fts5.db.find_messages_by_timestamp_range(
+                            start_ts, end_ts, filter_channel
+                        )
+                        
+                        # Get message data and add to results
+                        for msg_id in message_ids[:limit * 2]:
+                            msg_data = self.fts5.db.find_message_by_id_fast(msg_id, filter_channel)
+                            if msg_data:
+                                results[msg_id] = {
+                                    "message_id": msg_data['id'],
+                                    "channel_id": filter_channel,
+                                    "user_id": msg_data.get('user_id'),
+                                    "content": msg_data.get('content', ''),
+                                    "date": msg_data['date'],
+                                    "not_stisla_score": 1.0,  # Perfect match for temporal
+                                }
+            except Exception as e:
+                logger.debug(f"NOT_STISLA temporal search failed: {e}")
+
+        # Message ID lookup with NOT_STISLA
+        if query.isdigit() and self.not_stisla_message_id:
+            try:
+                from ..db import SpectraDB
+                if isinstance(self.fts5.db, SpectraDB):
+                    msg_id = int(query)
+                    msg_data = self.fts5.db.find_message_by_id_fast(msg_id, filter_channel)
+                    if msg_data:
+                        results[msg_id] = {
+                            "message_id": msg_data['id'],
+                            "channel_id": filter_channel,
+                            "user_id": msg_data.get('user_id'),
+                            "content": msg_data.get('content', ''),
+                            "date": msg_data['date'],
+                            "not_stisla_score": 1.0,
+                        }
+            except Exception as e:
+                logger.debug(f"NOT_STISLA ID search failed: {e}")
+
+        # 2. FTS5 keyword search
         if search_type in (SearchType.KEYWORD, SearchType.HYBRID):
-            # FTS5 keyword search
             fts5_results = self.fts5.search_messages(
-                query,
-                limit=limit * 2,  # Get more for ranking
-                filter_channel=filter_channel,
-                filter_user=filter_user,
-            )
-
-            for row in fts5_results:
-                msg_id = row[0]
-                results[msg_id] = {
-                    "message_id": row[0],
-                    "channel_id": row[1],
-                    "user_id": row[2],
-                    "content": row[3],
-                    "date": row[4],
-                    "type": row[5],
-                    "keyword_score": abs(row[6]),  # Normalize BM25 score
-                }
-
-        if search_type in (SearchType.SEMANTIC, SearchType.HYBRID):
-            # Vector semantic search
-            vector_results = self.vector.search_semantic(
                 query,
                 limit=limit * 2,
                 filter_channel=filter_channel,
                 filter_user=filter_user,
             )
 
+            for row in fts5_results:
+                msg_id = row[0]
+                if msg_id in results:
+                    results[msg_id]["keyword_score"] = abs(row[6])
+                else:
+                    results[msg_id] = {
+                        "message_id": row[0],
+                        "channel_id": row[1],
+                        "user_id": row[2],
+                        "content": row[3],
+                        "date": row[4],
+                        "type": row[5],
+                        "keyword_score": abs(row[6]),
+                    }
+
+        # 3. QIHSE/Qdrant semantic search
+        if search_type in (SearchType.SEMANTIC, SearchType.HYBRID):
+            vector_results = self.vector.search_semantic(
+                query,
+                limit=limit * 2,
+                filter_channel=filter_channel,
+                filter_user=filter_user,
+                use_qihse=True,  # Use QIHSE acceleration
+            )
+
             for result in vector_results:
                 msg_id = result["message_id"]
                 if msg_id in results:
-                    results[msg_id]["semantic_score"] = result["relevance_score"]
+                    results[msg_id]["qihse_score"] = result["relevance_score"]
                 else:
                     results[msg_id] = result.copy()
-                    results[msg_id]["semantic_score"] = result["relevance_score"]
+                    results[msg_id]["qihse_score"] = result["relevance_score"]
 
-        # Combine and rank results
+        # Combine and rank results with intelligent weighting
         combined = []
         for msg_id, data in results.items():
-            # Calculate combined relevance
-            keyword_score = data.get("keyword_score", 0) / 100.0  # Normalize
-            semantic_score = data.get("semantic_score", 0)
+            # Normalize scores
+            not_stisla_score = data.get("not_stisla_score", 0) * 0.2
+            keyword_score = data.get("keyword_score", 0) / 100.0 * 0.3
+            qihse_score = data.get("qihse_score", 0) * 0.5
 
-            # Weighted combination (favor semantic for this use case)
-            combined_score = (keyword_score * 0.3) + (semantic_score * 0.7)
+            # Combined relevance score
+            combined_score = not_stisla_score + keyword_score + qihse_score
 
             combined.append(SearchResult(
                 message_id=data["message_id"],
-                channel_id=data["channel_id"],
+                channel_id=data.get("channel_id"),
                 user_id=data.get("user_id"),
                 content=data.get("content", ""),
                 date=datetime.fromisoformat(data["date"]) if isinstance(data["date"], str) else data["date"],
                 relevance_score=combined_score,
                 match_type=search_type,
                 metadata={
+                    "not_stisla_score": not_stisla_score,
                     "keyword_score": keyword_score,
-                    "semantic_score": semantic_score,
+                    "qihse_score": qihse_score,
+                    "algorithms": [
+                        "not_stisla" if data.get("not_stisla_score") else None,
+                        "fts5" if data.get("keyword_score") else None,
+                        "qihse" if data.get("qihse_score") else None,
+                    ],
                 },
             ))
 
@@ -547,9 +753,185 @@ class HybridSearchEngine:
         combined.sort(key=lambda x: x.relevance_score, reverse=True)
         return combined[:limit]
 
+    def search_batch(
+        self,
+        queries: List[str],
+        limit_per_query: int = 10,
+        search_type: SearchType = SearchType.HYBRID,
+        filter_channel: Optional[int] = None,
+        filter_user: Optional[int] = None,
+    ) -> Dict[str, List[SearchResult]]:
+        """
+        Batch search using NOT_STISLA parallel search for timestamp queries
+        and QIHSE batch search for semantic queries.
+        
+        Args:
+            queries: List of search queries
+            limit_per_query: Max results per query
+            search_type: Search type
+            filter_channel: Channel filter
+            filter_user: User filter
+        
+        Returns:
+            Dict mapping query -> list of SearchResult objects
+        """
+        results = {}
+        
+        # Separate queries by type
+        timestamp_queries = []
+        semantic_queries = []
+        keyword_queries = []
+        
+        for query in queries:
+            # Detect query type
+            if query.isdigit() or 'date' in query.lower() or 'timestamp' in query.lower():
+                timestamp_queries.append(query)
+            elif any(word in query.lower() for word in ['similar', 'related', 'like', 'semantic']):
+                semantic_queries.append(query)
+            else:
+                keyword_queries.append(query)
+        
+        # Process timestamp queries with NOT_STISLA parallel search
+        if timestamp_queries and self.not_stisla_timestamp:
+            try:
+                from ..db import SpectraDB
+                if isinstance(self.fts5.db, SpectraDB):
+                    # Get sorted timestamps
+                    query_sql = "SELECT id, date FROM messages ORDER BY date"
+                    if filter_channel:
+                        query_sql = "SELECT id, date FROM messages WHERE channel_id = ? ORDER BY date"
+                    
+                    rows = self.fts5.db.cur.execute(
+                        query_sql, (filter_channel,) if filter_channel else ()
+                    ).fetchall()
+                    
+                    timestamps = []
+                    message_ids = []
+                    for row_id, date_str in rows:
+                        try:
+                            dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                            timestamps.append(int(dt.timestamp()))
+                            message_ids.append(row_id)
+                        except:
+                            continue
+                    
+                    # Use NOT_STISLA batch parallel search
+                    for query in timestamp_queries:
+                        try:
+                            if query.isdigit():
+                                target = int(query)
+                            else:
+                                # Parse timestamp from query string
+                                try:
+                                    dt = datetime.fromisoformat(query.replace('Z', '+00:00'))
+                                    target = int(dt.timestamp())
+                                except (ValueError, AttributeError):
+                                    target = int(datetime.now().timestamp())
+                            
+                            # Use parallel batch search
+                            batch_results = self.not_stisla_timestamp.search_parallel(
+                                timestamps, [target], num_threads=0
+                            )
+                            
+                            query_results = []
+                            for idx in batch_results:
+                                if idx is not None and idx < len(message_ids):
+                                    msg_id = message_ids[idx]
+                                    msg_data = self.fts5.db.find_message_by_id_fast(msg_id, filter_channel)
+                                    if msg_data:
+                                        query_results.append(SearchResult(
+                                            message_id=msg_id,
+                                            channel_id=filter_channel,
+                                            user_id=msg_data.get('user_id'),
+                                            content=msg_data.get('content', ''),
+                                            date=datetime.fromisoformat(msg_data['date']) if isinstance(msg_data['date'], str) else msg_data['date'],
+                                            relevance_score=1.0,
+                                            match_type=SearchType.KEYWORD,
+                                            metadata={'algorithm': 'not_stisla_batch'},
+                                        ))
+                            
+                            results[query] = query_results[:limit_per_query]
+                        except Exception as e:
+                            logger.debug(f"NOT_STISLA batch search failed for {query}: {e}")
+                            results[query] = []
+            except Exception as e:
+                logger.warning(f"NOT_STISLA batch processing failed: {e}")
+        
+        # Process semantic queries with QIHSE batch search
+        if semantic_queries and self.vector.qihse_engine:
+            try:
+                # Retrieve vectors from Qdrant collection
+                vectors = []
+                message_ids = []
+                point_data = []
+                
+                collection_info = self.vector.client.get_collection(self.vector.collection_name)
+                for offset in range(0, min(collection_info.points_count, 10000), 1000):
+                    points, _ = self.vector.client.scroll(
+                        collection_name=self.vector.collection_name,
+                        limit=1000,
+                        offset=offset,
+                    )
+                    for point in points:
+                        if filter_channel and point.payload.get("channel_id") != filter_channel:
+                            continue
+                        vectors.append(point.vector)
+                        message_ids.append(point.payload.get("message_id"))
+                        point_data.append(point.payload)
+                
+                if vectors:
+                    import numpy as np
+                    vectors_array = np.array(vectors, dtype=np.float64)
+                    
+                    # Generate query embeddings
+                    query_vectors = []
+                    for query in semantic_queries:
+                        query_vec = np.array(self.vector.embed_message(query), dtype=np.float64)
+                        query_vectors.append(query_vec)
+                    
+                    query_vectors_array = np.array(query_vectors, dtype=np.float64)
+                    
+                    # Use QIHSE batch search
+                    batch_results = self.vector.qihse_engine.batch_search_vectors(
+                        vectors_array, query_vectors_array
+                    )
+                    
+                    for i, query in enumerate(semantic_queries):
+                        query_results = []
+                        for idx, confidence in batch_results[i]:
+                            if idx < len(point_data):
+                                payload = point_data[idx]
+                                query_results.append(SearchResult(
+                                    message_id=payload.get("message_id"),
+                                    channel_id=payload.get("channel_id"),
+                                    user_id=payload.get("user_id"),
+                                    content=payload.get("content", ""),
+                                    date=datetime.fromisoformat(payload.get("date", "")) if isinstance(payload.get("date"), str) else datetime.now(),
+                                    relevance_score=float(confidence),
+                                    match_type=SearchType.SEMANTIC,
+                                    metadata={'algorithm': 'qihse_batch'},
+                                ))
+                        
+                        results[query] = query_results[:limit_per_query]
+            except Exception as e:
+                logger.warning(f"QIHSE batch processing failed: {e}")
+        
+        # Process keyword queries normally
+        for query in keyword_queries:
+            results[query] = self.search(query, limit_per_query, search_type, filter_channel, filter_user)
+        
+        return results
+    
     def get_statistics(self) -> Dict[str, Any]:
         """Get search engine statistics."""
-        return {
+        stats = {
             "fts5": self.fts5.get_statistics(),
             "vector": self.vector.get_statistics(),
         }
+        
+        if self.not_stisla_timestamp:
+            stats["not_stisla_timestamp"] = self.not_stisla_timestamp.get_stats()
+        if self.not_stisla_message_id:
+            stats["not_stisla_message_id"] = self.not_stisla_message_id.get_stats()
+        
+        return stats

@@ -40,13 +40,12 @@ async def populate_account_channel_access(db: SpectraDB, config: Config):
 
         logger.info(f"Processing account: {phone_number} (Session: {session_name})")
 
-        # Proxy configuration (simplified, adapt from sync.py if complex proxy logic is needed)
+        # Proxy configuration
         proxy_conf = config.data.get("proxy")
         proxy = None
         if proxy_conf and proxy_conf.get("enabled"):
-            # This is a simplified proxy setup. For rotating proxies, more logic from sync.ProxyCycler would be needed.
-            # For now, let's assume a single proxy configuration or direct connection if not detailed.
-            # This part might need enhancement if complex proxy rotation per account is required here.
+            # Configure proxy based on settings. For rotating proxies, use sync.ProxyCycler.
+            # Supports single proxy configuration per account.
             try:
                 # PySocks proxy format: (socks.SOCKS5, 'host', port, True, 'user', 'pass')
                 # This example assumes SOCKS5 and may need adjustment based on actual proxy types used.

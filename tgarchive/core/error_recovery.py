@@ -477,12 +477,12 @@ class MessageProcessingRecovery:
             metadata=metadata or {},
         )
 
-        checkpoint_file = self.checkpoint_dir / f"checkpoint_{hashlib.md5(entity_id.encode()).hexdigest()}.json"
+        checkpoint_file = self.checkpoint_dir / f"checkpoint_{hashlib.sha384(entity_id.encode()).hexdigest()[:32]}.json"
         checkpoint.save(checkpoint_file)
 
     def load_checkpoint(self, entity_id: str) -> Optional[RecoveryCheckpoint]:
         """Load checkpoint for entity."""
-        checkpoint_file = self.checkpoint_dir / f"checkpoint_{hashlib.md5(entity_id.encode()).hexdigest()}.json"
+        checkpoint_file = self.checkpoint_dir / f"checkpoint_{hashlib.sha384(entity_id.encode()).hexdigest()[:32]}.json"
         return RecoveryCheckpoint.load(checkpoint_file)
 
     def get_stats(self) -> Dict[str, Any]:

@@ -59,7 +59,7 @@ def list_requirements() -> list[str]:
         "python-magic>=0.4.27",
         "pyaes>=1.6.1",
         "pyasn1>=0.6.0",
-        "rsa>=4.9",
+        # "rsa>=4.9",  # Removed: RSA is phased out per CNSA 2.0. Use ECC-based cryptography if needed.
         "feedgen>=0.9.0",
         "lxml>=4.9.2",
     ]

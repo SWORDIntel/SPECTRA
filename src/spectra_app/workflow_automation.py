@@ -792,8 +792,20 @@ class WorkflowAutomationEngine:
             return len(self.orchestrator.failed_tasks) > 0
 
         elif condition_type == "schedule":
-            # For cron-based scheduling, would implement cron evaluation here
-            return True  # Simplified for example
+            # Cron-based scheduling evaluation
+            schedule_expr = condition.get("schedule", "")
+            if schedule_expr:
+                try:
+                    from croniter import croniter
+                    from datetime import datetime
+                    cron = croniter(schedule_expr, datetime.now())
+                    next_run = cron.get_next(datetime)
+                    # Check if it's time to run (within 1 minute tolerance)
+                    time_until = (next_run - datetime.now()).total_seconds()
+                    return abs(time_until) < 60
+                except Exception:
+                    logger.warning(f"Invalid cron expression: {schedule_expr}")
+            return False
 
         return False
 
@@ -863,13 +875,99 @@ class WorkflowAutomationEngine:
 
     async def _check_for_stuck_tasks(self, workflow_status: Dict[str, Any], plan: ExecutionPlan):
         """Check for tasks that may be stuck and take corrective action"""
-        # Implementation would check task execution times and trigger recovery
-        pass
+        tasks = workflow_status.get("tasks", [])
+        current_time = datetime.now()
+        stuck_threshold = timedelta(minutes=30)  # Consider stuck after 30 minutes
+        
+        for task_data in tasks:
+            task_id = task_data.get("id")
+            task_status = task_data.get("status")
+            started_at = task_data.get("started_at")
+            
+            # Only check running tasks
+            if task_status not in ["running", "executing"]:
+                continue
+            
+            if started_at:
+                if isinstance(started_at, str):
+                    started_at = datetime.fromisoformat(started_at)
+                elapsed = current_time - started_at
+                
+                if elapsed > stuck_threshold:
+                    self.logger.warning(f"Task {task_id} appears stuck (running for {elapsed})")
+                    
+                    # Get task timeout if available
+                    timeout = task_data.get("timeout", 3600)  # Default 1 hour
+                    if elapsed.total_seconds() > timeout:
+                        # Task exceeded timeout - trigger recovery
+                        await self._recover_stuck_task(task_id, task_data, plan)
+                    else:
+                        # Task is taking long but not timed out - log warning
+                        self.logger.info(f"Task {task_id} is taking longer than expected but within timeout")
+    
+    async def _recover_stuck_task(self, task_id: str, task_data: Dict[str, Any], plan: ExecutionPlan):
+        """Recover from a stuck task"""
+        retry_count = task_data.get("retry_count", 0)
+        max_retries = task_data.get("max_retries", 3)
+        
+        if retry_count < max_retries:
+            self.logger.info(f"Retrying stuck task {task_id} (attempt {retry_count + 1}/{max_retries})")
+            # Cancel current task and retry
+            await self.orchestrator.cancel_task(task_id)
+            # The orchestrator should handle retry logic
+        else:
+            self.logger.error(f"Task {task_id} exceeded max retries. Marking as failed.")
+            await self.orchestrator.fail_task(task_id, "Task stuck and exceeded retry limit")
 
     async def _handle_checkpoints(self, workflow_status: Dict[str, Any], plan: ExecutionPlan):
         """Handle checkpoint creation during workflow execution"""
-        # Implementation would create checkpoints at designated points
-        pass
+        workflow_id = workflow_status.get("id")
+        tasks = workflow_status.get("tasks", [])
+        
+        # Check if we've reached any checkpoint intervals
+        completed_task_ids = {task.get("id") for task in tasks if task.get("status") == "completed"}
+        
+        for checkpoint_task_id in plan.checkpoint_intervals:
+            if checkpoint_task_id in completed_task_ids:
+                # Check if checkpoint already exists for this task
+                checkpoint_key = f"{workflow_id}_{checkpoint_task_id}"
+                
+                if checkpoint_key not in getattr(self, '_checkpoints_created', set()):
+                    # Create checkpoint
+                    await self._create_checkpoint(workflow_id, checkpoint_task_id, tasks, plan)
+                    
+                    # Mark as created
+                    if not hasattr(self, '_checkpoints_created'):
+                        self._checkpoints_created = set()
+                    self._checkpoints_created.add(checkpoint_key)
+    
+    async def _create_checkpoint(self, workflow_id: str, task_id: str, tasks: List[Dict[str, Any]], plan: ExecutionPlan):
+        """Create a checkpoint for workflow recovery"""
+        checkpoint_data = {
+            "workflow_id": workflow_id,
+            "task_id": task_id,
+            "timestamp": datetime.now().isoformat(),
+            "completed_tasks": [t.get("id") for t in tasks if t.get("status") == "completed"],
+            "task_states": {t.get("id"): {
+                "status": t.get("status"),
+                "result": t.get("result"),
+                "error": t.get("error")
+            } for t in tasks},
+            "execution_plan": {
+                "execution_order": plan.execution_order,
+                "parallel_groups": plan.parallel_groups,
+                "critical_path": plan.critical_path
+            }
+        }
+        
+        # Store checkpoint (could be in database, file, or memory)
+        if not hasattr(self, '_checkpoints'):
+            self._checkpoints = {}
+        
+        checkpoint_key = f"{workflow_id}_{task_id}"
+        self._checkpoints[checkpoint_key] = checkpoint_data
+        
+        self.logger.info(f"Checkpoint created for workflow {workflow_id} at task {task_id}")
 
     async def _is_workflow_completed(self, workflow_id: str) -> bool:
         """Check if a workflow has completed"""

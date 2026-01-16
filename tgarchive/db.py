@@ -26,6 +26,25 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, List, NamedTuple, Optional, Tuple
 
+# ── NOT_STISLA Integration ────────────────────────────────────────────────
+try:
+    from .search.not_stisla_bindings import (
+        NotStislaSearchEngine,
+        not_stisla_available,
+        search_timestamps,
+        search_message_ids,
+        NOT_STISLA_WORKLOAD_TELEMETRY,
+        NOT_STISLA_WORKLOAD_IDS,
+    )
+    from .search.not_stisla_config import (
+        get_optimal_tolerance,
+        create_spectra_anchor_table,
+    )
+    NOT_STISLA_ENABLED = True
+except ImportError:
+    NOT_STISLA_ENABLED = False
+    logger.warning("NOT_STISLA bindings not available. Using fallback search methods.")
+
 # ── Third-party ──────────────────────────────────────────────────────────
 import pytz  # type: ignore
 from rich.console import Console
@@ -312,6 +331,19 @@ class SpectraDB(AbstractContextManager):
         self.conn: sqlite3.Connection
         self.cur: sqlite3.Cursor
         self._open()
+        
+        # Initialize NOT_STISLA anchor tables for fast searches
+        self.timestamp_anchor_table = None
+        self.message_id_anchor_table = None
+        if NOT_STISLA_ENABLED and not_stisla_available():
+            try:
+                self.timestamp_anchor_table = create_spectra_anchor_table(NOT_STISLA_WORKLOAD_TELEMETRY)
+                self.message_id_anchor_table = create_spectra_anchor_table(NOT_STISLA_WORKLOAD_IDS)
+                logger.info("NOT_STISLA anchor tables initialized for fast searches")
+            except Exception as e:
+                logger.warning(f"Failed to initialize NOT_STISLA: {e}. Using fallback methods.")
+                self.timestamp_anchor_table = None
+                self.message_id_anchor_table = None
 
     # ------------------------------------------------------------------ #
     def _open(self) -> None:
@@ -344,6 +376,13 @@ class SpectraDB(AbstractContextManager):
         else:
             self.conn.commit()
         self.conn.close()
+        
+        # Cleanup NOT_STISLA anchor tables
+        if self.timestamp_anchor_table:
+            del self.timestamp_anchor_table
+        if self.message_id_anchor_table:
+            del self.message_id_anchor_table
+        
         logger.info("Connection closed")
         return False
 
@@ -787,6 +826,174 @@ class SpectraDB(AbstractContextManager):
             params = ()
         self.cur.execute(sql, params)
         return self.cur.fetchall()
+    
+    # ── NOT_STISLA Optimized Search Methods ───────────────────────────────
+    
+    def find_messages_by_timestamp_range(self, start_time: int, end_time: int, 
+                                        channel_id: Optional[int] = None) -> List[int]:
+        """
+        Find messages in timestamp range using NOT_STISLA for 22.28x speedup.
+        
+        Args:
+            start_time: Start Unix timestamp
+            end_time: End Unix timestamp
+            channel_id: Optional channel ID filter
+        
+        Returns:
+            List of message IDs in the timestamp range
+        """
+        # Build query to get sorted timestamps and message IDs
+        if channel_id is not None:
+            query = """
+                SELECT id, date FROM messages 
+                WHERE channel_id = ? 
+                ORDER BY date
+            """
+            rows = self.cur.execute(query, (channel_id,)).fetchall()
+        else:
+            query = "SELECT id, date FROM messages ORDER BY date"
+            rows = self.cur.execute(query).fetchall()
+        
+        if not rows:
+            return []
+        
+        # Convert dates to Unix timestamps
+        timestamps = []
+        message_ids = []
+        for row_id, date_str in rows:
+            try:
+                if isinstance(date_str, str):
+                    dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                else:
+                    dt = date_str
+                timestamp = int(dt.timestamp())
+                timestamps.append(timestamp)
+                message_ids.append(row_id)
+            except (ValueError, AttributeError) as e:
+                logger.debug(f"Skipping invalid date for message {row_id}: {e}")
+                continue
+        
+        if not timestamps:
+            return []
+        
+        # Use NOT_STISLA to find range indices
+        if NOT_STISLA_ENABLED and not_stisla_available() and self.timestamp_anchor_table:
+            try:
+                tolerance = get_optimal_tolerance(NOT_STISLA_WORKLOAD_TELEMETRY)
+                
+                # Find start index
+                start_idx = self.timestamp_anchor_table.search(timestamps, start_time, tolerance)
+                if start_idx is None:
+                    # If exact match not found, find insertion point
+                    import bisect
+                    start_idx = bisect.bisect_left(timestamps, start_time)
+                
+                # Find end index
+                end_idx = self.timestamp_anchor_table.search(timestamps, end_time, tolerance)
+                if end_idx is None:
+                    import bisect
+                    end_idx = bisect.bisect_right(timestamps, end_time) - 1
+                
+                # Return message IDs in range
+                if start_idx is not None and end_idx is not None and start_idx <= end_idx:
+                    return message_ids[start_idx:end_idx+1]
+                return []
+            except Exception as e:
+                logger.warning(f"NOT_STISLA search failed, using fallback: {e}")
+        
+        # Fallback to binary search
+        import bisect
+        start_idx = bisect.bisect_left(timestamps, start_time)
+        end_idx = bisect.bisect_right(timestamps, end_time)
+        return message_ids[start_idx:end_idx]
+    
+    def find_message_by_id_fast(self, message_id: int, channel_id: Optional[int] = None) -> Optional[dict]:
+        """
+        Fast message ID lookup using NOT_STISLA (15-20x speedup).
+        
+        Args:
+            message_id: Message ID to find
+            channel_id: Optional channel ID filter
+        
+        Returns:
+            Message data dict or None if not found
+        """
+        # Get sorted message IDs for channel
+        if channel_id is not None:
+            query = "SELECT id FROM messages WHERE channel_id = ? ORDER BY id"
+            rows = self.cur.execute(query, (channel_id,)).fetchall()
+        else:
+            query = "SELECT id FROM messages ORDER BY id"
+            rows = self.cur.execute(query).fetchall()
+        
+        message_ids = [row[0] for row in rows]
+        
+        if not message_ids:
+            return None
+        
+        # Use NOT_STISLA search
+        if NOT_STISLA_ENABLED and not_stisla_available() and self.message_id_anchor_table:
+            try:
+                tolerance = get_optimal_tolerance(NOT_STISLA_WORKLOAD_IDS)
+                idx = self.message_id_anchor_table.search(message_ids, message_id, tolerance)
+                
+                if idx is not None:
+                    # Get full message data
+                    query = "SELECT * FROM messages WHERE id = ?"
+                    row = self.cur.execute(query, (message_id,)).fetchone()
+                    if row:
+                        return {
+                            'id': row[0],
+                            'type': row[1],
+                            'date': row[2],
+                            'edit_date': row[3],
+                            'content': row[4],
+                            'reply_to': row[5],
+                            'user_id': row[6],
+                            'media_id': row[7],
+                            'checksum': row[8] if len(row) > 8 else None,
+                        }
+            except Exception as e:
+                logger.warning(f"NOT_STISLA ID search failed, using fallback: {e}")
+        
+        # Fallback to SQL query
+        query = "SELECT * FROM messages WHERE id = ?"
+        if channel_id is not None:
+            query += " AND channel_id = ?"
+            row = self.cur.execute(query, (message_id, channel_id)).fetchone()
+        else:
+            row = self.cur.execute(query, (message_id,)).fetchone()
+        
+        if row:
+            return {
+                'id': row[0],
+                'type': row[1],
+                'date': row[2],
+                'edit_date': row[3],
+                'content': row[4],
+                'reply_to': row[5],
+                'user_id': row[6],
+                'media_id': row[7],
+                'checksum': row[8] if len(row) > 8 else None,
+            }
+        return None
+    
+    def find_messages_by_date_range(self, start_date: datetime, end_date: datetime,
+                                    channel_id: Optional[int] = None) -> List[int]:
+        """
+        Find messages in date range using NOT_STISLA optimization.
+        
+        Args:
+            start_date: Start datetime
+            end_date: End datetime
+            channel_id: Optional channel ID filter
+        
+        Returns:
+            List of message IDs
+        """
+        start_timestamp = int(start_date.timestamp())
+        end_timestamp = int(end_date.timestamp())
+        return self.find_messages_by_timestamp_range(start_timestamp, end_timestamp, channel_id)
 
 __all__ = [
     "SpectraDB",

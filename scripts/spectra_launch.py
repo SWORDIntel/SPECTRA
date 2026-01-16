@@ -322,7 +322,7 @@ pandas>=1.5.0
 python-magic>=0.4.27
 pyaes>=1.6.1
 pyasn1>=0.6.0
-rsa>=4.9
+# rsa>=4.9  # Removed: RSA is phased out per CNSA 2.0. Use ECC-based cryptography if needed.
 
 # Media handling
 feedgen>=0.9.0

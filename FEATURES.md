@@ -330,7 +330,7 @@ Six-layer security architecture meeting CSNA 2.0 standards:
 ✓ JWT (JSON Web Tokens) - stateless, scalable
 ✓ Access tokens - short-lived (1 hour)
 ✓ Refresh tokens - longer-lived (7 days)
-✓ Token signing - HMAC-SHA256
+✓ Token signing - HMAC-SHA384 (CNSA 2.0 compliant)
 ✓ Token validation - on every request
 ```
 

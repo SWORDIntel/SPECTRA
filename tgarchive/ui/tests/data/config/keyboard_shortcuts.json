@@ -1,0 +1,106 @@
+{
+  "ctrl_d": {
+    "action": "switch_form",
+    "target": "DASHBOARD",
+    "description": "Go to Dashboard"
+  },
+  "ctrl_a": {
+    "action": "switch_form",
+    "target": "ARCHIVE",
+    "description": "Go to Archive"
+  },
+  "ctrl_f": {
+    "action": "switch_form",
+    "target": "FORWARDING",
+    "description": "Go to Forwarding"
+  },
+  "ctrl_s": {
+    "action": "show_search",
+    "description": "Show Search"
+  },
+  "ctrl_q": {
+    "action": "quit",
+    "description": "Quit Application"
+  },
+  "ctrl_k": {
+    "action": "command_palette",
+    "description": "Command Palette"
+  },
+  "ctrl_p": {
+    "action": "switch_profile",
+    "description": "Switch Profile"
+  },
+  "ctrl_h": {
+    "action": "show_help",
+    "description": "Show Help"
+  },
+  "ctrl_r": {
+    "action": "refresh",
+    "description": "Refresh"
+  },
+  "ctrl_enter": {
+    "action": "execute",
+    "description": "Execute Selected"
+  },
+  "ctrl_question": {
+    "action": "quick_reference",
+    "description": "Quick Reference"
+  },
+  "esc": {
+    "action": "go_back",
+    "description": "Go Back"
+  },
+  "tab": {
+    "action": "next_field",
+    "description": "Next Field"
+  },
+  "shift_tab": {
+    "action": "prev_field",
+    "description": "Previous Field"
+  },
+  "1": {
+    "action": "switch_form",
+    "target": "DASHBOARD",
+    "description": "Dashboard"
+  },
+  "2": {
+    "action": "switch_form",
+    "target": "ARCHIVE",
+    "description": "Archive"
+  },
+  "3": {
+    "action": "switch_form",
+    "target": "DISCOVERY",
+    "description": "Discover"
+  },
+  "4": {
+    "action": "switch_form",
+    "target": "GRAPH",
+    "description": "Network Analysis"
+  },
+  "5": {
+    "action": "switch_form",
+    "target": "FORWARDING",
+    "description": "Forwarding"
+  },
+  "6": {
+    "action": "switch_form",
+    "target": "OSINT_MENU",
+    "description": "OSINT"
+  },
+  "7": {
+    "action": "switch_form",
+    "target": "GROUP_MIRROR",
+    "description": "Group Mirror"
+  },
+  "8": {
+    "action": "switch_form",
+    "target": "MAIN",
+    "description": "Account Management"
+  },
+  "9": {
+    "action": "switch_form",
+    "target": "VPS_CONFIG",
+    "description": "Settings"
+  }
+}

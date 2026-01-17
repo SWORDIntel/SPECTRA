@@ -1,0 +1,32 @@
+{
+  "qa": {
+    "action": "switch_form",
+    "target": "ARCHIVE",
+    "description": "Quick Archive"
+  },
+  "qd": {
+    "action": "switch_form",
+    "target": "DASHBOARD",
+    "description": "Quick Dashboard"
+  },
+  "qf": {
+    "action": "switch_form",
+    "target": "FORWARDING",
+    "description": "Quick Forwarding"
+  },
+  "qs": {
+    "action": "switch_form",
+    "target": "DISCOVERY",
+    "description": "Quick Search/Discovery"
+  },
+  "qg": {
+    "action": "switch_form",
+    "target": "GRAPH",
+    "description": "Quick Graph"
+  },
+  "qm": {
+    "action": "switch_form",
+    "target": "MAIN",
+    "description": "Quick Main Menu"
+  }
+}

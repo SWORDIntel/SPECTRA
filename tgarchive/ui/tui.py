@@ -34,6 +34,18 @@ from ..forwarding import AttachmentForwarder
 from ..forms import VPSConfigForm # Import the new form
 from ..utils.user_operations import get_server_users
 from ..services.group_mirror import GroupMirrorManager
+from .keyboard import KeyboardShortcutHandler, create_keyboard_handler, ShortcutWidget
+from .command_history import CommandHistory, CommandHistoryEntry
+from .progress_widget import TUIProgressWidget, BackgroundJobNotification
+from .help_system import HelpSystem, create_help_system
+from .quick_actions import QuickActions, create_quick_actions
+from .undo_redo import UndoRedoManager, OperationState
+from .templates import TemplateManager
+from .error_handler import ErrorHandler
+from .operation_queue import OperationQueue, QueuedOperation, Priority
+from .profiles import ProfileManager, ConfigProfile
+from .advanced_search import AdvancedSearch, SearchFilter, SearchHistoryEntry
+from .workflow_automation import WorkflowAutomation, Workflow, WorkflowStep
 
 # ── Global Config ──────────────────────────────────────────────────────────
 TZ = timezone.utc
@@ -79,6 +91,55 @@ class AsyncRunner:
         return thread
 
 
+# ── Base Form with Keyboard Shortcuts ─────────────────────────────────────────
+class SpectraBaseForm(npyscreen.Form):
+    """
+    Base form class with keyboard shortcut support.
+    
+    Forms can inherit from this to get keyboard shortcut handling.
+    """
+    
+    def edit(self):
+        """Override edit to handle keyboard shortcuts"""
+        # npyscreen handles input internally
+        # Number keys work automatically via button names
+        # For Ctrl+key, we'll handle in specific forms or via widgets
+        return super().edit()
+    
+    def handle_shortcut(self, key: int) -> bool:
+        """
+        Handle a keyboard shortcut.
+        
+        Args:
+            key: Key code from curses
+            
+        Returns:
+            True if shortcut was handled, False otherwise
+        """
+        if hasattr(self.parentApp, 'keyboard_handler'):
+            current_form = self.name if hasattr(self, 'name') else None
+            return self.parentApp.keyboard_handler.handle_keypress(key, current_form)
+        return False
+    
+    def show_context_help(self, field_name: Optional[str] = None):
+        """
+        Show context-sensitive help for current form or field.
+        
+        Args:
+            field_name: Optional field name for field-specific help
+        """
+        if not hasattr(self.parentApp, 'help_system'):
+            return
+        
+        form_name = self.name if hasattr(self, 'name') else None
+        help_text = self.parentApp.help_system.show_help(form_name, field_name)
+        
+        if help_text:
+            npyscreen.notify_confirm(help_text, title="Help")
+        else:
+            npyscreen.notify_confirm("No help available for this context.", title="Help")
+
+
 # ── Status Messages Widget ───────────────────────────────────────────────────
 class StatusMessages(npyscreen.BoxTitle):
     """Widget for displaying status messages in a scrollable box"""
@@ -114,7 +175,7 @@ class StatusMessages(npyscreen.BoxTitle):
 
 
 # ── Dashboard Form ────────────────────────────────────────────────────────────
-class DashboardForm(npyscreen.Form):
+class DashboardForm(SpectraBaseForm):
     """Dashboard showing system status and recent activity"""
 
     def create(self):
@@ -156,12 +217,28 @@ class DashboardForm(npyscreen.Form):
 
         self.add(npyscreen.FixedText, value="")
 
+        # Active Operations Section
+        self.add(npyscreen.FixedText, value="")
+        self.add(npyscreen.FixedText, value="═" * 70)
+        self.add(npyscreen.FixedText, value="Active Operations:")
+        self.add(npyscreen.FixedText, value="─" * 70)
+        
+        self.active_operations = self.add(npyscreen.Pager, height=4, name="Active Operations")
+        
         # Action Buttons
-        self.add(npyscreen.ButtonPress, name="Refresh Stats", when_pressed_function=self.refresh_stats)
-        self.add(npyscreen.ButtonPress, name="Back to Main Menu", when_pressed_function=self.back_to_main)
+        self.add(npyscreen.ButtonPress, name="Refresh Stats (Ctrl+R)", when_pressed_function=self.refresh_stats)
+        self.add(npyscreen.ButtonPress, name="Back to Main Menu (Esc)", when_pressed_function=self.back_to_main)
 
         # Load initial stats
         self.refresh_stats()
+    
+    def edit(self):
+        """Override edit to handle keyboard shortcuts"""
+        return super().edit()
+    
+    def whileEditing(self, *args, **keywords):
+        """Handle keyboard shortcuts"""
+        return super().whileEditing(*args, **keywords)
 
     def refresh_stats(self):
         """Refresh dashboard statistics"""
@@ -212,6 +289,35 @@ class DashboardForm(npyscreen.Form):
                 activity_lines.append(f"• Last operation: {manager.last_operation}")
 
             self.recent_activity.values = activity_lines
+            
+            # Update command history display
+            if hasattr(self.parentApp, 'command_history'):
+                history_entries = self.parentApp.command_history.get_recent(limit=10)
+                history_lines = []
+                for entry in history_entries:
+                    dt = datetime.fromtimestamp(entry.timestamp, TZ)
+                    time_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+                    status_icon = "✓" if entry.result_status == "success" else "✗" if entry.result_status == "error" else "→"
+                    history_lines.append(
+                        f"{status_icon} [{time_str}] {entry.operation_type}: "
+                        f"{entry.parameters.get('entity', entry.parameters.get('seed', 'N/A'))} "
+                        f"({entry.result_status})"
+                    )
+                if not history_lines:
+                    history_lines = ["No command history yet"]
+                self.command_history_display.values = history_lines
+            
+            # Update active operations
+            if hasattr(self.parentApp, 'operation_queue'):
+                queue_status = self.parentApp.operation_queue.get_status()
+                op_lines = [
+                    f"Queued: {queue_status['queued']} | Running: {queue_status['running']} | Completed: {queue_status['completed']}"
+                ]
+                if queue_status['running_ops']:
+                    op_lines.append(f"Running: {', '.join(queue_status['running_ops'][:3])}")
+                if not op_lines:
+                    op_lines = ["No active operations"]
+                self.active_operations.values = op_lines
 
             # Refresh display
             self.display()
@@ -469,11 +575,43 @@ class DiscoveryForm(npyscreen.Form):
         depth = self.depth.value
         msg_limit = self.msg_limit.value
         
+        # Track operation start
+        operation_start_time = time.time()
         self.status.add_message(f"Starting discovery from {seed} with depth {depth}...")
         
+        # Record in command history
+        if hasattr(self.parentApp, 'command_history'):
+            self.parentApp.command_history.add_entry(
+                operation_type="discover",
+                parameters={
+                    "seed": seed,
+                    "depth": depth,
+                    "msg_limit": msg_limit,
+                },
+                result_status="started",
+            )
+        
         def discovery_callback(discovered):
-            self.status.add_message(f"Discovery complete. Found {len(discovered)} groups.")
+            execution_time = (time.time() - operation_start_time) * 1000
+            status = "success" if discovered else "error"
+            self.status.add_message(f"Discovery complete. Found {len(discovered) if discovered else 0} groups.")
             self.update_groups_display()
+            
+            # Update history with completion
+            if hasattr(self.parentApp, 'command_history'):
+                self.parentApp.command_history.add_entry(
+                    operation_type="discover",
+                    parameters={
+                        "seed": seed,
+                        "depth": depth,
+                    },
+                    result_status=status,
+                    result_data={
+                        "groups_found": len(discovered) if discovered else 0,
+                        "execution_time_ms": execution_time,
+                    },
+                    execution_time_ms=execution_time,
+                )
         
         AsyncRunner.run_in_thread(
             self.manager.discover_from_seed(seed, depth=depth, max_messages=msg_limit),
@@ -586,8 +724,10 @@ class ArchiveForm(npyscreen.Form):
         self.add(npyscreen.TitleSelectOne, name="Account:", max_height=6,
                values=self.get_account_names(), scroll_exit=True)
         
-        # Channel input
+        # Channel input (with help hint)
         self.entity = self.add(npyscreen.TitleText, name="Channel/Group:", value=self.config["entity"])
+        # Add help hint
+        self.add(npyscreen.FixedText, value="  (Press ? for help on this field)", editable=False)
         
         # Archive options
         self.add(npyscreen.FixedText, value="")
@@ -644,6 +784,8 @@ class ArchiveForm(npyscreen.Form):
     
     def start_archive(self):
         """Start the archiving process"""
+        start_time = time.time()
+        
         # Get selected account
         account_idx = self.get_widget(3).value[0] if self.get_widget(3).value else 0
         if account_idx >= len(self.config.active_accounts):
@@ -668,10 +810,56 @@ class ArchiveForm(npyscreen.Form):
             f"Start archiving {entity}?\n\nThis may take a while depending on the size of the channel/group.",
             title="Confirm Archive"
         ):
+            # Record operation in command history
+            if hasattr(self.parentApp, 'command_history'):
+                self.parentApp.command_history.add_entry(
+                    operation_type="archive",
+                    parameters={
+                        "entity": entity,
+                        "account": selected_account.get("session_name", "unknown"),
+                        "download_media": self.dl_media.value,
+                        "download_avatars": self.dl_avatars.value,
+                        "sidecar_metadata": self.sidecar.value,
+                        "archive_topics": self.archive_topics.value,
+                    },
+                    result_status="started",
+                )
+            # Track operation start
+            operation_start_time = time.time()
+            history_entry = None
+            if hasattr(self.parentApp, 'command_history'):
+                history_entry = self.parentApp.command_history.add_entry(
+                    operation_type="archive",
+                    parameters={
+                        "entity": entity,
+                        "account": selected_account.get("session_name", "unknown"),
+                        "download_media": self.dl_media.value,
+                        "download_avatars": self.dl_avatars.value,
+                        "sidecar_metadata": self.sidecar.value,
+                        "archive_topics": self.archive_topics.value,
+                    },
+                    result_status="started",
+                )
+            
             self.status.add_message(f"Starting archive of {entity}...")
             
-            def archive_callback(_):
+            def archive_callback(result):
+                execution_time = (time.time() - operation_start_time) * 1000  # Convert to ms
+                status = "success" if result else "error"
                 self.status.add_message(f"Archive of {entity} complete.")
+                
+                # Update history with completion
+                if hasattr(self.parentApp, 'command_history'):
+                    self.parentApp.command_history.add_entry(
+                        operation_type="archive",
+                        parameters={
+                            "entity": entity,
+                            "account": selected_account.get("session_name", "unknown"),
+                        },
+                        result_status=status,
+                        result_data={"execution_time_ms": execution_time},
+                        execution_time_ms=execution_time,
+                    )
             
             AsyncRunner.run_in_thread(
                 self.manager.config.runner(self.config, selected_account),
@@ -1820,7 +2008,7 @@ class ForwardingSettingsForm(npyscreen.ActionFormV2):
 
 
 # ── Main Menu Form ─────────────────────────────────────────────────────────
-class MainMenuForm(npyscreen.Form):
+class MainMenuForm(SpectraBaseForm):
     """Main menu form for the application"""
     
     def create(self):
@@ -1830,6 +2018,19 @@ class MainMenuForm(npyscreen.Form):
         self.add(npyscreen.FixedText, value=TITLE)
         self.add(npyscreen.FixedText, value="Integrated Telegram Intelligence Platform")
         self.add(npyscreen.FixedText, value="")
+        
+        # Keyboard shortcuts hint
+        self.add(npyscreen.FixedText, value="Keyboard Shortcuts: Number keys (1-9) | Ctrl+D=Dashboard | Ctrl+A=Archive | Ctrl+F=Forwarding | Ctrl+H=Help | Ctrl+Q=Quit")
+        self.add(npyscreen.FixedText, value="Quick Actions: qa=Archive | qd=Dashboard | qf=Forwarding | qs=Search | qg=Graph | qm=Main")
+        self.add(npyscreen.FixedText, value="")
+        
+        # Add invisible shortcut widget to handle Ctrl+key shortcuts
+        # Note: npyscreen handles number keys automatically via button names
+        try:
+            shortcut_widget = ShortcutWidget(name="", editable=False, hidden=True)
+            self.add(shortcut_widget, rely=-1, relx=-1, width=0, height=0)
+        except Exception as e:
+            logger.debug(f"Could not add shortcut widget: {e}")
         
         # Options - merged from both versions, best features combined
         self.add(npyscreen.ButtonPress, name="1. Dashboard", when_pressed_function=self.dashboard_form)
@@ -1855,6 +2056,13 @@ class MainMenuForm(npyscreen.Form):
         self.parentApp.setup_manager()
         self.status.value = f"Ready. {len(self.parentApp.manager.config.active_accounts)} accounts available."
         self.status.display()
+    
+    def edit(self):
+        """Override edit to handle keyboard shortcuts"""
+        # Number keys (1-9) are automatically handled by npyscreen
+        # because buttons are named "1. Dashboard", "2. Archive", etc.
+        # Ctrl+key shortcuts are handled by ShortcutWidget if added
+        return super().edit()
     
     def dashboard_form(self):
         """Switch to dashboard form"""
@@ -1912,6 +2120,16 @@ class MainMenuForm(npyscreen.Form):
     
     def help_form(self):
         """Show help and about information"""
+        # Get keyboard shortcuts help if available
+        shortcuts_help = ""
+        if hasattr(self.parentApp, 'keyboard_handler'):
+            shortcuts_help = "\n\n" + self.parentApp.keyboard_handler.get_shortcut_help()
+        
+        # Get help system content if available
+        help_content = ""
+        if hasattr(self.parentApp, 'help_system'):
+            help_content = "\n\n" + self.parentApp.help_system.get_shortcuts_help()
+        
         about_text = """
 SPECTRA Telegram Intelligence Platform v3.0
 ------------------------------------------
@@ -1930,6 +2148,7 @@ Features:
 • Recursive group discovery
 • SQLite database for forensic analysis
 • Sidecar metadata for media files
+""" + shortcuts_help + help_content + """
 
 © 2023-2025 SWORD-EPI (SPECTRA Team)
 """
@@ -1944,6 +2163,10 @@ Features:
             # Clean up
             AsyncRunner.run_async(self.parentApp.manager.close())
             
+            # Close command history
+            if hasattr(self.parentApp, 'command_history'):
+                self.parentApp.command_history.close()
+            
             # Exit
             self.parentApp.switchForm(None)
 
@@ -1957,7 +2180,64 @@ class SpectraApp(npyscreen.NPSAppManaged):
         self.manager = None  # Will be initialized in setup_manager
         self.db_instance = None # Add a db_instance to the app
         
-        # Register forms
+        # Initialize keyboard shortcut handler
+        self.keyboard_handler = create_keyboard_handler(self)
+        
+        # Initialize command history
+        self.command_history = CommandHistory()
+        
+        # Initialize help system
+        self.help_system = create_help_system()
+        
+        # Initialize quick actions
+        self.quick_actions = create_quick_actions()
+        
+        # Initialize undo/redo manager
+        self.undo_redo = UndoRedoManager()
+        
+        # Initialize template manager
+        self.templates = TemplateManager()
+        
+        # Initialize error handler
+        self.error_handler = ErrorHandler()
+        
+        # Initialize operation queue
+        self.operation_queue = OperationQueue(max_concurrent=3)
+        
+        # Initialize profile manager
+        self.profiles = ProfileManager()
+        
+        # Initialize advanced search (will be set after db_instance is available)
+        self.advanced_search = None
+        
+        # Initialize workflow automation
+        self.workflow_automation = WorkflowAutomation()
+        
+        # Initialize operator preferences
+        self.preferences = OperatorPreferences()
+        
+        # Initialize remote-friendly (update with preferences)
+        self.remote_friendly = RemoteFriendly(preferences=self.preferences)
+        
+        # Initialize quick access menu
+        self.quick_access = QuickAccessMenu(self)
+        
+        # Initialize audit logger
+        self.audit_logger = AuditLogger()
+        
+        # Initialize smart defaults (will be set after command_history is available)
+        self.smart_defaults = None
+        
+        # Initialize auto-completer (will be set after db_instance is available)
+        self.auto_completer = None
+    
+    def show_command_palette(self):
+        """Show command palette (called by keyboard handler)"""
+        if hasattr(self, 'quick_access'):
+            self.quick_access.show_command_palette()
+        
+        # Initialize background job notifications
+        self.background_jobs = {}  # Will be initialized per form
         self.addForm("MAIN", MainMenuForm, name="SPECTRA Main Menu")
         self.addForm("DASHBOARD", DashboardForm, name="SPECTRA Dashboard")
         self.addForm("ARCHIVE", ArchiveForm, name="SPECTRA Archiver")
@@ -1988,6 +2268,32 @@ class SpectraApp(npyscreen.NPSAppManaged):
             # Create integrated manager
             self.manager = discovery.SpectraCrawlerManager(config)
             self.db_instance = SpectraDB(config.db_path)
+            
+            # Initialize auto-completer
+            from .auto_complete import AutoCompleter
+            self.auto_completer = AutoCompleter(
+                db_instance=self.db_instance,
+                command_history=self.command_history
+            )
+            
+            # Initialize advanced search
+            self.advanced_search = AdvancedSearch(db_instance=self.db_instance)
+            
+            # Initialize smart defaults
+            try:
+                from ..ai.continuous_learning import ContinuousLearner
+                from ..ai.pattern_detector import PatternDetector
+                continuous_learner = ContinuousLearner()
+                pattern_detector = PatternDetector()
+            except ImportError:
+                continuous_learner = None
+                pattern_detector = None
+            
+            self.smart_defaults = SmartDefaults(
+                command_history=self.command_history,
+                continuous_learner=continuous_learner,
+                pattern_detector=pattern_detector
+            )
             
             # Initialize in background
             AsyncRunner.run_in_thread(self.manager.initialize())

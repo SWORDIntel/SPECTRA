@@ -571,6 +571,7 @@ class HybridSearchEngine:
         qdrant_url: str = "http://localhost:6333",
         use_not_stisla: bool = True,
         use_qihse: bool = True,
+        cache_manager=None,
     ):
         """
         Initialize enhanced hybrid search engine.
@@ -580,9 +581,11 @@ class HybridSearchEngine:
             qdrant_url: Qdrant server URL
             use_not_stisla: Enable NOT_STISLA optimizations
             use_qihse: Enable QIHSE optimizations
+            cache_manager: Optional CacheManager instance
         """
         self.fts5 = SQLiteFTS5IndexManager(db_connection)
         self.vector = QdrantVectorManager(qdrant_url, use_qihse=use_qihse)
+        self.cache = cache_manager
         
         # Initialize NOT_STISLA engines
         self.not_stisla_timestamp = None
@@ -627,6 +630,24 @@ class HybridSearchEngine:
         Returns:
             Ranked list of SearchResult objects with algorithm metadata
         """
+        # Check cache first
+        if self.cache:
+            cache_key_params = {
+                'query': query,
+                'search_type': search_type.value if isinstance(search_type, SearchType) else search_type,
+                'limit': limit,
+                'filter_channel': filter_channel,
+                'filter_user': filter_user,
+                'date_from': date_from.isoformat() if date_from else None,
+                'date_to': date_to.isoformat() if date_to else None,
+            }
+            cached_results = self.cache.get_cached_search_result(
+                query, cache_key_params['search_type'], **{k: v for k, v in cache_key_params.items() if k not in ['query', 'search_type']}
+            )
+            if cached_results:
+                logger.debug("Cache hit for search query")
+                return cached_results
+        
         results = {}
 
         # 1. NOT_STISLA for structured data (timestamps, IDs)
@@ -751,7 +772,26 @@ class HybridSearchEngine:
 
         # Sort by combined relevance and return top results
         combined.sort(key=lambda x: x.relevance_score, reverse=True)
-        return combined[:limit]
+        final_results = combined[:limit]
+        
+        # Cache results
+        if self.cache:
+            cache_key_params = {
+                'query': query,
+                'search_type': search_type.value if isinstance(search_type, SearchType) else search_type,
+                'limit': limit,
+                'filter_channel': filter_channel,
+                'filter_user': filter_user,
+                'date_from': date_from.isoformat() if date_from else None,
+                'date_to': date_to.isoformat() if date_to else None,
+            }
+            self.cache.cache_search_result(
+                query, cache_key_params['search_type'], final_results,
+                ttl=1800,  # 30 minutes
+                **{k: v for k, v in cache_key_params.items() if k not in ['query', 'search_type']}
+            )
+        
+        return final_results
 
     def search_batch(
         self,

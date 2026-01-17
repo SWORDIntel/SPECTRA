@@ -52,20 +52,22 @@ class UnifiedSearchEngine:
     - Hybrid: Complex multi-criteria queries
     """
     
-    def __init__(self, db_connection, qdrant_url: str = "http://localhost:6333"):
+    def __init__(self, db_connection, qdrant_url: str = "http://localhost:6333", cache_manager=None):
         """
         Initialize unified search engine.
         
         Args:
             db_connection: SQLite database connection
             qdrant_url: Qdrant server URL
+            cache_manager: Optional CacheManager instance
         """
         self.db = db_connection
+        self.cache = cache_manager
         
-        # Initialize search engines
+        # Initialize search engines with cache
         self.fts5 = SQLiteFTS5IndexManager(db_connection)
         self.vector = QdrantVectorManager(qdrant_url)
-        self.hybrid = HybridSearchEngine(db_connection, qdrant_url)
+        self.hybrid = HybridSearchEngine(db_connection, qdrant_url, cache_manager=cache_manager)
         
         # Initialize NOT_STISLA engines
         self.not_stisla_timestamp = None
@@ -100,6 +102,14 @@ class UnifiedSearchEngine:
         Returns:
             List of SearchResult objects
         """
+        # Check cache first
+        if self.cache:
+            cache_params = {'query': query, 'search_type': search_type, 'limit': limit, **kwargs}
+            cached = self.cache.get_cached_search_result(query, search_type, **kwargs)
+            if cached:
+                logger.debug("Cache hit for unified search")
+                return cached
+        
         # Auto-detect optimal algorithm
         if search_type == "auto":
             search_type = self._detect_optimal_algorithm(query, kwargs)
@@ -117,7 +127,13 @@ class UnifiedSearchEngine:
             return self._search_hybrid(query, limit, **kwargs)
         
         else:  # "fts5" or "keyword"
-            return self._search_fts5(query, limit, **kwargs)
+            results = self._search_fts5(query, limit, **kwargs)
+        
+        # Cache results
+        if self.cache and results:
+            self.cache.cache_search_result(query, search_type, results, ttl=1800, **kwargs)
+        
+        return results
     
     def _detect_optimal_algorithm(self, query: str, filters: dict) -> str:
         """

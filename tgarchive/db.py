@@ -830,7 +830,8 @@ class SpectraDB(AbstractContextManager):
     # ── NOT_STISLA Optimized Search Methods ───────────────────────────────
     
     def find_messages_by_timestamp_range(self, start_time: int, end_time: int, 
-                                        channel_id: Optional[int] = None) -> List[int]:
+                                        channel_id: Optional[int] = None,
+                                        cache_manager=None) -> List[int]:
         """
         Find messages in timestamp range using NOT_STISLA for 22.28x speedup.
         
@@ -838,10 +839,17 @@ class SpectraDB(AbstractContextManager):
             start_time: Start Unix timestamp
             end_time: End Unix timestamp
             channel_id: Optional channel ID filter
+            cache_manager: Optional CacheManager for caching results
         
         Returns:
             List of message IDs in the timestamp range
         """
+        # Check cache
+        if cache_manager:
+            cache_key = f"timestamp_range:{start_time}:{end_time}:{channel_id}"
+            cached = cache_manager.get(cache_key)
+            if cached is not None:
+                return cached
         # Build query to get sorted timestamps and message IDs
         if channel_id is not None:
             query = """
@@ -905,7 +913,14 @@ class SpectraDB(AbstractContextManager):
         import bisect
         start_idx = bisect.bisect_left(timestamps, start_time)
         end_idx = bisect.bisect_right(timestamps, end_time)
-        return message_ids[start_idx:end_idx]
+        result = message_ids[start_idx:end_idx]
+        
+        # Cache result
+        if cache_manager:
+            cache_key = f"timestamp_range:{start_time}:{end_time}:{channel_id}"
+            cache_manager.set(cache_key, result, ttl=3600)
+        
+        return result
     
     def find_message_by_id_fast(self, message_id: int, channel_id: Optional[int] = None) -> Optional[dict]:
         """

@@ -89,6 +89,12 @@ from .semantic_analysis import (
     Correlation,
 )
 
+from .distributed_search import DistributedSearchCoordinator
+from .search_node import SearchNode
+from .cache_manager import CacheManager
+from .unified_search import UnifiedSearchEngine
+from .temporal_semantic import TemporalSemanticSearch
+
 __all__ = [
     # Hybrid Search
     "HybridSearchEngine",
@@ -105,4 +111,10 @@ __all__ = [
     "Cluster",
     "Anomaly",
     "Correlation",
+    # Distributed & Caching
+    "DistributedSearchCoordinator",
+    "SearchNode",
+    "CacheManager",
+    "UnifiedSearchEngine",
+    "TemporalSemanticSearch",
 ]

@@ -1,7 +1,7 @@
 """
 Vector Database Integration for SPECTRA
 
-Provides high-dimensional vector storage and similarity search using Qdrant.
+Provides high-dimensional vector storage and similarity search using QIHSE as primary backend.
 Operates alongside SQLite for hybrid query capabilities.
 
 Features:
@@ -9,21 +9,40 @@ Features:
 - Actor similarity detection
 - Behavioral clustering
 - Anomaly detection
-- Scalable to billions of vectors
+- Quantum-inspired search acceleration
 
 Author: SPECTRA Intelligence System
 """
 
 import os
 import logging
+import sqlite3
+import pickle
 from typing import List, Dict, Optional, Tuple, Any
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# Try to import Qdrant (optional dependency)
+# Try to import QIHSE (primary backend)
+try:
+    from ..search.qihse_bindings import (
+        QihseSearchEngine,
+        qihse_available,
+        QIHSE_TYPE_DOUBLE,
+    )
+    from ..search.qihse_config import (
+        create_qihse_config,
+        configure_qihse_for_semantic_search,
+    )
+    QIHSE_AVAILABLE = True
+except ImportError:
+    QIHSE_AVAILABLE = False
+    logger.warning("QIHSE not available. Install QIHSE library.")
+
+# Try to import Qdrant (optional fallback)
 try:
     from qdrant_client import QdrantClient
     from qdrant_client.models import (
@@ -34,7 +53,7 @@ try:
     QDRANT_AVAILABLE = True
 except ImportError:
     QDRANT_AVAILABLE = False
-    logger.warning("Qdrant not available. Install with: pip install qdrant-client")
+    logger.debug("Qdrant not available (optional fallback)")
 
 # Fallback to ChromaDB if available
 try:
@@ -56,13 +75,329 @@ class SearchResult:
 @dataclass
 class VectorStoreConfig:
     """Configuration for vector store."""
-    backend: str = "qdrant"  # "qdrant", "chromadb", or "numpy"
+    backend: str = "qihse"  # "qihse" (primary), "qdrant", "chromadb", or "numpy"
     path: str = "./data/vector_store"
     collection_name: str = "messages"
     vector_size: int = 384  # Dimension of embeddings
     distance_metric: str = "cosine"  # "cosine", "euclidean", or "dot"
     on_disk: bool = True  # Store vectors on disk (vs memory)
     quantization: Optional[str] = None  # "scalar", "product", or None
+    confidence_threshold: float = 0.95  # QIHSE confidence threshold
+
+
+class QIHSEVectorStore:
+    """
+    QIHSE-based vector storage (primary backend).
+    
+    Stores vectors directly using SQLite for persistence and QIHSE for quantum-inspired search.
+    Replaces Qdrant as the primary vector storage backend.
+    """
+
+    def __init__(self, config: VectorStoreConfig):
+        if not QIHSE_AVAILABLE or not qihse_available():
+            raise ImportError("QIHSE not available. Install QIHSE library.")
+
+        self.config = config
+        self.db_path = Path(config.path) / f"{config.collection_name}.db"
+        self.vectors_path = Path(config.path) / f"{config.collection_name}_vectors.npy"
+        
+        # Create directory if needed
+        Path(config.path).mkdir(parents=True, exist_ok=True)
+        
+        # Initialize QIHSE search engine
+        self.qihse_engine = QihseSearchEngine(QIHSE_TYPE_DOUBLE, 10000)
+        configure_qihse_for_semantic_search(
+            self.qihse_engine.config, config.vector_size, config.confidence_threshold
+        )
+        
+        # Initialize SQLite for metadata
+        self._init_database()
+        
+        # Load vectors into memory (for QIHSE search)
+        self._load_vectors()
+
+    def _init_database(self):
+        """Initialize SQLite database for vector metadata."""
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS vectors (
+                id TEXT PRIMARY KEY,
+                message_id INTEGER,
+                metadata TEXT,
+                created_at TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_message_id ON vectors(message_id)
+        """)
+        conn.commit()
+        conn.close()
+
+    def _load_vectors(self):
+        """Load vectors from disk into memory."""
+        if self.vectors_path.exists():
+            try:
+                data = np.load(self.vectors_path, allow_pickle=True).item()
+                self.vectors = data.get("vectors", {})
+                self.vector_ids = data.get("ids", [])
+                logger.info(f"Loaded {len(self.vectors)} vectors from {self.vectors_path}")
+            except Exception as e:
+                logger.warning(f"Failed to load vectors: {e}")
+                self.vectors = {}
+                self.vector_ids = []
+        else:
+            self.vectors = {}
+            self.vector_ids = []
+
+    def _save_vectors(self):
+        """Save vectors to disk."""
+        try:
+            data = {
+                "vectors": self.vectors,
+                "ids": self.vector_ids
+            }
+            np.save(self.vectors_path, data, allow_pickle=True)
+        except Exception as e:
+            logger.error(f"Failed to save vectors: {e}")
+
+    def upsert(self, id: str, vector: List[float], payload: Dict[str, Any]):
+        """Insert or update a vector with metadata."""
+        import json
+        
+        # Store vector in memory
+        self.vectors[id] = np.array(vector, dtype=np.float64)
+        if id not in self.vector_ids:
+            self.vector_ids.append(id)
+        
+        # Store metadata in SQLite
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("""
+            INSERT OR REPLACE INTO vectors (id, message_id, metadata, created_at)
+            VALUES (?, ?, ?, ?)
+        """, (
+            id,
+            payload.get("message_id"),
+            json.dumps(payload),
+            datetime.now().isoformat()
+        ))
+        conn.commit()
+        conn.close()
+        
+        # Save vectors to disk periodically (could be optimized with batching)
+        if len(self.vectors) % 100 == 0:
+            self._save_vectors()
+
+    def upsert_batch(self, points: List[Tuple[str, List[float], Dict[str, Any]]]):
+        """Batch insert/update vectors."""
+        import json
+        
+        conn = sqlite3.connect(self.db_path)
+        for id, vector, payload in points:
+            # Store vector in memory
+            self.vectors[id] = np.array(vector, dtype=np.float64)
+            if id not in self.vector_ids:
+                self.vector_ids.append(id)
+            
+            # Store metadata
+            conn.execute("""
+                INSERT OR REPLACE INTO vectors (id, message_id, metadata, created_at)
+                VALUES (?, ?, ?, ?)
+            """, (
+                id,
+                payload.get("message_id"),
+                json.dumps(payload),
+                datetime.now().isoformat()
+            ))
+        
+        conn.commit()
+        conn.close()
+        self._save_vectors()
+
+    def search(
+        self,
+        vector: List[float],
+        limit: int = 10,
+        filters: Optional[Dict[str, Any]] = None,
+        score_threshold: Optional[float] = None
+    ) -> List[SearchResult]:
+        """
+        Search for similar vectors using QIHSE.
+        
+        Args:
+            vector: Query vector
+            limit: Max results to return
+            filters: Metadata filters (e.g., {"threat_score": {"gte": 7.0}})
+            score_threshold: Minimum similarity score
+            
+        Returns:
+            List of SearchResult objects
+        """
+        if not self.vectors:
+            return []
+        
+        # Apply filters to get candidate IDs
+        candidate_ids = self._filter_ids(filters) if filters else list(self.vector_ids)
+        
+        if not candidate_ids:
+            return []
+        
+        # Get candidate vectors in order
+        candidate_vectors_list = []
+        valid_ids = []
+        for vector_id in candidate_ids:
+            if vector_id in self.vectors:
+                candidate_vectors_list.append(self.vectors[vector_id])
+                valid_ids.append(vector_id)
+        
+        if not candidate_vectors_list:
+            return []
+        
+        # Convert to numpy array
+        candidate_vectors = np.array(candidate_vectors_list, dtype=np.float64)
+        query_vector = np.array(vector, dtype=np.float64)
+        
+        # Use QIHSE for search
+        try:
+            threshold = score_threshold or self.config.confidence_threshold
+            results = self.qihse_engine.search_vectors(
+                candidate_vectors,
+                query_vector,
+                None,
+                threshold
+            )
+        except Exception as e:
+            logger.error(f"QIHSE search failed: {e}")
+            # Fallback to cosine similarity
+            return self._fallback_search(vector, valid_ids, limit, score_threshold)
+        
+        # Format results
+        search_results = []
+        for idx, confidence in results:
+            if idx >= len(valid_ids):
+                continue
+            
+            vector_id = valid_ids[idx]
+            if score_threshold and confidence < score_threshold:
+                continue
+            
+            # Get metadata
+            payload = self._get_metadata(vector_id)
+            
+            search_results.append(SearchResult(
+                id=vector_id,
+                score=float(confidence),
+                payload=payload
+            ))
+        
+        # Sort by score and limit
+        search_results.sort(key=lambda x: x.score, reverse=True)
+        return search_results[:limit]
+
+    def _filter_ids(self, filters: Dict[str, Any]) -> List[str]:
+        """Filter vector IDs by metadata."""
+        import json
+        
+        conn = sqlite3.connect(self.db_path)
+        query = "SELECT id FROM vectors WHERE 1=1"
+        params = []
+        
+        for key, value in filters.items():
+            if isinstance(value, dict):
+                # Range filter
+                if "gte" in value:
+                    query += f" AND json_extract(metadata, '$.{key}') >= ?"
+                    params.append(value["gte"])
+                if "lte" in value:
+                    query += f" AND json_extract(metadata, '$.{key}') <= ?"
+                    params.append(value["lte"])
+            else:
+                # Exact match
+                query += f" AND json_extract(metadata, '$.{key}') = ?"
+                params.append(value)
+        
+        cursor = conn.execute(query, params)
+        ids = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        
+        return ids
+
+    def _get_metadata(self, vector_id: str) -> Dict[str, Any]:
+        """Get metadata for a vector ID."""
+        import json
+        
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.execute("SELECT metadata FROM vectors WHERE id = ?", (vector_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return json.loads(row[0])
+        return {}
+
+    def _fallback_search(
+        self,
+        vector: List[float],
+        candidate_ids: List[str],
+        limit: int,
+        score_threshold: Optional[float]
+    ) -> List[SearchResult]:
+        """Fallback to cosine similarity if QIHSE fails."""
+        query_vec = np.array(vector, dtype=np.float64)
+        candidate_vectors = np.array([self.vectors[id] for id in candidate_ids], dtype=np.float64)
+        
+        # Cosine similarity
+        query_norm = np.linalg.norm(query_vec)
+        candidate_norms = np.linalg.norm(candidate_vectors, axis=1)
+        similarities = np.dot(candidate_vectors, query_vec) / (candidate_norms * query_norm)
+        
+        # Sort and filter
+        indices = np.argsort(similarities)[::-1][:limit]
+        
+        results = []
+        for idx in indices:
+            score = float(similarities[idx])
+            if score_threshold and score < score_threshold:
+                continue
+            
+            vector_id = candidate_ids[idx]
+            payload = self._get_metadata(vector_id)
+            
+            results.append(SearchResult(
+                id=vector_id,
+                score=score,
+                payload=payload
+            ))
+        
+        return results
+
+    def delete(self, id: str):
+        """Delete a vector by ID."""
+        # Remove from memory
+        self.vectors.pop(id, None)
+        if id in self.vector_ids:
+            self.vector_ids.remove(id)
+        
+        # Remove from SQLite
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("DELETE FROM vectors WHERE id = ?", (id,))
+        conn.commit()
+        conn.close()
+        
+        self._save_vectors()
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get collection statistics."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.execute("SELECT COUNT(*) FROM vectors")
+        count = cursor.fetchone()[0]
+        conn.close()
+        
+        return {
+            "points_count": count,
+            "vector_size": self.config.vector_size,
+            "backend": "qihse",
+            "memory_vectors": len(self.vectors)
+        }
 
 
 class QdrantVectorStore:
@@ -423,16 +758,24 @@ class VectorStoreManager:
     Unified interface for vector storage.
 
     Automatically selects best available backend:
-    1. Qdrant (preferred)
-    2. ChromaDB (fallback)
-    3. Numpy (testing only)
+    1. QIHSE (primary, preferred)
+    2. Qdrant (optional fallback)
+    3. ChromaDB (optional fallback)
+    4. Numpy (testing only)
     """
 
     def __init__(self, config: Optional[VectorStoreConfig] = None):
         self.config = config or VectorStoreConfig()
 
-        # Select backend
-        if self.config.backend == "qdrant" and QDRANT_AVAILABLE:
+        # Select backend based on config
+        if self.config.backend == "qihse" and QIHSE_AVAILABLE and qihse_available():
+            try:
+                self.store = QIHSEVectorStore(self.config)
+                logger.info("Using QIHSE vector store (primary backend)")
+            except Exception as e:
+                logger.warning(f"QIHSE initialization failed: {e}, trying fallback...")
+                self._select_fallback()
+        elif self.config.backend == "qdrant" and QDRANT_AVAILABLE:
             self.store = QdrantVectorStore(self.config)
             logger.info("Using Qdrant vector store")
         elif self.config.backend == "chromadb" and CHROMADB_AVAILABLE:
@@ -442,16 +785,35 @@ class VectorStoreManager:
             self.store = NumpyVectorStore(self.config)
             logger.warning("Using Numpy vector store (not scalable)")
         else:
-            # Auto-select fallback
-            if QDRANT_AVAILABLE:
-                self.store = QdrantVectorStore(self.config)
-                logger.info("Auto-selected Qdrant vector store")
-            elif CHROMADB_AVAILABLE:
-                self.store = ChromaDBVectorStore(self.config)
-                logger.info("Auto-selected ChromaDB vector store")
-            else:
-                self.store = NumpyVectorStore(self.config)
-                logger.warning("No vector DB available, using Numpy fallback")
+            # Auto-select fallback (QIHSE first, then Qdrant, then ChromaDB, then Numpy)
+            self._select_fallback()
+
+    def _select_fallback(self):
+        """Select fallback backend when primary is unavailable."""
+        if QIHSE_AVAILABLE and qihse_available():
+            try:
+                self.store = QIHSEVectorStore(self.config)
+                logger.info("Auto-selected QIHSE vector store (primary)")
+            except Exception as e:
+                logger.warning(f"QIHSE auto-select failed: {e}, trying Qdrant...")
+                if QDRANT_AVAILABLE:
+                    self.store = QdrantVectorStore(self.config)
+                    logger.info("Auto-selected Qdrant vector store (fallback)")
+                elif CHROMADB_AVAILABLE:
+                    self.store = ChromaDBVectorStore(self.config)
+                    logger.info("Auto-selected ChromaDB vector store (fallback)")
+                else:
+                    self.store = NumpyVectorStore(self.config)
+                    logger.warning("No vector DB available, using Numpy fallback")
+        elif QDRANT_AVAILABLE:
+            self.store = QdrantVectorStore(self.config)
+            logger.info("Auto-selected Qdrant vector store (fallback)")
+        elif CHROMADB_AVAILABLE:
+            self.store = ChromaDBVectorStore(self.config)
+            logger.info("Auto-selected ChromaDB vector store (fallback)")
+        else:
+            self.store = NumpyVectorStore(self.config)
+            logger.warning("No vector DB available, using Numpy fallback")
 
     def index_message(
         self,
@@ -564,10 +926,56 @@ class VectorStoreManager:
         Returns:
             List of anomalous messages
         """
-        # This would require computing channel embedding profile
-        # For now, return placeholder
-        logger.warning("Anomaly detection not fully implemented yet")
-        return []
+        if not self.vectors:
+            return []
+        
+        # Get all vectors for this channel
+        channel_vector_ids = []
+        channel_vectors_list = []
+        
+        for vector_id in self.vector_ids:
+            metadata = self._get_metadata(vector_id)
+            if metadata.get("channel_id") == channel_id and vector_id in self.vectors:
+                channel_vector_ids.append(vector_id)
+                channel_vectors_list.append(self.vectors[vector_id])
+        
+        if len(channel_vectors_list) < 2:
+            # Need at least 2 messages to compute a profile
+            return []
+        
+        # Compute channel embedding profile (mean/centroid)
+        channel_vectors = np.array(channel_vectors_list, dtype=np.float64)
+        channel_profile = np.mean(channel_vectors, axis=0)
+        channel_profile_norm = np.linalg.norm(channel_profile)
+        
+        if channel_profile_norm == 0:
+            return []
+        
+        # Compute similarity of each message to channel profile
+        anomalies = []
+        for i, vector_id in enumerate(channel_vector_ids):
+            message_vector = channel_vectors[i]
+            message_norm = np.linalg.norm(message_vector)
+            
+            if message_norm == 0:
+                continue
+            
+            # Cosine similarity to channel profile
+            similarity = np.dot(message_vector, channel_profile) / (message_norm * channel_profile_norm)
+            
+            # Flag as anomaly if similarity is below threshold
+            if similarity < threshold:
+                metadata = self._get_metadata(vector_id)
+                anomalies.append(SearchResult(
+                    id=vector_id,
+                    score=float(similarity),
+                    payload=metadata
+                ))
+        
+        # Sort by similarity (lowest = most anomalous)
+        anomalies.sort(key=lambda x: x.score)
+        
+        return anomalies
 
     def delete_message(self, message_id: int):
         """Remove a message from the vector store."""
@@ -582,10 +990,11 @@ class VectorStoreManager:
 if __name__ == "__main__":
     # Initialize vector store
     config = VectorStoreConfig(
-        backend="qdrant",  # or "chromadb", "numpy"
+        backend="qihse",  # Primary: "qihse", fallback: "qdrant", "chromadb", "numpy"
         path="./data/vector_test",
         vector_size=384,
-        distance_metric="cosine"
+        distance_metric="cosine",
+        confidence_threshold=0.95
     )
 
     store = VectorStoreManager(config)

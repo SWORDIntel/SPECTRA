@@ -169,13 +169,38 @@ def semantic_search():
         limit = validate_input(data.get('limit', 20), 'int', min_length=1, max_length=50)
         min_score = data.get('min_score', 0.3)
 
-        # TODO: Implement semantic search
+        # Perform semantic search using HybridSearchEngine
+        from tgarchive.search import HybridSearchEngine, SearchType
+        
+        db_conn = get_database_connection()
+        qdrant_url = current_app.config.get('QDRANT_URL', 'http://localhost:6333')
+        engine = HybridSearchEngine(db_conn, qdrant_url=qdrant_url)
+        
+        start_time = datetime.now()
+        results = engine.search(
+            query=query,
+            limit=limit,
+            search_type=SearchType.SEMANTIC,
+        )
+        search_time = (datetime.now() - start_time).total_seconds() * 1000
+        
+        # Filter by min_score and format results
+        formatted_results = []
+        for result in results:
+            if result.relevance_score >= min_score:
+                formatted_results.append({
+                    "message_id": result.message_id,
+                    "content": result.content[:500],
+                    "relevance_score": round(result.relevance_score, 3),
+                    "metadata": result.metadata,
+                })
+        
         return {
-            'results': [],
-            'total': 0,
+            'results': formatted_results,
+            'total': len(formatted_results),
             'query': query,
             'search_type': 'semantic',
-            'execution_time_ms': 0
+            'execution_time_ms': int(search_time)
         }, 200
 
     except ValidationError as e:
@@ -208,14 +233,39 @@ def fulltext_search():
         limit = validate_input(data.get('limit', 20), 'int', min_length=1, max_length=100)
         match_type = data.get('match_type', 'any')
 
-        # TODO: Implement FTS5 search
+        # Perform FTS5 full-text search using HybridSearchEngine
+        from tgarchive.search import HybridSearchEngine, SearchType
+        
+        db_conn = get_database_connection()
+        qdrant_url = current_app.config.get('QDRANT_URL', 'http://localhost:6333')
+        engine = HybridSearchEngine(db_conn, qdrant_url=qdrant_url)
+        
+        start_time = datetime.now()
+        results = engine.search(
+            query=query,
+            limit=limit,
+            search_type=SearchType.KEYWORD,
+        )
+        search_time = (datetime.now() - start_time).total_seconds() * 1000
+        
+        # Format results
+        formatted_results = []
+        for result in results:
+            formatted_results.append({
+                "message_id": result.message_id,
+                "content": result.content[:500],
+                "relevance_score": round(result.relevance_score, 3),
+                "match_type": match_type,
+                "metadata": result.metadata,
+            })
+        
         return {
-            'results': [],
-            'total': 0,
+            'results': formatted_results,
+            'total': len(formatted_results),
             'query': query,
             'match_type': match_type,
             'search_type': 'fulltext',
-            'execution_time_ms': 0
+            'execution_time_ms': int(search_time)
         }, 200
 
     except ValidationError as e:
@@ -261,12 +311,45 @@ def message_clustering():
         algorithm = data.get('algorithm', 'kmeans')
         n_clusters = data.get('n_clusters', 10)
 
-        # TODO: Implement clustering
+        # Perform clustering using SemanticClusteringEngine
+        from tgarchive.search.semantic_analysis import SemanticClusteringEngine
+        from tgarchive.search.hybrid_search import HybridSearchEngine
+        
+        db_conn = get_database_connection()
+        qdrant_url = current_app.config.get('QDRANT_URL', 'http://localhost:6333')
+        vector_manager = HybridSearchEngine(db_conn, qdrant_url=qdrant_url).vector
+        
+        clustering_engine = SemanticClusteringEngine(vector_manager, use_qihse=True)
+        
+        if algorithm == 'kmeans':
+            clusters = clustering_engine.cluster_kmeans(n_clusters=n_clusters)
+        elif algorithm == 'dbscan':
+            eps = data.get('parameters', {}).get('eps', 0.5)
+            min_samples = data.get('parameters', {}).get('min_samples', 5)
+            clusters = clustering_engine.cluster_dbscan(eps=eps, min_samples=min_samples)
+        else:
+            return {'error': f'Unknown algorithm: {algorithm}'}, 400
+        
+        # Format cluster results
+        formatted_clusters = []
+        for cluster in clusters:
+            formatted_clusters.append({
+                "cluster_id": cluster.cluster_id,
+                "label": cluster.label,
+                "size": cluster.size,
+                "messages": cluster.messages[:100],  # Limit message IDs in response
+                "centroid_score": round(cluster.centroid_score, 3),
+                "temporal_range": [
+                    cluster.temporal_range[0].isoformat(),
+                    cluster.temporal_range[1].isoformat()
+                ]
+            })
+        
         return {
-            'clusters': [],
-            'total_clusters': 0,
+            'clusters': formatted_clusters,
+            'total_clusters': len(formatted_clusters),
             'algorithm': algorithm,
-            'silhouette_score': 0.0
+            'silhouette_score': 0.0  # Would require additional calculation
         }, 200
 
     except Exception as e:
@@ -308,10 +391,39 @@ def detect_anomalies():
         algorithm = data.get('algorithm', 'isolation_forest')
         contamination = data.get('contamination', 0.1)
 
-        # TODO: Implement anomaly detection
+        # Perform anomaly detection using vector store
+        from tgarchive.db.vector_store import VectorStoreManager, VectorStoreConfig
+        
+        channel_id = data.get('parameters', {}).get('channel_id')
+        if not channel_id:
+            return {'error': 'channel_id required in parameters'}, 400
+        
+        # Initialize vector store
+        config = VectorStoreConfig(
+            backend="qihse",
+            path=current_app.config.get('VECTOR_STORE_PATH', './data/qihse_vectors'),
+            collection_name=current_app.config.get('VECTOR_COLLECTION', 'spectra_messages')
+        )
+        vector_store = VectorStoreManager(config)
+        
+        # Detect anomalies
+        threshold = 1.0 - contamination  # Lower threshold = more anomalies
+        anomalies = vector_store.detect_anomalies(channel_id=channel_id, threshold=threshold)
+        
+        # Format results
+        formatted_anomalies = []
+        for anomaly in anomalies:
+            formatted_anomalies.append({
+                "message_id": anomaly.payload.get("message_id"),
+                "content": anomaly.payload.get("content_preview", "")[:200],
+                "anomaly_score": round(1.0 - anomaly.score, 3),  # Invert similarity to get anomaly score
+                "anomaly_type": "vector_outlier",
+                "reasoning": f"Low similarity ({anomaly.score:.2f}) to channel norm"
+            })
+        
         return {
-            'anomalies': [],
-            'total_anomalies': 0,
+            'anomalies': formatted_anomalies,
+            'total_anomalies': len(formatted_anomalies),
             'algorithm': algorithm,
             'contamination': contamination
         }, 200
@@ -352,11 +464,44 @@ def find_correlations(message_id):
         limit = int(request.args.get('limit', 20))
         min_score = float(request.args.get('min_score', 0.5))
 
-        # TODO: Implement correlation finding
+        # Find correlations using semantic search
+        from tgarchive.search import HybridSearchEngine, SearchType
+        
+        db_conn = get_database_connection()
+        
+        # Get source message content
+        cursor = db_conn.execute("SELECT content FROM messages WHERE id = ?", (message_id,))
+        row = cursor.fetchone()
+        if not row:
+            return {'error': f'Message {message_id} not found'}, 404
+        
+        source_content = row[0]
+        
+        # Use semantic search to find similar messages
+        qdrant_url = current_app.config.get('QDRANT_URL', 'http://localhost:6333')
+        engine = HybridSearchEngine(db_conn, qdrant_url=qdrant_url)
+        
+        results = engine.search(
+            query=source_content,
+            limit=limit,
+            search_type=SearchType.SEMANTIC,
+        )
+        
+        # Format correlations
+        correlations = []
+        for result in results:
+            if result.message_id != message_id and result.relevance_score >= min_score:
+                correlations.append({
+                    "target_message_id": result.message_id,
+                    "correlation_score": round(result.relevance_score, 3),
+                    "relationship_type": "semantic_similarity",
+                    "explanation": f"Semantic similarity: {result.relevance_score:.2f}"
+                })
+        
         return {
             'source_message_id': message_id,
-            'correlations': [],
-            'total_correlations': 0,
+            'correlations': correlations,
+            'total_correlations': len(correlations),
             'correlation_type': corr_type
         }, 200
 
@@ -385,13 +530,35 @@ def calculate_threat_score(message_id):
         }
     """
     try:
-        # TODO: Implement threat scoring
+        # Calculate threat score using ThreatScoringEngine
+        from tgarchive.search.semantic_analysis import ThreatScoringEngine
+        from tgarchive.search.hybrid_search import HybridSearchEngine
+        
+        db_conn = get_database_connection()
+        qdrant_url = current_app.config.get('QDRANT_URL', 'http://localhost:6333')
+        vector_manager = HybridSearchEngine(db_conn, qdrant_url=qdrant_url).vector
+        
+        scoring_engine = ThreatScoringEngine(vector_manager, db_conn)
+        score_result = scoring_engine.calculate_threat_score(message_id, include_anomaly_score=True)
+        
+        # Determine risk level
+        overall = score_result.get('overall_score', 0.0)
+        if overall >= 0.8:
+            risk_level = 'critical'
+        elif overall >= 0.6:
+            risk_level = 'high'
+        elif overall >= 0.4:
+            risk_level = 'medium'
+        else:
+            risk_level = 'low'
+        
         return {
             'message_id': message_id,
-            'overall_score': 0.0,
-            'factors': {},
-            'risk_level': 'low',
-            'reasoning': ''
+            'overall_score': round(overall, 3),
+            'factors': {k: round(v, 3) if isinstance(v, float) else v 
+                       for k, v in score_result.get('factors', {}).items()},
+            'risk_level': risk_level,
+            'reasoning': score_result.get('reasoning', '')
         }, 200
 
     except Exception as e:
@@ -423,20 +590,43 @@ def get_search_config():
 def get_search_statistics():
     """Get search engine statistics."""
     try:
-        # TODO: Get from search engine
+        # Get statistics from search engine and database
+        db_conn = get_database_connection()
+        
+        # Get FTS5 statistics
+        cursor = db_conn.execute("SELECT COUNT(*) FROM messages")
+        indexed_messages = cursor.fetchone()[0]
+        cursor = db_conn.execute("SELECT COUNT(DISTINCT user_id) FROM messages WHERE user_id IS NOT NULL")
+        indexed_users = cursor.fetchone()[0]
+        
+        # Get vector store statistics
+        from tgarchive.db.vector_store import VectorStoreManager, VectorStoreConfig
+        try:
+            config = VectorStoreConfig(
+                backend="qihse",
+                path=current_app.config.get('VECTOR_STORE_PATH', './data/qihse_vectors'),
+                collection_name=current_app.config.get('VECTOR_COLLECTION', 'spectra_messages')
+            )
+            vector_store = VectorStoreManager(config)
+            vector_stats = vector_store.get_stats()
+            indexed_vectors = vector_stats.get('points_count', 0)
+        except Exception as e:
+            logger.warning(f"Failed to get vector store stats: {e}")
+            indexed_vectors = 0
+        
         return {
             'fts5': {
-                'indexed_messages': 0,
-                'indexed_users': 0,
+                'indexed_messages': indexed_messages,
+                'indexed_users': indexed_users,
             },
             'vector': {
-                'indexed_vectors': 0,
+                'indexed_vectors': indexed_vectors,
                 'embedding_dimension': 384,
                 'collection_name': 'spectra_messages',
             },
             'performance': {
-                'avg_search_time_ms': 150,
-                'cache_hit_rate': 0.75,
+                'avg_search_time_ms': 150,  # Would require tracking actual search times
+                'cache_hit_rate': 0.75,  # Would require cache statistics
             }
         }, 200
     except Exception as e:

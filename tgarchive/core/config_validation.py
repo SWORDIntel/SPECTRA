@@ -223,6 +223,72 @@ CONFIG_SCHEMA = {
                     "maximum": 86400
                 }
             }
+        },
+        "advanced_features": {
+            "type": "object",
+            "properties": {
+                "enabled": {"type": "boolean"},
+                "vector_database": {
+                    "type": "object",
+                    "properties": {
+                        "backend": {
+                            "type": "string",
+                            "enum": ["qihse", "qdrant", "chromadb", "numpy"]
+                        },
+                        "auto_index_messages": {"type": "boolean"},
+                        "embedding_model": {"type": "string"},
+                        "vector_dimension": {
+                            "type": "integer",
+                            "minimum": 128,
+                            "maximum": 2048
+                        },
+                        "collection_name": {"type": "string"},
+                        "confidence_threshold": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0
+                        },
+                        "path": {"type": "string"}
+                    }
+                },
+                "cnsa_crypto": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {"type": "boolean"},
+                        "encrypt_archives": {"type": "boolean"},
+                        "sign_reports": {"type": "boolean"},
+                        "keystore_path": {"type": "string"},
+                        "key_rotation_days": {
+                            "type": "integer",
+                            "minimum": 1
+                        }
+                    }
+                },
+                "threat_analysis": {
+                    "type": "object",
+                    "properties": {
+                        "temporal_analysis": {"type": "boolean"},
+                        "attribution_engine": {"type": "boolean"},
+                        "auto_analyze_users": {"type": "boolean"},
+                        "min_messages_for_analysis": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "burst_detection_threshold": {
+                            "type": "number",
+                            "minimum": 0.0
+                        },
+                        "timezone_inference": {"type": "boolean"},
+                        "similarity_threshold": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0
+                        },
+                        "tool_detection": {"type": "boolean"},
+                        "ai_detection": {"type": "boolean"}
+                    }
+                }
+            }
         }
     }
 }

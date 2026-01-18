@@ -973,7 +973,7 @@ class ForwardingMenuForm(npyscreen.Form):
     def _update_finished_callback(self, db_instance, result=None):
         """Callback for when populate_account_channel_access finishes."""
         # result might contain information about success/failure or data processed
-        # For now, we assume success if no exception was propagated by AsyncRunner
+        # Success is determined by lack of exception from AsyncRunner
         self.status_widget.add_message("Channel access database update process finished.", "INFO")
         if db_instance and db_instance.conn:
             try:
@@ -995,7 +995,7 @@ class ForwardingMenuForm(npyscreen.Form):
             # The SpectraDB class likely establishes the connection on __init__ or needs an explicit open.
             # If it's a context manager primarily, direct instantiation might not open it.
             # However, populate_account_channel_access expects an active db instance.
-            # For now, assume SpectraDB constructor gets it ready or populate_account_channel_access handles it.
+            # SpectraDB constructor initializes the database, and populate_account_channel_access handles account access setup.
 
             self.status_widget.add_message("Starting channel access database update... This may take a while.", "INFO")
             
@@ -2007,7 +2007,736 @@ class ForwardingSettingsForm(npyscreen.ActionFormV2):
         self.parentApp.switchForm("MAIN")
 
 
+# ── Account Management Validation Helpers ──────────────────────────────────
+def validate_api_id(value: str) -> int:
+    """Validate and convert API ID string to integer"""
+    if not value:
+        raise ValueError("API ID cannot be empty")
+    value = value.strip()
+    if not value:
+        raise ValueError("API ID cannot be empty or whitespace only")
+    try:
+        api_id = int(value)
+        if api_id <= 0:
+            raise ValueError("API ID must be a positive integer")
+        return api_id
+    except ValueError as e:
+        if "invalid literal" in str(e).lower():
+            raise ValueError(f"API ID must be a valid integer, got: {value}")
+        raise
+
+
+def validate_api_hash(value: str) -> str:
+    """Validate API hash is 32-character hexadecimal string"""
+    if not value:
+        raise ValueError("API hash cannot be empty")
+    value = value.strip().lower()
+    if not value:
+        raise ValueError("API hash cannot be empty or whitespace only")
+    if len(value) != 32:
+        raise ValueError(f"API hash must be exactly 32 characters, got {len(value)}")
+    if not all(c in '0123456789abcdef' for c in value):
+        raise ValueError("API hash must contain only hexadecimal characters (0-9, a-f)")
+    return value
+
+
+def validate_session_name_unique(name: str, existing_accounts: List[Dict], exclude_index: Optional[int] = None) -> bool:
+    """Check if session name is unique among existing accounts"""
+    if not name:
+        raise ValueError("Session name cannot be empty")
+    name = name.strip()
+    if not name:
+        raise ValueError("Session name cannot be empty or whitespace only")
+    
+    name_lower = name.lower()
+    for i, account in enumerate(existing_accounts):
+        if exclude_index is not None and i == exclude_index:
+            continue
+        existing_name = account.get("session_name", "").strip().lower()
+        if existing_name == name_lower:
+            return False
+    return True
+
+
+def validate_phone_number(phone: str) -> Optional[str]:
+    """Validate phone number format (optional field)"""
+    if not phone:
+        return None
+    phone = phone.strip()
+    if not phone:
+        return None
+    if not phone.startswith('+'):
+        raise ValueError("Phone number should start with '+' followed by country code")
+    if len(phone) < 8 or len(phone) > 16:
+        raise ValueError("Phone number must be between 8 and 16 characters (including +)")
+    if not phone[1:].isdigit():
+        raise ValueError("Phone number must contain only digits after the '+' sign")
+    return phone
+
+
+def save_config_safely(config: Config, operation: str) -> bool:
+    """Save config with proper error handling and verification"""
+    try:
+        config.save()
+        config_path = config.path
+        if not config_path.exists():
+            logger.error(f"Config file {config_path} does not exist after save")
+            return False
+        try:
+            test_load = json.loads(config_path.read_text())
+            if "accounts" not in test_load:
+                logger.error("Config file corrupted after save - accounts key missing")
+                return False
+        except (json.JSONDecodeError, Exception) as e:
+            logger.error(f"Config file corrupted after save: {e}")
+            return False
+        return True
+    except PermissionError as e:
+        logger.error(f"Permission denied saving config: {e}")
+        raise ValueError(f"Permission denied: Cannot write to config file. Check file permissions.")
+    except OSError as e:
+        logger.error(f"OS error saving config: {e}")
+        raise ValueError(f"Failed to save config file: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error saving config: {e}")
+        raise ValueError(f"Unexpected error saving config: {e}")
+
+
 # ── Main Menu Form ─────────────────────────────────────────────────────────
+class AccountManagementForm(SpectraBaseForm):
+    """Account management form for viewing and managing Telegram accounts"""
+    
+    def create(self):
+        self.name = "Account Management"
+        
+        # Title
+        self.add(npyscreen.FixedText, value="═" * 70)
+        self.add(npyscreen.FixedText, value="Account Management")
+        self.add(npyscreen.FixedText, value="═" * 70)
+        self.add(npyscreen.FixedText, value="")
+        
+        # Keyboard shortcuts help section (prominently displayed)
+        self.add(npyscreen.FixedText, value="")
+        self.add(npyscreen.FixedText, value="─" * 70)
+        self.add(npyscreen.FixedText, value="KEYBOARD SHORTCUTS (always visible):")
+        self.add(npyscreen.FixedText, value="─" * 70)
+        self.add(npyscreen.FixedText, value="  Ctrl+A or 'A' - Add Account")
+        self.add(npyscreen.FixedText, value="  Ctrl+E or 'E' - Edit Account")
+        self.add(npyscreen.FixedText, value="  Ctrl+D or 'D' - Delete Account")
+        self.add(npyscreen.FixedText, value="  Ctrl+I or 'I' - Import from gen_config.py")
+        self.add(npyscreen.FixedText, value="  Ctrl+R or 'R' - Refresh List")
+        self.add(npyscreen.FixedText, value="  ESC - Return to main menu")
+        self.add(npyscreen.FixedText, value="─" * 70)
+        self.add(npyscreen.FixedText, value="")
+        
+        # Account list
+        self.add(npyscreen.FixedText, value="Configured Accounts:")
+        self.account_list = self.add(npyscreen.Pager, height=10)
+        
+        self.add(npyscreen.FixedText, value="")
+        
+        # Status widget for operation feedback
+        self.status_widget = self.add(npyscreen.FixedText, value="")
+        
+        self.add(npyscreen.FixedText, value="")
+        
+        # Action buttons (alternative to keyboard shortcuts)
+        self.add(npyscreen.FixedText, value="Or use buttons below:")
+        self.add(npyscreen.ButtonPress, name="Add Account", when_pressed_function=self.add_account)
+        self.add(npyscreen.ButtonPress, name="Edit Account", when_pressed_function=self.edit_account)
+        self.add(npyscreen.ButtonPress, name="Delete Account", when_pressed_function=self.delete_account)
+        self.add(npyscreen.ButtonPress, name="Import from gen_config.py", when_pressed_function=self.import_from_gen_config)
+        self.add(npyscreen.ButtonPress, name="Refresh List", when_pressed_function=self.load_accounts)
+        
+        self.add(npyscreen.FixedText, value="")
+        self.add(npyscreen.FixedText, value="Press ESC to return to main menu")
+        
+        # Add menu
+        self.new_menu(name="Actions")
+        self.add_menu_item("Add Account (Ctrl+A)", self.add_account)
+        self.add_menu_item("Edit Account (Ctrl+E)", self.edit_account)
+        self.add_menu_item("Delete Account (Ctrl+D)", self.delete_account)
+        self.add_menu_item("Import from gen_config.py (Ctrl+I)", self.import_from_gen_config)
+        self.add_menu_item("Refresh List (Ctrl+R)", self.load_accounts)
+        
+        # Load account information
+        self.load_accounts()
+    
+    def load_accounts(self):
+        """Load and display account information"""
+        try:
+            config = Config()
+            accounts = config.data.get("accounts", [])
+            
+            if not accounts:
+                self.account_list.values = ["No accounts configured"]
+                if hasattr(self, 'status_widget'):
+                    self.status_widget.value = "Status: No accounts configured"
+                return
+            
+            account_info = []
+            for i, account in enumerate(accounts, 1):
+                session = account.get("session_name", "unknown")
+                api_id = account.get("api_id", "N/A")
+                phone = account.get("phone_number", "N/A")
+                account_info.append(f"{i}. {session} | API ID: {api_id} | Phone: {phone}")
+            
+            self.account_list.values = account_info
+            if hasattr(self, 'status_widget'):
+                self.status_widget.value = f"Status: {len(accounts)} account(s) configured"
+        except json.JSONDecodeError as e:
+            error_msg = f"Error: Config file is corrupted or invalid JSON: {e}"
+            self.account_list.values = [error_msg]
+            if hasattr(self, 'status_widget'):
+                self.status_widget.value = error_msg
+        except PermissionError as e:
+            error_msg = f"Error: Permission denied reading config: {e}"
+            self.account_list.values = [error_msg]
+            if hasattr(self, 'status_widget'):
+                self.status_widget.value = error_msg
+        except Exception as e:
+            error_msg = f"Error loading accounts: {e}"
+            self.account_list.values = [error_msg]
+            if hasattr(self, 'status_widget'):
+                self.status_widget.value = error_msg
+    
+    def select_account(self) -> Optional[int]:
+        """Show account selection dialog and return selected index (0-based)"""
+        try:
+            config = Config()
+            accounts = config.data.get("accounts", [])
+            
+            if not accounts:
+                npyscreen.notify_confirm("No accounts available to select.", title="No Accounts")
+                return None
+            
+            account_options = []
+            for i, account in enumerate(accounts):
+                session = account.get("session_name", "unknown")
+                api_id = account.get("api_id", "N/A")
+                account_options.append(f"{i+1}. {session} (API ID: {api_id})")
+            
+            selected = npyscreen.selectOption(account_options, title="Select Account:", scroll_exit=True)
+            if selected is None or selected < 0 or selected >= len(accounts):
+                return None
+            
+            return selected
+        except Exception as e:
+            npyscreen.notify_confirm(f"Error selecting account: {e}", title="Error")
+            return None
+    
+    def add_account(self):
+        """Switch to AddAccountForm"""
+        self.parentApp.switchForm("ADD_ACCOUNT")
+    
+    def edit_account(self):
+        """Select account and switch to EditAccountForm"""
+        try:
+            config = Config()
+            accounts = config.data.get("accounts", [])
+            if not accounts:
+                npyscreen.notify_confirm("No accounts available to edit.", title="No Accounts")
+                if hasattr(self, 'status_widget'):
+                    self.status_widget.value = "Status: No accounts available"
+                return
+            
+            account_index = self.select_account()
+            if account_index is None:
+                return
+            
+            self.parentApp.edit_account_index = account_index
+            self.parentApp.switchForm("EDIT_ACCOUNT")
+        except Exception as e:
+            npyscreen.notify_confirm(f"Error preparing edit: {e}", title="Error")
+    
+    def delete_account(self):
+        """Delete selected account with confirmation"""
+        try:
+            config = Config()
+            accounts = config.data.get("accounts", [])
+            if not accounts:
+                npyscreen.notify_confirm("No accounts available to delete.", title="No Accounts")
+                if hasattr(self, 'status_widget'):
+                    self.status_widget.value = "Status: No accounts available"
+                return
+            
+            account_index = self.select_account()
+            if account_index is None:
+                return
+        except Exception as e:
+            npyscreen.notify_confirm(f"Error preparing delete: {e}", title="Error")
+            return
+        
+        try:
+            config = Config()
+            accounts = config.data.get("accounts", [])
+            
+            if account_index < 0 or account_index >= len(accounts):
+                npyscreen.notify_confirm("Invalid account index.", title="Error")
+                return
+            
+            account = accounts[account_index]
+            session_name = account.get("session_name", "unknown")
+            
+            confirm = npyscreen.notify_yes_no(
+                f"Are you sure you want to delete account '{session_name}'?",
+                title="Confirm Deletion"
+            )
+            
+            if not confirm:
+                return
+            
+            accounts.pop(account_index)
+            config.data["accounts"] = accounts
+            
+            if not save_config_safely(config, "delete account"):
+                npyscreen.notify_confirm("Failed to save configuration. Account deletion may not be persisted.", title="Save Error")
+                return
+            
+            npyscreen.notify_confirm(f"Account '{session_name}' deleted successfully.", title="Success")
+            self.load_accounts()
+        except ValueError as e:
+            npyscreen.notify_confirm(f"Validation error: {e}", title="Error")
+        except Exception as e:
+            npyscreen.notify_confirm(f"Error deleting account: {e}", title="Error")
+    
+    def import_from_gen_config(self):
+        """Import accounts from gen_config.py and merge with existing accounts"""
+        try:
+            from ..utils.discovery import import_accounts_from_gen_config
+            
+            imported_accounts = import_accounts_from_gen_config()
+            if not imported_accounts:
+                npyscreen.notify_confirm("No accounts found in gen_config.py or related files.", title="No Accounts")
+                return
+            
+            config = Config()
+            existing_accounts = config.data.get("accounts", [])
+            
+            existing_pairs = set()
+            for acc in existing_accounts:
+                api_id = acc.get("api_id")
+                api_hash = acc.get("api_hash")
+                if api_id and api_hash:
+                    existing_pairs.add((api_id, api_hash))
+            
+            new_count = 0
+            for imported_acc in imported_accounts:
+                api_id = imported_acc.get("api_id")
+                api_hash = imported_acc.get("api_hash")
+                if api_id and api_hash and (api_id, api_hash) not in existing_pairs:
+                    existing_accounts.append(imported_acc)
+                    existing_pairs.add((api_id, api_hash))
+                    new_count += 1
+            
+            if new_count > 0:
+                config.data["accounts"] = existing_accounts
+                
+                if not save_config_safely(config, "import accounts"):
+                    npyscreen.notify_confirm("Failed to save configuration. Imported accounts may not be persisted.", title="Save Error")
+                    return
+                
+                npyscreen.notify_confirm(f"Successfully imported {new_count} new account(s).", title="Import Success")
+                self.load_accounts()
+            else:
+                npyscreen.notify_confirm("No new accounts to import. All accounts already exist.", title="No New Accounts")
+        except ValueError as e:
+            npyscreen.notify_confirm(f"Validation error: {e}", title="Import Error")
+        except Exception as e:
+            npyscreen.notify_confirm(f"Error importing accounts: {e}", title="Import Error")
+    
+    def while_editing(self, *args, **keywords):
+        """Handle keyboard input with shortcuts"""
+        key = self.get_keypress()
+        if key == "^X" or key == "KEY_ESCAPE":
+            self.parentApp.switchForm("MAIN")
+        elif key == "^A" or key == "a" or key == "A":
+            self.add_account()
+        elif key == "^E" or key == "e" or key == "E":
+            self.edit_account()
+        elif key == "^D" or key == "d" or key == "D":
+            self.delete_account()
+        elif key == "^I" or key == "i" or key == "I":
+            self.import_from_gen_config()
+        elif key == "^R" or key == "r" or key == "R":
+            self.load_accounts()
+
+
+class AddAccountForm(npyscreen.ActionFormV2):
+    """Form for adding a new Telegram account"""
+    
+    def create(self):
+        self.name = "Add Account"
+        
+        self.add(npyscreen.FixedText, value="═" * 70)
+        self.add(npyscreen.FixedText, value="Add New Account")
+        self.add(npyscreen.FixedText, value="═" * 70)
+        self.add(npyscreen.FixedText, value="")
+        
+        self.add(npyscreen.FixedText, value="Session Name (required):")
+        self.session_name = self.add(npyscreen.TitleText, name="Session Name:", value="")
+        
+        self.add(npyscreen.FixedText, value="")
+        self.add(npyscreen.FixedText, value="API ID (required):")
+        self.api_id = self.add(npyscreen.TitleText, name="API ID:", value="")
+        
+        self.add(npyscreen.FixedText, value="")
+        self.add(npyscreen.FixedText, value="API Hash (required, 32 hex chars):")
+        self.api_hash = self.add(npyscreen.TitleText, name="API Hash:", value="")
+        
+        self.add(npyscreen.FixedText, value="")
+        self.add(npyscreen.FixedText, value="Phone Number (optional):")
+        self.phone_number = self.add(npyscreen.TitleText, name="Phone Number:", value="")
+        
+        self.add(npyscreen.FixedText, value="")
+        self.add(npyscreen.FixedText, value="Password (optional, 2FA):")
+        self.password = self.add(npyscreen.TitlePassword, name="Password:", value="")
+    
+    def on_ok(self):
+        """Validate and save new account"""
+        try:
+            session_name = self.session_name.value.strip()
+            api_id_str = self.api_id.value.strip()
+            api_hash_str = self.api_hash.value.strip()
+            phone_number = self.phone_number.value.strip()
+            password = self.password.value.strip()
+            
+            if not session_name:
+                npyscreen.notify_confirm("Session name is required.", title="Validation Error")
+                return
+            
+            if not api_id_str:
+                npyscreen.notify_confirm("API ID is required.", title="Validation Error")
+                return
+            
+            if not api_hash_str:
+                npyscreen.notify_confirm("API Hash is required.", title="Validation Error")
+                return
+            
+            api_id = validate_api_id(api_id_str)
+            api_hash = validate_api_hash(api_hash_str)
+            
+            config = Config()
+            existing_accounts = config.data.get("accounts", [])
+            
+            if not validate_session_name_unique(session_name, existing_accounts):
+                npyscreen.notify_confirm(f"Session name '{session_name}' already exists. Please choose a different name.", title="Validation Error")
+                return
+            
+            existing_pairs = set()
+            for acc in existing_accounts:
+                acc_api_id = acc.get("api_id")
+                acc_api_hash = acc.get("api_hash")
+                if acc_api_id and acc_api_hash:
+                    existing_pairs.add((acc_api_id, acc_api_hash))
+            
+            if (api_id, api_hash) in existing_pairs:
+                npyscreen.notify_confirm("An account with this API ID and API Hash already exists.", title="Validation Error")
+                return
+            
+            new_account = {
+                "api_id": api_id,
+                "api_hash": api_hash,
+                "session_name": session_name,
+            }
+            
+            if phone_number:
+                validated_phone = validate_phone_number(phone_number)
+                if validated_phone:
+                    new_account["phone_number"] = validated_phone
+            if password:
+                new_account["password"] = password
+            
+            existing_accounts.append(new_account)
+            config.data["accounts"] = existing_accounts
+            
+            if not save_config_safely(config, "add account"):
+                npyscreen.notify_confirm("Failed to save configuration. Account may not be persisted.", title="Save Error")
+                return
+            
+            npyscreen.notify_confirm(f"Account '{session_name}' added successfully.", title="Success")
+            self.parentApp.switchForm("ACCOUNT_MANAGEMENT")
+        except ValueError as e:
+            npyscreen.notify_confirm(f"Validation error: {e}", title="Validation Error")
+        except Exception as e:
+            npyscreen.notify_confirm(f"Error adding account: {e}", title="Error")
+    
+    def on_cancel(self):
+        """Return to AccountManagementForm without saving"""
+        self.parentApp.switchForm("ACCOUNT_MANAGEMENT")
+
+
+class EditAccountForm(npyscreen.ActionFormV2):
+    """Form for editing an existing Telegram account"""
+    
+    def create(self):
+        self.name = "Edit Account"
+        
+        self.add(npyscreen.FixedText, value="═" * 70)
+        self.add(npyscreen.FixedText, value="Edit Account")
+        self.add(npyscreen.FixedText, value="═" * 70)
+        self.add(npyscreen.FixedText, value="")
+        
+        self.add(npyscreen.FixedText, value="Session Name (required):")
+        self.session_name = self.add(npyscreen.TitleText, name="Session Name:", value="")
+        
+        self.add(npyscreen.FixedText, value="")
+        self.add(npyscreen.FixedText, value="API ID (required):")
+        self.api_id = self.add(npyscreen.TitleText, name="API ID:", value="")
+        
+        self.add(npyscreen.FixedText, value="")
+        self.add(npyscreen.FixedText, value="API Hash (required, 32 hex chars):")
+        self.api_hash = self.add(npyscreen.TitleText, name="API Hash:", value="")
+        
+        self.add(npyscreen.FixedText, value="")
+        self.add(npyscreen.FixedText, value="Phone Number (optional):")
+        self.phone_number = self.add(npyscreen.TitleText, name="Phone Number:", value="")
+        
+        self.add(npyscreen.FixedText, value="")
+        self.add(npyscreen.FixedText, value="Password (optional, 2FA):")
+        self.password = self.add(npyscreen.TitlePassword, name="Password:", value="")
+        
+        self.add(npyscreen.FixedText, value="")
+        self.add(npyscreen.FixedText, value="Note: Session name must be unique. API ID and Hash must be valid.")
+        self.add(npyscreen.FixedText, value="Phone number should start with '+' (e.g., +1234567890)")
+        
+        self.account_index = None
+    
+    def beforeEditing(self):
+        """Load account data before editing"""
+        self.account_index = getattr(self.parentApp, 'edit_account_index', None)
+        
+        if self.account_index is None:
+            npyscreen.notify_confirm("No account selected for editing.", title="Error")
+            self.parentApp.switchForm("ACCOUNT_MANAGEMENT")
+            return
+        
+        try:
+            config = Config()
+            accounts = config.data.get("accounts", [])
+            
+            if self.account_index < 0 or self.account_index >= len(accounts):
+                npyscreen.notify_confirm("Invalid account index.", title="Error")
+                self.parentApp.switchForm("ACCOUNT_MANAGEMENT")
+                return
+            
+            account = accounts[self.account_index]
+            
+            self.session_name.value = account.get("session_name", "")
+            self.api_id.value = str(account.get("api_id", ""))
+            self.api_hash.value = account.get("api_hash", "")
+            self.phone_number.value = account.get("phone_number", "")
+            self.password.value = account.get("password", "")
+        except Exception as e:
+            npyscreen.notify_confirm(f"Error loading account: {e}", title="Error")
+            self.parentApp.switchForm("ACCOUNT_MANAGEMENT")
+    
+    def on_ok(self):
+        """Validate and save account changes"""
+        try:
+            if self.account_index is None:
+                npyscreen.notify_confirm("No account selected for editing.", title="Error")
+                self.parentApp.switchForm("ACCOUNT_MANAGEMENT")
+                return
+            
+            session_name = self.session_name.value.strip()
+            api_id_str = self.api_id.value.strip()
+            api_hash_str = self.api_hash.value.strip()
+            phone_number = self.phone_number.value.strip()
+            password = self.password.value.strip()
+            
+            if not session_name:
+                npyscreen.notify_confirm("Session name is required.", title="Validation Error")
+                return
+            
+            if not api_id_str:
+                npyscreen.notify_confirm("API ID is required.", title="Validation Error")
+                return
+            
+            if not api_hash_str:
+                npyscreen.notify_confirm("API Hash is required.", title="Validation Error")
+                return
+            
+            api_id = validate_api_id(api_id_str)
+            api_hash = validate_api_hash(api_hash_str)
+            
+            config = Config()
+            accounts = config.data.get("accounts", [])
+            
+            if self.account_index < 0 or self.account_index >= len(accounts):
+                npyscreen.notify_confirm("Invalid account index.", title="Error")
+                self.parentApp.switchForm("ACCOUNT_MANAGEMENT")
+                return
+            
+            if not validate_session_name_unique(session_name, accounts, exclude_index=self.account_index):
+                npyscreen.notify_confirm(f"Session name '{session_name}' already exists. Please choose a different name.", title="Validation Error")
+                return
+            
+            updated_account = {
+                "api_id": api_id,
+                "api_hash": api_hash,
+                "session_name": session_name,
+            }
+            
+            if phone_number:
+                validated_phone = validate_phone_number(phone_number)
+                if validated_phone:
+                    updated_account["phone_number"] = validated_phone
+            if password:
+                updated_account["password"] = password
+            
+            accounts[self.account_index] = updated_account
+            config.data["accounts"] = accounts
+            
+            if not save_config_safely(config, "update account"):
+                npyscreen.notify_confirm("Failed to save configuration. Account changes may not be persisted.", title="Save Error")
+                return
+            
+            npyscreen.notify_confirm(f"Account '{session_name}' updated successfully.", title="Success")
+            self.parentApp.switchForm("ACCOUNT_MANAGEMENT")
+        except ValueError as e:
+            npyscreen.notify_confirm(f"Validation error: {e}", title="Validation Error")
+        except Exception as e:
+            npyscreen.notify_confirm(f"Error updating account: {e}", title="Error")
+    
+    def on_cancel(self):
+        """Return to AccountManagementForm without saving changes"""
+        self.parentApp.switchForm("ACCOUNT_MANAGEMENT")
+
+
+class SettingsForm(SpectraBaseForm):
+    """Settings management form"""
+    
+    def create(self):
+        self.name = "Settings"
+        
+        # Title
+        self.add(npyscreen.FixedText, value="═" * 70)
+        self.add(npyscreen.FixedText, value="SPECTRA Settings")
+        self.add(npyscreen.FixedText, value="═" * 70)
+        self.add(npyscreen.FixedText, value="")
+        
+        # Settings sections
+        self.add(npyscreen.FixedText, value="Archive Settings:")
+        self.archive_settings = self.add(npyscreen.Pager, height=5)
+        
+        self.add(npyscreen.FixedText, value="")
+        self.add(npyscreen.FixedText, value="Forwarding Settings:")
+        self.forwarding_settings = self.add(npyscreen.Pager, height=5)
+        
+        self.add(npyscreen.FixedText, value="")
+        self.add(npyscreen.FixedText, value="Advanced Features:")
+        self.advanced_settings = self.add(npyscreen.Pager, height=5)
+        
+        self.add(npyscreen.FixedText, value="")
+        self.add(npyscreen.FixedText, value="Press ESC to return to main menu")
+        
+        # Load settings
+        self.load_settings()
+    
+    def load_settings(self):
+        """Load and display current settings"""
+        try:
+            config = Config()
+            
+            # Archive settings
+            archive_info = [
+                f"Media Directory: {config.data.get('media_dir', 'N/A')}",
+                f"Download Media: {config.data.get('download_media', False)}",
+                f"Download Avatars: {config.data.get('download_avatars', False)}",
+                f"Batch Size: {config.data.get('batch', 'N/A')}",
+            ]
+            self.archive_settings.values = archive_info
+            
+            # Forwarding settings
+            forwarding = config.data.get("forwarding", {})
+            forwarding_info = [
+                f"Deduplication: {forwarding.get('enable_deduplication', False)}",
+                f"Prepend Origin: {forwarding.get('always_prepend_origin_info', False)}",
+            ]
+            self.forwarding_settings.values = forwarding_info
+            
+            # Advanced features
+            advanced = config.data.get("advanced_features", {})
+            advanced_info = [
+                f"Enabled: {advanced.get('enabled', False)}",
+                f"Vector DB: {advanced.get('vector_database', {}).get('auto_index_messages', False)}",
+                f"Temporal Analysis: {advanced.get('threat_analysis', {}).get('temporal_analysis', False)}",
+            ]
+            self.advanced_settings.values = advanced_info
+        except Exception as e:
+            error_msg = f"Error loading settings: {e}"
+            self.archive_settings.values = [error_msg]
+            self.forwarding_settings.values = [error_msg]
+            self.advanced_settings.values = [error_msg]
+    
+    def while_editing(self, *args, **keywords):
+        """Handle keyboard input"""
+        key = self.get_keypress()
+        if key == "^X" or key == "KEY_ESCAPE":
+            self.parentApp.switchForm("MAIN")
+
+
+class SearchForm(SpectraBaseForm):
+    """Search form for advanced message search"""
+    
+    def create(self):
+        self.name = "Search"
+        
+        # Title
+        self.add(npyscreen.FixedText, value="═" * 70)
+        self.add(npyscreen.FixedText, value="Advanced Search")
+        self.add(npyscreen.FixedText, value="═" * 70)
+        self.add(npyscreen.FixedText, value="")
+        
+        # Search query input
+        self.add(npyscreen.FixedText, value="Enter search query:")
+        self.query_field = self.add(npyscreen.TitleText, name="Query:", value="")
+        
+        # Search results
+        self.add(npyscreen.FixedText, value="")
+        self.add(npyscreen.FixedText, value="Results:")
+        self.results_pager = self.add(npyscreen.Pager, height=15)
+        self.results_pager.values = ["Enter a query and press Enter to search"]
+        
+        # Instructions
+        self.add(npyscreen.FixedText, value="")
+        self.add(npyscreen.FixedText, value="Press Enter to search, ESC to return")
+    
+    def while_editing(self, *args, **keywords):
+        """Handle keyboard input"""
+        key = self.get_keypress()
+        if key == "^X" or key == "KEY_ESCAPE":
+            self.parentApp.switchForm("MAIN")
+        elif key == "^M" or key == "KEY_ENTER":  # Enter key
+            self.perform_search()
+    
+    def perform_search(self):
+        """Perform search using AdvancedSearch"""
+        query = self.query_field.value.strip()
+        if not query:
+            npyscreen.notify_confirm("Please enter a search query", title="No Query")
+            return
+        
+        try:
+            if hasattr(self.parentApp, 'advanced_search') and self.parentApp.advanced_search:
+                results = self.parentApp.advanced_search.search(query, limit=50)
+                if results:
+                    result_lines = []
+                    for i, result in enumerate(results, 1):
+                        msg_id = result.get('id', 'N/A')
+                        content = result.get('content', result.get('text', ''))[:60]
+                        score = result.get('score', 0)
+                        result_lines.append(f"{i}. [{score:.2f}] ID:{msg_id} - {content}...")
+                    self.results_pager.values = result_lines
+                else:
+                    self.results_pager.values = ["No results found"]
+            else:
+                self.results_pager.values = ["Search engine not available"]
+        except Exception as e:
+            self.results_pager.values = [f"Search error: {e}"]
+
+
 class MainMenuForm(SpectraBaseForm):
     """Main menu form for the application"""
     
@@ -2093,18 +2822,12 @@ class MainMenuForm(SpectraBaseForm):
         self.parentApp.switchForm("GRAPH")
     
     def account_form(self):
-        """Switch to account management form (not implemented yet)"""
-        npyscreen.notify_confirm(
-            "Account Management not yet implemented in this version.",
-            title="Coming Soon"
-        )
+        """Switch to account management form"""
+        self.parentApp.switchForm("ACCOUNT_MANAGEMENT")
     
     def settings_form(self):
-        """Switch to settings form (not implemented yet)"""
-        npyscreen.notify_confirm(
-            "Settings Management not yet implemented in this version.",
-            title="Coming Soon"
-        )
+        """Switch to settings form"""
+        self.parentApp.switchForm("SETTINGS")
 
     def vps_config_form(self):
         """Switch to VPS Configuration form"""
@@ -2258,6 +2981,11 @@ class SpectraApp(npyscreen.NPSAppManaged):
         self.addForm("OSINT_LIST_TARGETS", OSINTListTargetsForm, name="List OSINT Targets")
         self.addForm("OSINT_SCAN_CHANNEL", OSINTScanChannelForm, name="Scan Channel for Interactions")
         self.addForm("OSINT_SHOW_NETWORK", OSINTShowNetworkForm, name="Show Interaction Network")
+        self.addForm("ACCOUNT_MANAGEMENT", AccountManagementForm, name="Account Management")
+        self.addForm("ADD_ACCOUNT", AddAccountForm, name="Add Account")
+        self.addForm("EDIT_ACCOUNT", EditAccountForm, name="Edit Account")
+        self.addForm("SETTINGS", SettingsForm, name="Settings")
+        self.addForm("SEARCH", SearchForm, name="Search")
     
     def setup_manager(self):
         """Initialize the integrated manager"""

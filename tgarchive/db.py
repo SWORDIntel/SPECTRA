@@ -575,7 +575,7 @@ class SpectraDB(AbstractContextManager):
         logger.info("Integrity on %s – %d issues", table, len(issues))
         return issues
 
-    # Export (CSV placeholder) --------------------------------------------
+    # Export (CSV) --------------------------------------------
     def export_csv(self, table: str, dst: Path) -> int:
         rows = self.cur.execute(f"SELECT * FROM {table}").fetchall()
         headers = [d[0] for d in self.cur.description]

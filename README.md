@@ -18,6 +18,7 @@ SPECTRA is an advanced framework for Telegram data collection, network discovery
 - 🗄️ **SQL database storage** for all discovered groups, relationships, and archive metadata
 - ⚡ **Parallel processing** leveraging multiple accounts and proxies simultaneously
 - 🖥️ **Modern TUI** (npyscreen) and CLI, both using the same modular backend
+- ⚙️ **Streamlined Account Management** - Full CRUD operations directly in the TUI with keyboard shortcuts
 - ☁️ **Forwarding Mode:** Traverse a series of channels, discover related channels, and download text/archive files with specific rules, using a single API key.
 - 🛡️ **Red team/OPSEC features**: account/proxy rotation, SQL audit trail, sidecar metadata, persistent stateS
 
@@ -163,7 +164,13 @@ When you launch SPECTRA, you'll see the main menu with the following options:
 5. **Forwarding Utilities** - Forward messages between channels with deduplication
 6. **OSINT Utilities** - Intelligence gathering and analysis tools
 7. **Group Mirroring** - Mirror groups and channels
-8. **Account Management** - Manage Telegram accounts and API keys
+8. **Account Management** - Full CRUD operations for Telegram accounts:
+   - Add new accounts with validation
+   - Edit existing accounts
+   - Delete accounts with confirmation
+   - Import accounts from gen_config.py files
+   - Keyboard shortcuts for quick access (Ctrl+A/E/D/I/R)
+   - Always-visible keyboard shortcuts display
 9. **Settings (VPS Config)** - Configure VPS and system settings
 10. **Forwarding & Deduplication Settings** - Configure forwarding behavior
 11. **Download Users** - Download user information and profiles
@@ -675,7 +682,7 @@ SPECTRA includes enterprise-grade enhancements for high-scale intelligence opera
 
 ### 🔍 Vector Database Integration
 
-Scale to billions of messages with high-dimensional similarity search:
+Scale to billions of messages with high-dimensional similarity search using **QIHSE (Quantum-Inspired Hilbert Space Expansion)** as the primary vector storage backend:
 
 ```bash
 # Install vector database support
@@ -683,22 +690,24 @@ pip install -r requirements-advanced.txt
 ```
 
 **Features:**
-- **Qdrant/ChromaDB Integration**: Production-grade vector storage (384-2048D embeddings)
-- **Dual-Database Architecture**: SQLite for metadata + Vector DB for semantic search
-- **Semantic Search**: Find similar messages across millions of documents
+- **QIHSE Primary Backend**: Quantum-inspired vector storage with direct embedding storage (replaces Qdrant)
+- **Dual-Database Architecture**: SQLite for metadata + QIHSE for semantic search
+- **Semantic Search**: Find similar messages across millions of documents with quantum-inspired algorithms
 - **Actor Similarity**: Identify actors with similar behavioral patterns
 - **Anomaly Detection**: Flag messages that don't match normal patterns
-- **Scalability**: Handle billions of vectors with quantization and sharding
+- **High Confidence**: Quantum verification reduces false positives
+- **Automatic Integration**: Messages automatically indexed during archiving (when enabled)
 
 **Usage:**
 ```python
 from tgarchive.db.vector_store import VectorStoreManager, VectorStoreConfig
 
-# Initialize vector store
+# Initialize vector store (QIHSE is default)
 config = VectorStoreConfig(
-    backend="qdrant",  # or "chromadb", "numpy"
+    backend="qihse",  # Primary: "qihse", fallback: "qdrant", "chromadb", "numpy"
     vector_size=384,
-    distance_metric="cosine"
+    distance_metric="cosine",
+    confidence_threshold=0.95
 )
 
 store = VectorStoreManager(config)
@@ -710,13 +719,15 @@ store.index_message(
     metadata={"user_id": 1001, "threat_score": 8.5}
 )
 
-# Semantic search
+# Semantic search (uses QIHSE quantum-inspired algorithm)
 results = store.semantic_search(
     query_embedding=query_emb,
     top_k=10,
     filters={"threat_score": {"gte": 7.0}}
 )
 ```
+
+**Note:** QIHSE completely replaces Qdrant as the primary vector storage. Qdrant is available as an optional fallback if QIHSE is unavailable.
 
 ### 🛡️ CNSA 2.0 Quantum-Resistant Cryptography
 
@@ -843,26 +854,38 @@ account_clusters = engine.correlate_accounts(profiles, min_similarity=0.85)
 
 ### 📊 Advanced Features Demo
 
+The Advanced Features Demo has been moved to a dedicated folder with comprehensive documentation:
+
 ```bash
 # Run comprehensive demo of all advanced features
-python examples/advanced_features_demo.py
+python examples/advanced_features/demo.py
 ```
 
 **Demonstrates:**
-- Vector database operations (indexing, searching, clustering)
-- Post-quantum encryption and digital signatures
+- Vector database operations using QIHSE (indexing, searching, clustering)
+- Post-quantum encryption and digital signatures (CNSA 2.0)
 - Temporal pattern analysis and prediction
 - Attribution analysis and tool fingerprinting
 - AI content detection
 
 ### 📚 Advanced Features Documentation
 
-- **Architecture & Planning**: `docs/ADVANCED_ENHANCEMENTS_PLAN.md`
-  - Vector database evaluation (Qdrant vs ChromaDB vs Milvus)
-  - CNSA 2.0 implementation strategy
-  - Enhanced threat tracking roadmap
+**Comprehensive Documentation:**
+- **Main Guide**: `examples/advanced_features/README.md` - Overview and quick start
+- **Architecture**: `examples/advanced_features/docs/ARCHITECTURE.md` - System architecture and data flow
+- **Vector Database**: `examples/advanced_features/docs/VECTOR_DATABASE.md` - QIHSE storage and search
+- **CNSA Cryptography**: `examples/advanced_features/docs/CNSA_CRYPTOGRAPHY.md` - Post-quantum crypto
+- **Temporal Analysis**: `examples/advanced_features/docs/TEMPORAL_ANALYSIS.md` - Activity patterns
+- **Attribution Engine**: `examples/advanced_features/docs/ATTRIBUTION_ENGINE.md` - Cross-platform correlation
+- **Example Config**: `examples/advanced_features/config/example_advanced_config.json`
+
+**Integration:**
+- Advanced features are automatically integrated into the archiving workflow when enabled in `spectra_config.json`
+- See `examples/advanced_features/README.md` for configuration details
+
+**Legacy Documentation:**
+- **Architecture & Planning**: `docs/ADVANCED_ENHANCEMENTS_PLAN.md` (historical reference)
 - **Requirements**: `requirements-advanced.txt`
-- **Demo Script**: `examples/advanced_features_demo.py`
 
 ### ⚡ INT8 Neural Acceleration (Planned)
 

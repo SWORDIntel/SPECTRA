@@ -265,23 +265,61 @@ class KeyboardShortcutHandler:
             return False
         
         elif action == 'switch_profile':
-            # Switch profile (to be implemented)
-            logger.debug("Profile switching not yet implemented")
+            # Switch profile using ProfileManager
+            if hasattr(self.app, 'profiles'):
+                profiles = self.app.profiles.list_profiles()
+                if not profiles:
+                    import npyscreen
+                    npyscreen.notify_confirm("No profiles available. Create profiles in data/profiles/", title="No Profiles")
+                    return False
+                
+                # Show profile selection dialog
+                import npyscreen
+                selected = npyscreen.selectOption(
+                    profiles,
+                    title="Select Profile",
+                    scroll_exit=True
+                )
+                if selected is not None and selected < len(profiles):
+                    profile_name = profiles[selected]
+                    if self.app.profiles.set_current(profile_name):
+                        npyscreen.notify_confirm(f"Switched to profile: {profile_name}", title="Profile Changed")
+                        return True
             return False
         
         elif action == 'show_search':
-            # Show search (to be implemented)
-            logger.debug("Search dialog not yet implemented")
+            # Show search dialog using AdvancedSearch
+            if hasattr(self.app, 'advanced_search') and self.app.advanced_search:
+                # Switch to search form if it exists, otherwise show search dialog
+                if hasattr(self.app, 'switchForm'):
+                    try:
+                        self.app.switchForm("SEARCH")
+                        return True
+                    except:
+                        # Search form not registered, show simple search
+                        import npyscreen
+                        query = npyscreen.notify_input("Enter search query:", title="Search")
+                        if query:
+                            results = self.app.advanced_search.search(query, limit=20)
+                            if results:
+                                result_text = "\n".join([f"{r.get('id', 'N/A')}: {r.get('content', '')[:50]}..." for r in results[:10]])
+                                npyscreen.notify_confirm(f"Found {len(results)} results:\n\n{result_text}", title="Search Results")
+                            else:
+                                npyscreen.notify_confirm("No results found", title="Search")
+                        return True
             return False
         
         elif action == 'execute':
-            # Execute selected (context-dependent)
-            logger.debug("Execute action - context dependent")
+            # Execute action is context-dependent and handled by individual forms
             return False
         
         elif action == 'quick_reference':
-            # Show quick reference (to be implemented)
-            logger.debug("Quick reference not yet implemented")
+            # Show quick reference/help
+            if hasattr(self.app, 'help_system'):
+                help_text = self.app.help_system.show_help("main", "shortcuts")
+                import npyscreen
+                npyscreen.notify_confirm(help_text, title="Quick Reference", wide=True)
+                return True
             return False
         
         elif action == 'next_field':

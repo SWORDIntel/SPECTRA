@@ -184,6 +184,7 @@ def add_topic_management_command(subparsers) -> None:
     cleanup_parser.add_argument("--channel", required=True, type=str, help="Channel ID or username")
     cleanup_parser.add_argument("--dry-run", action="store_true", help="Show what would be deleted without actually deleting")
     cleanup_parser.add_argument("--min-age-hours", type=int, default=24, help="Minimum age in hours for cleanup")
+    cleanup_parser.add_argument("--days-to-keep", type=int, default=90, help="Days of statistics to keep (default: 90)")
 
 
 async def handle_topic_management(args: argparse.Namespace) -> int:
@@ -250,10 +251,19 @@ async def handle_list_topics(args: argparse.Namespace, cfg: Config, db: SpectraD
 
         # Get topic information from cache (loaded during initialization)
         cache_stats = topic_manager.get_cache_stats()
-        logger.info(f"Found {cache_stats['size']} topics in {args.channel}")
+        logger.info(f"Found {cache_stats['size']} topics in cache for {args.channel}")
 
-        # TODO: Implement topic listing from database
-        # This would require extending TopicManager to work with TopicOperations
+        # Get topics from database using TopicOperations
+        from .db.topic_operations import TopicOperations
+        topic_ops = TopicOperations(str(db.db_path))
+        db_topics = topic_ops.get_forum_topics_by_channel(channel_id, active_only=True)
+        
+        if db_topics:
+            logger.info(f"Topics in database for channel {channel_id}:")
+            for topic in db_topics:
+                logger.info(f"  Topic {topic.topic_id}: {topic.title} ({topic.message_count} messages, category: {topic.category})")
+        else:
+            logger.info("No topics found in database for this channel")
 
         await client_manager.close()
         return 0
@@ -303,7 +313,39 @@ async def handle_create_topic(args: argparse.Namespace, cfg: Config, db: Spectra
         if topic_id:
             logger.info(f"Created topic '{args.title}' with ID {topic_id}")
 
-            # TODO: Record in database via TopicOperations
+            # Record in database via TopicOperations
+            from .db.topic_operations import TopicOperations, ForumTopicRecord
+            topic_ops = TopicOperations(str(db.db_path))
+            
+            # Get topic details from Telegram to store in database
+            try:
+                forum_topics = await client.get_forum_topics(channel_entity)
+                topic_info = None
+                for ft in forum_topics.topics:
+                    if ft.id == topic_id:
+                        topic_info = ft
+                        break
+                
+                if topic_info:
+                    topic_record = ForumTopicRecord(
+                        id=None,
+                        channel_id=channel_id,
+                        topic_id=topic_id,
+                        title=args.title,
+                        icon_color=icon_color,
+                        icon_emoji_id=getattr(topic_info, 'icon_emoji_id', None),
+                        category=args.category or 'general',
+                        subcategory=None,
+                        description=None,
+                        message_count=0,
+                        created_at=datetime.utcnow().isoformat(),
+                        last_activity=datetime.utcnow().isoformat(),
+                        is_active=True
+                    )
+                    topic_ops.insert_forum_topic(topic_record)
+                    logger.debug(f"Recorded topic {topic_id} in database")
+            except Exception as e:
+                logger.warning(f"Failed to record topic in database: {e}")
 
             await client_manager.close()
             return 0
@@ -500,19 +542,213 @@ def create_organization_config_from_args(args: argparse.Namespace) -> Organizati
     return config
 
 
-# Placeholder handlers for other topic commands
 async def handle_update_topic(args: argparse.Namespace, cfg: Config, db: SpectraDB) -> int:
-    logger.info("Topic update functionality not yet implemented")
-    return 0
+    """Handle updating an existing topic."""
+    from .db.topic_operations import TopicOperations, ForumTopicRecord
+    from .forwarding.client import ClientManager
+
+    try:
+        # Resolve channel ID
+        client_manager = ClientManager(cfg)
+        client = await client_manager.get_client()
+        channel_entity = await client.get_entity(args.channel)
+        channel_id = channel_entity.id
+
+        # Initialize topic operations
+        topic_ops = TopicOperations(str(db.db_path))
+
+        # Get existing topic
+        topic = topic_ops.get_forum_topic(channel_id, args.topic_id)
+        if not topic:
+            logger.error(f"Topic {args.topic_id} not found in channel {channel_id}")
+            await client_manager.close()
+            return 1
+
+        # Update topic fields if provided
+        updated = False
+        if hasattr(args, 'title') and args.title:
+            topic.title = args.title
+            updated = True
+        if hasattr(args, 'category') and args.category:
+            topic.category = args.category
+            updated = True
+        if hasattr(args, 'description') and args.description:
+            topic.description = args.description
+            updated = True
+        if hasattr(args, 'is_active') and args.is_active is not None:
+            topic.is_active = args.is_active
+            updated = True
+
+        if updated:
+            if topic_ops.update_forum_topic(topic):
+                logger.info(f"Updated topic {args.topic_id}: {topic.title}")
+            else:
+                logger.error(f"Failed to update topic {args.topic_id}")
+                await client_manager.close()
+                return 1
+        else:
+            logger.warning("No update fields specified")
+
+        await client_manager.close()
+        return 0
+
+    except Exception as e:
+        logger.error(f"Error updating topic: {e}")
+        return 1
+
 
 async def handle_delete_topic(args: argparse.Namespace, cfg: Config, db: SpectraDB) -> int:
-    logger.info("Topic deletion functionality not yet implemented")
-    return 0
+    """Handle deleting/deactivating a topic."""
+    from .db.topic_operations import TopicOperations
+    from .forwarding.client import ClientManager
+
+    try:
+        # Resolve channel ID
+        client_manager = ClientManager(cfg)
+        client = await client_manager.get_client()
+        channel_entity = await client.get_entity(args.channel)
+        channel_id = channel_entity.id
+
+        # Initialize topic operations
+        topic_ops = TopicOperations(str(db.db_path))
+
+        # Get topic to verify it exists
+        topic = topic_ops.get_forum_topic(channel_id, args.topic_id)
+        if not topic:
+            logger.error(f"Topic {args.topic_id} not found in channel {channel_id}")
+            await client_manager.close()
+            return 1
+
+        # Soft delete (set is_active = False)
+        if topic_ops.delete_forum_topic(topic.id):
+            logger.info(f"Deleted (deactivated) topic {args.topic_id}: {topic.title}")
+        else:
+            logger.error(f"Failed to delete topic {args.topic_id}")
+            await client_manager.close()
+            return 1
+
+        await client_manager.close()
+        return 0
+
+    except Exception as e:
+        logger.error(f"Error deleting topic: {e}")
+        return 1
+
 
 async def handle_topic_stats(args: argparse.Namespace, cfg: Config, db: SpectraDB) -> int:
-    logger.info("Topic statistics functionality not yet implemented")
-    return 0
+    """Handle showing topic usage statistics."""
+    from .db.topic_operations import TopicOperations
+    from .forwarding.client import ClientManager
+    from datetime import datetime, timedelta
+
+    try:
+        # Resolve channel ID
+        client_manager = ClientManager(cfg)
+        client = await client_manager.get_client()
+        channel_entity = await client.get_entity(args.channel)
+        channel_id = channel_entity.id
+
+        # Initialize topic operations
+        topic_ops = TopicOperations(str(db.db_path))
+
+        # Get date range (default to last 7 days)
+        days = getattr(args, 'days', 7)
+        end_date = datetime.utcnow().date().isoformat()
+        start_date = (datetime.utcnow() - timedelta(days=days)).date().isoformat()
+
+        # Get organization stats
+        stats_list = topic_ops.get_organization_stats_range(channel_id, start_date, end_date)
+        
+        # Get topic usage stats
+        topic_usage = topic_ops.get_topic_usage_stats(channel_id, end_date)
+
+        # Display statistics
+        logger.info(f"Topic Statistics for Channel {channel_id}")
+        logger.info(f"Period: {start_date} to {end_date}")
+        logger.info("=" * 60)
+
+        if stats_list:
+            total_processed = sum(s.messages_processed for s in stats_list)
+            total_topics = sum(s.topics_created for s in stats_list)
+            total_assignments = sum(s.successful_assignments for s in stats_list)
+            total_failed = sum(s.failed_assignments for s in stats_list)
+
+            logger.info(f"Total Messages Processed: {total_processed}")
+            logger.info(f"Topics Created: {total_topics}")
+            logger.info(f"Successful Assignments: {total_assignments}")
+            logger.info(f"Failed Assignments: {total_failed}")
+            if total_processed > 0:
+                success_rate = (total_assignments / total_processed) * 100
+                logger.info(f"Success Rate: {success_rate:.1f}%")
+        else:
+            logger.info("No statistics available for this period")
+
+        if topic_usage:
+            logger.info("")
+            logger.info("Topic Usage (by topic):")
+            for usage in topic_usage[:10]:  # Show top 10
+                topic_id = usage.get('topic_id', 'N/A')
+                message_count = usage.get('message_count', 0)
+                logger.info(f"  Topic {topic_id}: {message_count} messages")
+
+        await client_manager.close()
+        return 0
+
+    except Exception as e:
+        logger.error(f"Error getting topic statistics: {e}")
+        return 1
+
 
 async def handle_topic_cleanup(args: argparse.Namespace, cfg: Config, db: SpectraDB) -> int:
-    logger.info("Topic cleanup functionality not yet implemented")
-    return 0
+    """Handle cleaning up empty or unused topics."""
+    from .db.topic_operations import TopicOperations
+    from .forwarding.client import ClientManager
+
+    try:
+        # Resolve channel ID
+        client_manager = ClientManager(cfg)
+        client = await client_manager.get_client()
+        channel_entity = await client.get_entity(args.channel)
+        channel_id = channel_entity.id
+
+        # Initialize topic operations
+        topic_ops = TopicOperations(str(db.db_path))
+
+        # Get cleanup parameters
+        min_age_hours = getattr(args, 'min_age_hours', 24)
+        days_to_keep = getattr(args, 'days_to_keep', 90)
+
+        # Clean up old stats
+        deleted_stats = topic_ops.cleanup_old_stats(days_to_keep)
+        logger.info(f"Cleaned up {deleted_stats} old statistics records")
+
+        # Get empty topics
+        empty_topics = topic_ops.get_empty_topics(channel_id, min_age_hours)
+        
+        if empty_topics:
+            logger.info(f"Found {len(empty_topics)} empty topics older than {min_age_hours} hours")
+            
+            # Delete empty topics if --delete-empty is specified
+            if getattr(args, 'delete_empty', False):
+                deleted_count = 0
+                for topic_id in empty_topics:
+                    topic = topic_ops.get_forum_topic(channel_id, topic_id)
+                    if topic and topic_ops.delete_forum_topic(topic.id):
+                        deleted_count += 1
+                        logger.info(f"Deleted empty topic {topic_id}: {topic.title}")
+                logger.info(f"Deleted {deleted_count} empty topics")
+            else:
+                logger.info("Use --delete-empty to actually delete these topics")
+                for topic_id in empty_topics[:10]:  # Show first 10
+                    topic = topic_ops.get_forum_topic(channel_id, topic_id)
+                    if topic:
+                        logger.info(f"  Topic {topic_id}: {topic.title}")
+        else:
+            logger.info("No empty topics found")
+
+        await client_manager.close()
+        return 0
+
+    except Exception as e:
+        logger.error(f"Error cleaning up topics: {e}")
+        return 1

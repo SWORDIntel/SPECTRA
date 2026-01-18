@@ -6,14 +6,13 @@ class VPSConfigForm(npyscreen.FormBaseNewWithMenus):  # Using FormBaseNewWithMen
     def create(self):
         self.name = "VPS Configuration"
 
-        # Get existing config values (will be properly loaded later)
-        # For now, using placeholders or direct default values from the directive
-        # self.config = self.parentApp.manager.config # This will be the way to get it
+        # Form fields initialized with default values
+        # Actual values are loaded in beforeEditing() method from config
 
-        self.vps_enabled = self.add(npyscreen.Checkbox, name="VPS Enabled", value=False) # Placeholder
-        self.vps_host = self.add(npyscreen.TitleText, name="VPS Host:", value="") # Placeholder
+        self.vps_enabled = self.add(npyscreen.Checkbox, name="VPS Enabled", value=False)
+        self.vps_host = self.add(npyscreen.TitleText, name="VPS Host:", value="")
         self.vps_port = self.add(npyscreen.TitleText, name="Port:", value="22")
-        self.vps_username = self.add(npyscreen.TitleText, name="Username:", value="") # Placeholder
+        self.vps_username = self.add(npyscreen.TitleText, name="Username:", value="")
         self.vps_key_path = self.add(npyscreen.TitleFilename, name="SSH Key Path:", value="~/.ssh/id_rsa")
         self.vps_remote_base_path = self.add(npyscreen.TitleText, name="Remote Base Path:", value="/data/spectra")
 
@@ -26,12 +25,12 @@ class VPSConfigForm(npyscreen.FormBaseNewWithMenus):  # Using FormBaseNewWithMen
 
         self.add(npyscreen.FixedText, value="-"*40, editable=False, rely=self.nextrely()+1)
         self.add(npyscreen.FixedText, value="Sync Options:", editable=False)
-        self.sync_auto = self.add(npyscreen.Checkbox, name="Auto Sync Enabled", value=False) # Placeholder
+        self.sync_auto = self.add(npyscreen.Checkbox, name="Auto Sync Enabled", value=False)
         self.sync_interval = self.add(npyscreen.TitleSlider, name="Sync Interval (min):", out_of=120, step=5, value=30) # Max 2 hours
         self.sync_compression = self.add(npyscreen.Checkbox, name="Compression (rsync)", value=True)
         self.sync_delete_after = self.add(npyscreen.Checkbox, name="Delete Local After Sync", value=False)
 
-        # Placeholder for status messages and buttons
+        # Status widget for displaying connection test results and messages
         self.status_widget = self.add(npyscreen.FixedText, name="Status:", value="", editable=False, rely=self.nextrely()+2)
 
         # Menu for actions like Save, Test Connection, Back
@@ -113,21 +112,64 @@ class VPSConfigForm(npyscreen.FormBaseNewWithMenus):  # Using FormBaseNewWithMen
         self.status_widget.display()
 
     def test_connection(self):
-        """Placeholder for testing SSH connection to the VPS."""
-        # This will be implemented later, likely involving VPSSyncEngine
-        npyscreen.notify_confirm("Connection test functionality not yet implemented.", title="Coming Soon")
-        # In a real implementation:
-        # 1. Get current form values.
-        # 2. Call a method (e.g., in VPSSyncEngine) to test connection.
-        # 3. Display success/failure message.
-        # self.status_widget.value = "Testing connection..."
-        # self.status_widget.display()
-        # result = self.parentApp.manager.vps_sync_engine.test_connection(self.vps_host.value, ...)
-        # if result:
-        #    self.status_widget.value = "Connection successful!"
-        # else:
-        #    self.status_widget.value = "Connection failed. Check settings and logs."
-        # self.status_widget.display()
+        """Test SSH connection to the VPS."""
+        import subprocess
+        import os
+        from pathlib import Path
+        
+        # Get current form values
+        host = self.vps_host.value.strip()
+        port = self.vps_port.value.strip()
+        username = self.vps_username.value.strip()
+        key_path = Path(self.vps_key_path.value).expanduser()
+        
+        # Validate inputs
+        if not host:
+            npyscreen.notify_confirm("VPS Host is required", title="Validation Error")
+            return
+        
+        if not username:
+            npyscreen.notify_confirm("Username is required", title="Validation Error")
+            return
+        
+        # Update status
+        self.status_widget.value = "Testing connection..."
+        self.status_widget.display()
+        
+        try:
+            # Test SSH connection using subprocess
+            port_arg = f"-p {port}" if port and port != "22" else ""
+            key_arg = f"-i {key_path}" if key_path.exists() else ""
+            
+            # Use ssh command to test connection
+            test_cmd = f"ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no {port_arg} {key_arg} {username}@{host} echo 'Connection successful'"
+            
+            result = subprocess.run(
+                test_cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode == 0:
+                self.status_widget.value = "Connection successful!"
+                npyscreen.notify_confirm("SSH connection test successful!", title="Connection Test")
+            else:
+                error_msg = result.stderr or result.stdout or "Connection failed"
+                self.status_widget.value = f"Connection failed: {error_msg[:50]}"
+                npyscreen.notify_confirm(f"Connection test failed:\n{error_msg[:200]}", title="Connection Test Failed")
+        except subprocess.TimeoutExpired:
+            self.status_widget.value = "Connection timeout"
+            npyscreen.notify_confirm("Connection test timed out. Check host and network settings.", title="Connection Timeout")
+        except FileNotFoundError:
+            self.status_widget.value = "SSH client not found"
+            npyscreen.notify_confirm("SSH client not found. Please install OpenSSH client.", title="SSH Not Available")
+        except Exception as e:
+            self.status_widget.value = f"Error: {str(e)[:50]}"
+            npyscreen.notify_confirm(f"Connection test error: {e}", title="Error")
+        
+        self.status_widget.display()
 
     def switch_to_settings(self):
         # Assuming there's a "SETTINGS" form or back to "MAIN"

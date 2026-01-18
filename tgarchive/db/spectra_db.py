@@ -4,6 +4,7 @@ SPECTRA-004 Main Database Handler
 Main SpectraDB class combining all operation modules.
 """
 from pathlib import Path
+from typing import Optional, Dict, Any
 
 from .core_operations import CoreOperations
 from .db_base import BaseDB
@@ -16,11 +17,22 @@ from .mirror_operations import MirrorOperations
 class SpectraDB(BaseDB):
     """SQLite wrapper providing all SPECTRA database operations."""
 
-    def __init__(self, db_path: Path | str, *, tz: str | None = None) -> None:
+    def __init__(self, db_path: Path | str, *, tz: str | None = None, config: Optional[Dict[str, Any]] = None) -> None:
         super().__init__(db_path, tz=tz)
         
+        # Initialize advanced features manager if config provided
+        self.advanced_features = None
+        if config:
+            try:
+                from ..advanced_features import AdvancedFeaturesManager
+                # Pass database connection for querying messages
+                self.advanced_features = AdvancedFeaturesManager(config, db_connection=self.db)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"Failed to initialize advanced features: {e}")
+        
         # Initialize operation modules
-        self.core = CoreOperations(self)
+        self.core = CoreOperations(self, advanced_features_manager=self.advanced_features)
         self.forward = ForwardOperations(self)
         self.sorting_hash = SortingHashOperations(self)
         self.migration = MigrationOperations(self)

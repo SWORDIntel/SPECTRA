@@ -90,6 +90,36 @@ DEFAULT_CFG: Dict[str, Any] = {
     "grouping": {
         "strategy": "none",
         "time_window_seconds": 300
+    },
+    "advanced_features": {
+        "enabled": False,
+        "vector_database": {
+            "backend": "qihse",
+            "auto_index_messages": False,
+            "embedding_model": "all-MiniLM-L6-v2",
+            "vector_dimension": 384,
+            "collection_name": "spectra_messages",
+            "confidence_threshold": 0.95,
+            "path": "./data/qihse_vectors"
+        },
+        "cnsa_crypto": {
+            "enabled": False,
+            "encrypt_archives": False,
+            "sign_reports": False,
+            "keystore_path": "./data/keystore.enc",
+            "key_rotation_days": 365
+        },
+        "threat_analysis": {
+            "temporal_analysis": False,
+            "attribution_engine": False,
+            "auto_analyze_users": False,
+            "min_messages_for_analysis": 10,
+            "burst_detection_threshold": 3.0,
+            "timezone_inference": True,
+            "similarity_threshold": 0.85,
+            "tool_detection": True,
+            "ai_detection": True
+        }
     }
 }
 
@@ -115,13 +145,10 @@ class Config:
             console.print(
                 f"[yellow]Config not found; default created at {self.path}. Edit credentials then rerun.[/yellow]"
             )
-            # Avoid sys.exit(1) in a model class if possible, handle upstream or raise exception
-            # For now, keeping original behavior for direct compatibility
-            # Consider raising a custom ConfigNotFoundError for cleaner handling
-            # For this refactor, to minimize changes, we'll keep sys.exit if it was the original intent for missing config.
-            # However, it's better if the calling code (e.g. main()) handles this.
-            # Let's assume for now that if this class is initialized, a config is expected or will be created.
-            # The original code did sys.exit(1), so if this path is hit, it implies a critical setup failure.
+            # Note: Original design used sys.exit(1) for missing config
+            # Current implementation creates default config and continues
+            # This allows the application to start with defaults, which the user can then configure
+            # If strict config validation is needed, it should be handled by the calling code
 
         # Ensure all top-level keys from DEFAULT_CFG are present, and nested ones too
         for key, default_value in DEFAULT_CFG.items():

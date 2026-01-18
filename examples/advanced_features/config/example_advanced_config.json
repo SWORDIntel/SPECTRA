@@ -1,0 +1,32 @@
+{
+  "advanced_features": {
+    "enabled": true,
+    "vector_database": {
+      "backend": "qihse",
+      "auto_index_messages": true,
+      "embedding_model": "all-MiniLM-L6-v2",
+      "vector_dimension": 384,
+      "collection_name": "spectra_messages",
+      "confidence_threshold": 0.95,
+      "path": "./data/qihse_vectors"
+    },
+    "cnsa_crypto": {
+      "enabled": true,
+      "encrypt_archives": false,
+      "sign_reports": true,
+      "keystore_path": "./data/keystore.enc",
+      "key_rotation_days": 365
+    },
+    "threat_analysis": {
+      "temporal_analysis": true,
+      "attribution_engine": true,
+      "auto_analyze_users": true,
+      "min_messages_for_analysis": 10,
+      "burst_detection_threshold": 3.0,
+      "timezone_inference": true,
+      "similarity_threshold": 0.85,
+      "tool_detection": true,
+      "ai_detection": true
+    }
+  }
+}

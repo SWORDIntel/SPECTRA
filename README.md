@@ -104,25 +104,14 @@ pip install -e .
 
 ## System Status
 
-**Current Version**: 2025-01-XX (Production Ready with Ultra-High-Performance Search)
+**Current Version**: 2025-01-XX (Production Ready)
 - ✅ **Core System**: Fully operational with all syntax errors resolved
 - ✅ **CLI Interface**: 18 commands available and tested
 - ✅ **Dependencies**: Core dependencies installed and verified
 - ✅ **Architecture**: Professional-grade modular design validated
-- ✅ **NOT_STISLA Integration**: 22.28x speedup for sorted array searches
-- ✅ **QIHSE Integration**: 2-5x speedup for vector/semantic search
-- ✅ **Unified Search**: Intelligent algorithm selection with combined optimizations
 - ✅ **CNSA 2.0 Compliance**: All cryptographic operations updated
 
 **Recent Enhancements (2025-01-XX)**:
-- Integrated NOT_STISLA for ultra-fast timestamp, ID, and offset searches
-- Integrated QIHSE for quantum-inspired semantic search acceleration
-- Implemented unified search engine with automatic algorithm selection
-- Added temporal-semantic correlation combining both algorithms
-- Implemented anchor table persistence for cross-session learning
-- Added batch search optimizations with parallel processing
-- Memory-bounded anchor table management
-- Comprehensive benchmark suite and integration tests
 - Fixed critical Git merge conflicts blocking system startup
 - Resolved CLI parser conflicts and syntax errors
 - Validated full system functionality and dependency chain
@@ -650,161 +639,11 @@ mermaid_graph = MermaidGenerator.generate_network_graph(
 - **System Architecture**: See `docs/THREAT_SCORING_SYSTEM_PLAN.md`
 - **Demo Script**: See `examples/threat_scoring_demo.py`
 
-### ⚡ Ultra-High-Performance Search Algorithms
+### ⚡ High-Performance Search Algorithms
 
-SPECTRA now includes two cutting-edge search algorithms for dramatically improved performance:
+SPECTRA includes optimized search algorithms for improved performance. These algorithms are automatically used when available.
 
-#### NOT_STISLA Integration (22.28x Speedup)
-
-Ultra-high-performance interpolation search with quantum-inspired optimizations:
-
-**Performance Gains:**
-- **22.28x speedup** for timestamp searches (7.4 ns/op vs 165 ns/op binary search)
-- **15-20x speedup** for message ID lookups
-- **20-25x speedup** for file offset searches
-- Memory-bounded anchor tables (max 16 anchors, ~8MB)
-
-**Features:**
-- Anchor-based interpolation search with learning
-- SIMD acceleration (AVX2/AVX-512/AMX)
-- Workload-specific optimizations (telemetry, IDs, offsets, events)
-- Runtime CPU feature detection
-- Persistent anchor tables across sessions
-
-**Usage:**
-```python
-from tgarchive.db import SpectraDB
-
-with SpectraDB("spectra.sqlite3") as db:
-    # Automatic NOT_STISLA optimization for timestamp searches
-    message_ids = db.find_messages_by_timestamp_range(
-        start_timestamp=1609459200,  # Unix timestamp
-        end_timestamp=1609545600,
-        channel_id=123456
-    )
-    
-    # Fast message ID lookup
-    message = db.find_message_by_id_fast(message_id=12345, channel_id=123456)
-```
-
-#### QIHSE Integration (2-5x Speedup)
-
-Quantum-Inspired Hilbert Space Expansion for vector/semantic search:
-
-**Performance Gains:**
-- **2-5x speedup** for semantic search operations
-- **3-4x speedup** for vector clustering (K-means/DBSCAN)
-- **5-10x speedup** for batch parallel queries
-- Heterogeneous computing (CPU/GPU/NPU simultaneously)
-
-**Features:**
-- Quantum-inspired Hilbert space expansion
-- Self-optimizing ML engine for parameter tuning
-- Heterogeneous parallel execution across devices
-- CNSA 2.0 compliant operations
-- Integration with NOT_STISLA for combined optimizations
-
-**Usage:**
-```python
-from tgarchive.search.hybrid_search import QdrantVectorManager
-
-# Initialize with QIHSE acceleration
-vector_manager = QdrantVectorManager(
-    qdrant_url="http://localhost:6333",
-    use_qihse=True  # Enable QIHSE acceleration
-)
-
-# Semantic search with QIHSE (automatic)
-results = vector_manager.search_semantic(
-    query="discuss zero-day vulnerabilities",
-    limit=20,
-    use_qihse=True  # Uses QIHSE for 2-5x speedup
-)
-```
-
-#### Unified Search Engine
-
-Intelligent algorithm selection automatically chooses the optimal search method:
-
-```python
-from tgarchive.search.unified_search import UnifiedSearchEngine
-
-unified = UnifiedSearchEngine(db_connection, qdrant_url)
-
-# Automatic algorithm selection
-results = unified.search(
-    query="2024-01-01",  # Auto-detects timestamp query → uses NOT_STISLA
-    search_type="auto",
-    date_from=datetime(2024, 1, 1),
-    date_to=datetime(2024, 1, 31)
-)
-
-# Semantic query → uses QIHSE
-results = unified.search(
-    query="find similar messages about security",
-    search_type="auto"  # Auto-detects semantic intent → uses QIHSE
-)
-
-# Complex multi-criteria → uses hybrid (NOT_STISLA + QIHSE + FTS5)
-results = unified.search(
-    query="threat actor discussion",
-    search_type="hybrid",
-    date_from=datetime(2024, 1, 1),
-    filter_channel=123456
-)
-```
-
-#### Temporal-Semantic Correlation
-
-Combine NOT_STISLA temporal filtering with QIHSE semantic search:
-
-```python
-from tgarchive.search.temporal_semantic import TemporalSemanticSearch
-
-temporal_semantic = TemporalSemanticSearch(db_connection)
-
-# Find semantically similar messages within time window
-# Step 1: NOT_STISLA finds messages in time range (22.28x faster)
-# Step 2: QIHSE finds semantically similar (2-5x faster)
-results = temporal_semantic.find_semantically_similar_in_timeframe(
-    query="zero-day exploit",
-    start_time=datetime(2024, 1, 1),
-    end_time=datetime(2024, 1, 31),
-    semantic_threshold=0.7,
-    limit=20
-)
-```
-
-**Total Performance Impact:**
-- **20-2000x speedup** potential across different search operations
-- **30-100x speedup** for temporal-semantic correlation queries
-- **Sub-10ms** response times for common queries
-- Handles **millions of messages** efficiently
-
-### Semantic Search & RAG
-
-Vector-based semantic search with Retrieval-Augmented Generation and QIHSE acceleration:
-
-```python
-from tgarchive.ai import SemanticSearchEngine
-from tgarchive.search.hybrid_search import QdrantVectorManager
-
-# Initialize with QIHSE acceleration
-vector_manager = QdrantVectorManager(use_qihse=True)
-
-# Search semantically (automatically uses QIHSE)
-results = vector_manager.search_semantic(
-    query="discuss zero-day vulnerabilities",
-    limit=20
-)
-```
-
-**Features:**
-- Vector embeddings with sentence-transformers
-- Qdrant integration with QIHSE acceleration (2-5x faster)
-- Hybrid semantic + keyword search (NOT_STISLA + QIHSE + FTS5)
-- RAG pipeline for question answering
-- Temporal-semantic correlation for time-windowed searches
+**Note:** NOT_STISLA and QIHSE are third-party libraries with specific licensing requirements. See the [Third-Party Licenses](#third-party-licenses) section below for details.
 
 ### Entity Extraction & Knowledge Graphs
 
@@ -1080,6 +919,57 @@ SPECTRA stores all discovery and archiving data in a SQLite database:
 - Archive status tracking
 
 You can specify a custom database path with `--db path/to/database.db`
+
+---
+
+## Third-Party Licenses
+
+SPECTRA may use third-party search algorithm libraries with specific licensing requirements:
+
+### NOT_STISLA License
+
+NOT_STISLA is dual-licensed under:
+- **GNU Affero General Public License v3.0** - Open source license
+- **Commercial License** - Available for proprietary use
+
+**⚠️ License Compliance Warning:**
+
+NOT_STISLA includes license compliance features to ensure proper usage. License violations may result in legal action.
+
+**Commercial Licensing:**
+- Commercial licensing available at [swordintel.com/licensing](https://swordintel.com/licensing)
+- **Startups & Small Businesses**: Flexible terms with reasonable pricing
+- **Medical & Non-Profit Organizations**: Special discounted rates
+- **Intelligence Community**: Special consideration available for members of the intelligence community
+- **Enterprise**: Volume discounts and custom SLA agreements
+
+**Contact:**
+- **Email**: [commercial@swordintel.com](mailto:commercial@swordintel.com)
+- **GitHub Issues**: Tag with `[commercial-license]` for public discussion
+
+**Note:** Home and personal use is always free and encouraged.
+
+### QIHSE License
+
+QIHSE is dual-licensed:
+- **MIT License** - Open source license for non-commercial use
+- **Commercial License** - Required for commercial/proprietary use
+
+**⚠️ License Compliance Warning:**
+
+QIHSE includes license compliance features to ensure proper usage. License violations may result in legal action.
+
+**Commercial Licensing:**
+- Commercial licensing available at [swordintel.com/licensing](https://swordintel.com/licensing)
+- **Base License**: $500K-$2M per deployment (varies by use case)
+- **Annual Maintenance**: 20% of license value for comprehensive support
+- **Enterprise Support**: 24/7 support, performance optimization, security updates, version upgrades
+
+**Contact:**
+- **Email**: [commercial@swordintel.com](mailto:commercial@swordintel.com)
+- **GitHub Issues**: Tag with `[commercial-license]` for public discussion
+
+**Note:** Home and personal use is always free and encouraged.
 
 ---
 

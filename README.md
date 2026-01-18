@@ -75,7 +75,7 @@ SPECTRA/
 └── setup.py          ← Python package setup
 ```
 
-For detailed structure explanation, see [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)
+For detailed structure explanation, see [PROJECT_STRUCTURE.md](docs/reference/PROJECT_STRUCTURE.md)
 
 ## Installation
 

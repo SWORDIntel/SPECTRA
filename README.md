@@ -37,7 +37,11 @@ make bootstrap
 
 # On subsequent runs, just launch the TUI
 make run
+# OR
+python -m tgarchive
 ```
+
+The TUI (Terminal User Interface) is the primary way to interact with SPECTRA. It provides an intuitive, menu-driven interface for all operations including archiving, discovery, network analysis, and forwarding.
 
 For more commands: `make help`
 
@@ -140,142 +144,122 @@ python -m tgarchive accounts --import
 
 ## Usage
 
-SPECTRA can be used in several modes:
+SPECTRA provides a powerful Terminal User Interface (TUI) as the primary way to interact with the system. The TUI offers an intuitive, menu-driven interface for all major operations.
 
-### TUI Mode (Terminal User Interface)
+### TUI Mode (Terminal User Interface) - Primary Interface
+
+The TUI is the recommended way to use SPECTRA. It provides a comprehensive, interactive interface for all operations.
+
+#### Launching the TUI
 
 ```bash
 # Launch the interactive TUI
 python -m tgarchive
+
+# Or use the launcher script
+./spectra.sh
+
+# Or use make
+make run
 ```
 
-- The TUI supports all major workflows: discovery, network analysis, batch/parallel archiving, and account management.
-- All TUI and CLI operations use the same modular, OPSEC-aware backend.
+#### Main Menu Overview
 
-### Account Management
+When you launch SPECTRA, you'll see the main menu with the following options:
 
-```bash
-# Import accounts from gen_config.py
-python -m tgarchive accounts --import
+1. **Dashboard** - View system status, account health, and operation statistics
+2. **Archive Channel/Group** - Archive messages and media from a specific channel or group
+3. **Discover Groups** - Discover new groups and channels from seed entities
+4. **Network Analysis** - Analyze group relationships and identify high-value targets
+5. **Forwarding Utilities** - Forward messages between channels with deduplication
+6. **OSINT Utilities** - Intelligence gathering and analysis tools
+7. **Group Mirroring** - Mirror groups and channels
+8. **Account Management** - Manage Telegram accounts and API keys
+9. **Settings (VPS Config)** - Configure VPS and system settings
+10. **Forwarding & Deduplication Settings** - Configure forwarding behavior
+11. **Download Users** - Download user information and profiles
+12. **Help & About** - Access help documentation and system information
+13. **Exit** - Exit the application
 
-# List configured accounts and their status
-python -m tgarchive accounts --list
+#### Navigation
 
-# Test all accounts for connectivity
-python -m tgarchive accounts --test
+**Keyboard Shortcuts:**
+- **Number keys (1-9)**: Jump directly to menu items from the main menu
+- **Ctrl+D**: Open Dashboard
+- **Ctrl+A**: Open Archive menu
+- **Ctrl+F**: Open Forwarding menu
+- **Ctrl+H**: Open Help
+- **Ctrl+K**: Quick access menu (command palette)
+- **Ctrl+Q**: Quit application
+- **Esc**: Go back to previous menu
+- **Tab / Shift+Tab**: Navigate between fields
 
-# Reset account usage statistics
-python -m tgarchive accounts --reset
-```
+**Quick Actions:**
+- `qa` = Archive
+- `qd` = Dashboard
+- `qf` = Forwarding
+- `qs` = Search
+- `qg` = Graph/Network Analysis
+- `qm` = Main Menu
 
-### Discovery Mode
+#### Common Workflows
 
-```bash
-# Discover groups from a seed entity
-python -m tgarchive discover --seed @example_channel --depth 2
+**Archiving a Channel:**
+1. From main menu, select **2. Archive Channel/Group** (or press `2`)
+2. Enter the channel username (e.g., `@example_channel`) or ID
+3. Configure archive options (date range, media types, etc.)
+4. Start the archive operation
+5. Monitor progress in real-time
 
-# Discover from multiple seeds in a file
-python -m tgarchive discover --seeds-file seeds.txt --depth 2 --export discovered.txt
+**Discovering New Groups:**
+1. From main menu, select **3. Discover Groups** (or press `3`)
+2. Enter seed channel(s) or load from file
+3. Set discovery depth (how many hops to explore)
+4. Start discovery operation
+5. View discovered groups in the database
 
-# Import existing scan data
-python -m tgarchive discover --crawler-dir ./telegram-groups-crawler/
-```
+**Network Analysis:**
+1. From main menu, select **4. Network Analysis** (or press `4`)
+2. Choose data source (database or crawler directory)
+3. Configure analysis parameters
+4. View network graph and priority targets
+5. Export results for further analysis
 
-### Network Analysis
+**Forwarding Messages:**
+1. From main menu, select **5. Forwarding Utilities** (or press `5`)
+2. Choose forwarding mode (selective, total, or forwarding mode)
+3. Configure source and destination channels
+4. Set deduplication options
+5. Start forwarding operation
 
-```bash
-# Analyze network from crawler data
-python -m tgarchive network --crawler-dir ./telegram-groups-crawler/ --plot
+**Account Management:**
+1. From main menu, select **8. Account Management** (or press `8`)
+2. View account status and health
+3. Import accounts from `gen_config.py`
+4. Test account connectivity
+5. Manage account rotation settings
 
-# Analyze network from SQL database
-python -m tgarchive network --from-db --export priority_targets.json --top 50
-```
+#### Dashboard Features
 
-### Archive Mode
+The Dashboard (option 1) provides:
+- **System Status**: Account availability, database status, active operations
+- **Account Health**: Status of all configured Telegram accounts
+- **Operation Statistics**: Recent operations, success rates, error counts
+- **Quick Actions**: Fast access to common operations
+- **Real-time Updates**: Live status updates during operations
 
-```bash
-# Archive a specific channel
-default
-python -m tgarchive archive --entity @example_channel
-```
+#### Tips for Using the TUI
 
-### Batch Operations
+- **Use keyboard shortcuts** for faster navigation
+- **Check the Dashboard** regularly to monitor system health
+- **Use the Help menu** (Ctrl+H) for context-sensitive help
+- **All operations are resumable** - you can safely exit and resume later
+- **Progress indicators** show real-time status for long operations
+- **Error messages** provide clear guidance on how to resolve issues
 
-```bash
-# Process multiple groups from file
-python -m tgarchive batch --file groups.txt --delay 30
+#### TUI vs CLI
 
-# Process high-priority groups from database
-python -m tgarchive batch --from-db --limit 20 --min-priority 0.1
-```
-
-### Parallel Processing
-
-SPECTRA supports parallel processing using multiple Telegram accounts and proxies simultaneously, with full SQL-backed state and OPSEC-aware account/proxy rotation:
-
-```bash
-# Run discovery in parallel across multiple accounts
-python -m tgarchive parallel discover --seeds-file seeds.txt --depth 2 --max-workers 4
-
-# Join multiple groups in parallel
-python -m tgarchive parallel join --file groups.txt --max-workers 4
-
-# Archive multiple entities in parallel
-python -m tgarchive parallel archive --file entities.txt --max-workers 4
-
-# Archive high-priority entities from DB in parallel
-python -m tgarchive parallel archive --from-db --limit 20 --min-priority 0.1
-```
-
-You can also use the global parallel flag with standard commands:
-
-```bash
-# Run batch operations in parallel
-python -m tgarchive batch --file groups.txt --parallel --max-workers 4
-
-# Run discovery in parallel
-python -m tgarchive discover --seeds-file seeds.txt --parallel --max-workers 4
-```
-
-### Forwarding Mode
-
-This mode is designed for automated traversal and targeted downloading from an initial set of seed channels. It uses a single API key to explore channels, discover new ones through links in messages (up to a defined depth), and download specific file types (text and common archives) into an organized output directory.
-
-**Command Structure:**
-```bash
-python -m tgarchive forward --channels-file <path_to_channels.txt> --output-dir <path_to_output_directory> [options]
-```
-
-**Arguments:**
-
-*   `--channels-file PATH`: Required. Path to a text file containing the initial list of seed channel URLs or IDs (one per line).
-*   `--output-dir PATH`: Required. Directory where downloaded files (in `text_files/` and `archive_files/` subfolders) and the `forward_download_log.csv` will be stored.
-*   `--max-depth INT`: Optional. Maximum depth to follow channel links during discovery. Default is 2.
-*   `--min-files-gateway INT`: Optional. Minimum number of files a channel should ideally have to be considered a 'gateway' for focused downloading (Note: current implementation downloads from all accessible discovered channels; this option is for future refinement). Default is 100.
-
-**API Key Usage:**
-
-Forwarding mode is designed to use a single API key (specifically, the first account configured in your `spectra_config.json` or imported from `gen_config.py`) for all its operations. This is to avoid potentially joining the same channel with multiple accounts, which might be undesirable for certain operational goals.
-
-**Output Structure:**
-
-In the specified output directory, you will find:
-
-*   `text_files/`: Contains downloaded plain text files.
-*   `archive_files/`: Contains downloaded archive files (e.g., .zip, .rar) along with their metadata in `.json` sidecar files (e.g., `example.zip.json`).
-*   `forward_download_log.csv`: A CSV log detailing every downloaded file, its source channel, message ID, timestamp, and other metadata.
-
-**Running Long Forwarding Sessions:**
-
-For extended forwarding mode operations, it is highly recommended to use a terminal multiplexer like `screen` or `tmux` to ensure the process continues running even if your connection drops.
-
-Example using `screen`:
-1. Start a new screen session: `screen -S spectra_forward_session`
-2. Run the command: `python -m tgarchive forward --channels-file your_seeds.txt --output-dir ./forward_output`
-3. Detach from the session: Press `Ctrl+A` then `D`.
-4. To reattach later: `screen -r spectra_forward_session`
-
-SPECTRA will not install `screen` or `tmux` for you. Please install them using your system's package manager if needed (e.g., `sudo apt install screen`).
+The TUI provides the same functionality as the CLI but with a more user-friendly interface. All operations performed in the TUI use the same backend modules, ensuring consistency and reliability. For automation and scripting, you can still use the CLI commands (see below).
 
 ---
 
@@ -478,70 +462,104 @@ For more details on the database schema, please refer to the [DATABASE_SCHEMA.md
 
 ---
 
-## Shunt Mode (File Transfer)
+### Command Line Interface (CLI) - Advanced Usage
 
-Shunt Mode is designed to transfer all media files from one Telegram channel (source) to another (destination) with advanced deduplication and file grouping capabilities. This is useful for consolidating archives, moving collections, or reorganizing media across channels.
+For automation, scripting, and advanced use cases, SPECTRA also provides a comprehensive CLI. Most operations available in the TUI can also be performed via CLI commands.
 
-**Key Features:**
-
-*   **Deduplication:** Ensures that files already present in the destination (based on content hash) or previously shunted are not transferred again. It uses the same `forwarded_messages` table as the general forwarding feature.
-*   **File Grouping:** Attempts to identify and transfer related files as groups. This helps maintain the integrity of multi-part archives or collections of images/videos sent together.
-    *   **Strategies:**
-        *   `none`: No grouping; files are transferred individually.
-        *   `filename`: Groups files based on common base names and sequential numbering patterns (e.g., `archive_part1.rar`, `archive_part2.rar` or `image_001.jpg`, `image_002.jpg`).
-        *   `time`: Groups files sent by the same user within a configurable time window.
-
-**CLI Command:**
-
-The Shunt Mode is activated using specific arguments with the main `tgarchive` command:
+#### Account Management
 
 ```bash
-python -m tgarchive --shunt-from <source_id_or_username> --shunt-to <destination_id_or_username> [options]
+# Import accounts from gen_config.py
+python -m tgarchive accounts --import
+
+# List configured accounts and their status
+python -m tgarchive accounts --list
+
+# Test all accounts for connectivity
+python -m tgarchive accounts --test
+
+# Reset account usage statistics
+python -m tgarchive accounts --reset
 ```
 
-**CLI Arguments:**
+#### Discovery Mode
 
-*   `--shunt-from <id_or_username>`: **Required.** The source channel/chat ID or username from which files will be shunted.
-*   `--shunt-to <id_or_username>`: **Required.** The destination channel/chat ID or username to which files will be transferred.
-*   `--shunt-account <phone_or_session_name>`: Optional. Specifies which configured Telegram account to use for the shunting operation. If not provided, the first available active account from your configuration is typically used.
+```bash
+# Discover groups from a seed entity
+python -m tgarchive discover --seed @example_channel --depth 2
 
-**Configuration (`spectra_config.json`):**
+# Discover from multiple seeds in a file
+python -m tgarchive discover --seeds-file seeds.txt --depth 2 --export discovered.txt
 
-File grouping behavior for Shunt Mode can be configured in your `spectra_config.json` file under the `grouping` key:
-
-```json
-{
-  // ... other configurations ...
-  "grouping": {
-    "strategy": "filename",  // "none", "filename", or "time"
-    "time_window_seconds": 300 // Time window in seconds for 'time' strategy (e.g., 300 for 5 minutes)
-  },
-  // ... other configurations ...
-}
+# Import existing scan data
+python -m tgarchive discover --crawler-dir ./telegram-groups-crawler/
 ```
 
-*   `strategy` (string): Defines the grouping method.
-    *   `"none"` (default): No grouping.
-    *   `"filename"`: Groups based on filename patterns.
-    *   `"time"`: Groups based on time proximity and sender.
-*   `time_window_seconds` (integer): Relevant only for the `"time"` strategy. Specifies the maximum time difference (in seconds) between messages from the same sender to be considered part of the same group.
+#### Network Analysis
 
-**Usage Example:**
+```bash
+# Analyze network from crawler data
+python -m tgarchive network --crawler-dir ./telegram-groups-crawler/ --plot
 
-To shunt all files from `@old_archive_channel` to `@new_consolidated_archive`, using filename-based grouping, and specifying the account `my_worker_account`:
+# Analyze network from SQL database
+python -m tgarchive network --from-db --export priority_targets.json --top 50
+```
 
-1.  Ensure your `spectra_config.json` has the desired grouping strategy (or rely on defaults):
-    ```json
-    "grouping": {
-      "strategy": "filename"
-    }
-    ```
-2.  Run the command:
-    ```bash
-    python -m tgarchive --shunt-from @old_archive_channel --shunt-to @new_consolidated_archive --shunt-account my_worker_account
-    ```
+#### Archive Mode
 
-Files will be fetched from the source, grouped according to the strategy, checked for duplicates against the destination (via the shared deduplication database), and then unique files/groups will be forwarded.
+```bash
+# Archive a specific channel
+python -m tgarchive archive --entity @example_channel
+```
+
+#### Batch Operations
+
+```bash
+# Process multiple groups from file
+python -m tgarchive batch --file groups.txt --delay 30
+
+# Process high-priority groups from database
+python -m tgarchive batch --from-db --limit 20 --min-priority 0.1
+```
+
+#### Parallel Processing
+
+SPECTRA supports parallel processing using multiple Telegram accounts and proxies simultaneously, with full SQL-backed state and OPSEC-aware account/proxy rotation:
+
+```bash
+# Run discovery in parallel across multiple accounts
+python -m tgarchive parallel discover --seeds-file seeds.txt --depth 2 --max-workers 4
+
+# Join multiple groups in parallel
+python -m tgarchive parallel join --file groups.txt --max-workers 4
+
+# Archive multiple entities in parallel
+python -m tgarchive parallel archive --file entities.txt --max-workers 4
+
+# Archive high-priority entities from DB in parallel
+python -m tgarchive parallel archive --from-db --limit 20 --min-priority 0.1
+```
+
+You can also use the global parallel flag with standard commands:
+
+```bash
+# Run batch operations in parallel
+python -m tgarchive batch --file groups.txt --parallel --max-workers 4
+
+# Run discovery in parallel
+python -m tgarchive discover --seeds-file seeds.txt --parallel --max-workers 4
+```
+
+#### Shunt Mode (File Transfer)
+
+Shunt Mode transfers all media files from one Telegram channel to another with advanced deduplication and file grouping. This is useful for consolidating archives, moving collections, or reorganizing media across channels.
+
+**Quick Start:**
+```bash
+python -m tgarchive --shunt-from @source_channel --shunt-to @destination_channel
+```
+
+For detailed Shunt Mode documentation, including configuration options, grouping strategies, and advanced usage, see the [Shunt Mode Guide](docs/guides/SHUNT_MODE_GUIDE.md).
 
 ---
 

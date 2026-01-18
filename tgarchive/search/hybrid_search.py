@@ -243,82 +243,59 @@ class SQLiteFTS5IndexManager:
             return {}
 
 
-class QdrantVectorManager:
+class QIHSEVectorManager:
     """
-    Manages Qdrant vector database for semantic search.
+    Manages QIHSE vector database for semantic search (primary backend).
 
     Features:
+    - Direct vector storage using QIHSE
     - Automatic embedding generation using SentenceTransformers
-    - Semantic similarity search
+    - Quantum-inspired semantic similarity search
     - Metadata filtering
-    - Scalable to billions of vectors
+    - Replaces Qdrant as primary storage
     """
 
     def __init__(
         self,
-        qdrant_url: str = "http://localhost:6333",
+        vector_store_path: str = "./data/qihse_vectors",
         collection_name: str = "spectra_messages",
         embedding_model: str = "all-MiniLM-L6-v2",
-        use_qihse: bool = True,
     ):
         """
-        Initialize Qdrant vector manager with optional QIHSE acceleration.
+        Initialize QIHSE vector manager.
 
         Args:
-            qdrant_url: Qdrant server URL
-            collection_name: Collection name in Qdrant
+            vector_store_path: Path to store QIHSE vectors
+            collection_name: Collection name
             embedding_model: HuggingFace model for embeddings
-            use_qihse: Enable QIHSE acceleration if available
         """
-        from qdrant_client import QdrantClient
         from sentence_transformers import SentenceTransformer
+        from ..db.vector_store import VectorStoreManager, VectorStoreConfig
 
-        self.client = QdrantClient(qdrant_url)
         self.model = SentenceTransformer(embedding_model)
         self.collection_name = collection_name
         self.embedding_dim = self.model.get_sentence_embedding_dimension()
-        self.use_qihse = use_qihse and QIHSE_ENABLED and qihse_available()
         
-        # Initialize QIHSE if available
-        self.qihse_engine = None
-        if self.use_qihse:
-            try:
-                self.qihse_engine = QihseSearchEngine(QIHSE_TYPE_DOUBLE, 10000)
-                configure_qihse_for_semantic_search(
-                    self.qihse_engine.config, self.embedding_dim, 0.95
-                )
-                logger.info("QIHSE engine initialized for semantic search acceleration")
-            except Exception as e:
-                logger.warning(f"Failed to initialize QIHSE: {e}. Using Qdrant only.")
-                self.use_qihse = False
-                self.qihse_engine = None
-
-        self._initialize_collection()
+        # Initialize QIHSE vector store (primary backend)
+        config = VectorStoreConfig(
+            backend="qihse",
+            path=vector_store_path,
+            collection_name=collection_name,
+            vector_size=self.embedding_dim,
+            confidence_threshold=0.95
+        )
+        
+        try:
+            self.vector_store = VectorStoreManager(config)
+            logger.info("QIHSE vector store initialized (primary backend)")
+        except Exception as e:
+            logger.error(f"Failed to initialize QIHSE vector store: {e}")
+            raise
 
     def _initialize_collection(self):
-        """Create Qdrant collection if it doesn't exist."""
-        from qdrant_client.models import Distance, VectorParams
-
-        try:
-            # Check if collection exists
-            collections = self.client.get_collections()
-            collection_names = [c.name for c in collections.collections]
-
-            if self.collection_name not in collection_names:
-                self.client.create_collection(
-                    collection_name=self.collection_name,
-                    vectors_config=VectorParams(
-                        size=self.embedding_dim,
-                        distance=Distance.COSINE
-                    ),
-                )
-                logger.info(f"✓ Created Qdrant collection: {self.collection_name}")
-            else:
-                logger.info(f"✓ Using existing Qdrant collection: {self.collection_name}")
-
-        except Exception as e:
-            logger.error(f"✗ Qdrant initialization failed: {e}")
-            raise
+        """Initialize QIHSE collection (no-op, handled by VectorStoreManager)."""
+        # Collection is automatically initialized by VectorStoreManager
+        pass
 
     def embed_message(self, content: str) -> List[float]:
         """
@@ -389,10 +366,10 @@ class QdrantVectorManager:
         filter_channel: Optional[int] = None,
         filter_user: Optional[int] = None,
         score_threshold: float = 0.3,
-        use_qihse: Optional[bool] = None,
+        use_qihse: Optional[bool] = None,  # Deprecated, QIHSE is always used
     ) -> List[Dict[str, Any]]:
         """
-        Semantic search using vector similarity with optional QIHSE acceleration.
+        Semantic search using QIHSE quantum-inspired vector similarity.
 
         Args:
             query: Natural language search query
@@ -400,67 +377,44 @@ class QdrantVectorManager:
             filter_channel: Filter by channel
             filter_user: Filter by user
             score_threshold: Minimum similarity score (0-1)
-            use_qihse: Override QIHSE usage (None = use default)
+            use_qihse: Deprecated (QIHSE is always used)
 
         Returns:
             List of similar messages with scores
         """
-        use_qihse_override = use_qihse if use_qihse is not None else self.use_qihse
-        
-        # Try QIHSE first if enabled
-        if use_qihse_override and self.qihse_engine:
-            try:
-                return self._search_semantic_qihse(
-                    query, limit, filter_channel, filter_user, score_threshold
-                )
-            except Exception as e:
-                logger.warning(f"QIHSE search failed, falling back to Qdrant: {e}")
-        
-        # Fallback to Qdrant
         try:
             # Generate query embedding
-            query_vector = self.embed_message(query)
+            query_embedding = self.embed_message(query)
 
-            # Build filter
-            must_conditions = []
+            # Build filters
+            filters = {}
             if filter_channel is not None:
-                must_conditions.append({
-                    "key": "channel_id",
-                    "match": {"value": filter_channel}
-                })
+                filters["channel_id"] = filter_channel
             if filter_user is not None:
-                must_conditions.append({
-                    "key": "user_id",
-                    "match": {"value": filter_user}
-                })
+                filters["user_id"] = filter_user
 
-            filter_obj = None
-            if must_conditions:
-                filter_obj = {"must": must_conditions}
-
-            # Search Qdrant
-            results = self.client.search(
-                collection_name=self.collection_name,
-                query_vector=query_vector,
-                limit=limit,
-                query_filter=filter_obj,
-                score_threshold=score_threshold,
+            # Search QIHSE vector store
+            results = self.vector_store.semantic_search(
+                query_embedding=np.array(query_embedding),
+                top_k=limit,
+                filters=filters if filters else None,
+                min_score=score_threshold
             )
 
             # Format results
             search_results = []
-            for scored_point in results:
+            for result in results:
                 search_results.append({
-                    "message_id": scored_point.payload.get("message_id"),
-                    "content": scored_point.payload.get("content"),
-                    "channel_id": scored_point.payload.get("channel_id"),
-                    "user_id": scored_point.payload.get("user_id"),
-                    "date": scored_point.payload.get("date"),
-                    "relevance_score": scored_point.score,
+                    "message_id": result.payload.get("message_id"),
+                    "content": result.payload.get("content"),
+                    "channel_id": result.payload.get("channel_id"),
+                    "user_id": result.payload.get("user_id"),
+                    "date": result.payload.get("date"),
+                    "relevance_score": result.score,
                     "match_type": SearchType.SEMANTIC,
                 })
 
-            logger.debug(f"Semantic search returned {len(search_results)} results")
+            logger.debug(f"QIHSE semantic search returned {len(search_results)} results")
             return search_results
 
         except Exception as e:
@@ -568,9 +522,9 @@ class HybridSearchEngine:
     def __init__(
         self,
         db_connection,
-        qdrant_url: str = "http://localhost:6333",
+        vector_store_path: str = "./data/qihse_vectors",
         use_not_stisla: bool = True,
-        use_qihse: bool = True,
+        use_qihse: bool = True,  # QIHSE is primary, always enabled
         cache_manager=None,
     ):
         """
@@ -578,13 +532,13 @@ class HybridSearchEngine:
 
         Args:
             db_connection: SQLite connection
-            qdrant_url: Qdrant server URL
+            vector_store_path: Path to QIHSE vector store
             use_not_stisla: Enable NOT_STISLA optimizations
-            use_qihse: Enable QIHSE optimizations
+            use_qihse: Enable QIHSE (always True, QIHSE is primary)
             cache_manager: Optional CacheManager instance
         """
         self.fts5 = SQLiteFTS5IndexManager(db_connection)
-        self.vector = QdrantVectorManager(qdrant_url, use_qihse=use_qihse)
+        self.vector = QIHSEVectorManager(vector_store_path=vector_store_path)
         self.cache = cache_manager
         
         # Initialize NOT_STISLA engines
@@ -898,61 +852,34 @@ class HybridSearchEngine:
                 logger.warning(f"NOT_STISLA batch processing failed: {e}")
         
         # Process semantic queries with QIHSE batch search
-        if semantic_queries and self.vector.qihse_engine:
+        if semantic_queries:
             try:
-                # Retrieve vectors from Qdrant collection
-                vectors = []
-                message_ids = []
-                point_data = []
-                
-                collection_info = self.vector.client.get_collection(self.vector.collection_name)
-                for offset in range(0, min(collection_info.points_count, 10000), 1000):
-                    points, _ = self.vector.client.scroll(
-                        collection_name=self.vector.collection_name,
-                        limit=1000,
-                        offset=offset,
-                    )
-                    for point in points:
-                        if filter_channel and point.payload.get("channel_id") != filter_channel:
-                            continue
-                        vectors.append(point.vector)
-                        message_ids.append(point.payload.get("message_id"))
-                        point_data.append(point.payload)
-                
-                if vectors:
-                    import numpy as np
-                    vectors_array = np.array(vectors, dtype=np.float64)
-                    
-                    # Generate query embeddings
-                    query_vectors = []
-                    for query in semantic_queries:
-                        query_vec = np.array(self.vector.embed_message(query), dtype=np.float64)
-                        query_vectors.append(query_vec)
-                    
-                    query_vectors_array = np.array(query_vectors, dtype=np.float64)
-                    
-                    # Use QIHSE batch search
-                    batch_results = self.vector.qihse_engine.batch_search_vectors(
-                        vectors_array, query_vectors_array
+                # Use QIHSE vector store for batch search
+                # Batch search processes queries individually
+                # QIHSEVectorStore supports batch operations via batch_search_vectors when available
+                for query in semantic_queries:
+                    query_results = self.vector.search_semantic(
+                        query,
+                        limit=limit_per_query,
+                        filter_channel=filter_channel,
+                        filter_user=filter_user,
                     )
                     
-                    for i, query in enumerate(semantic_queries):
-                        query_results = []
-                        for idx, confidence in batch_results[i]:
-                            if idx < len(point_data):
-                                payload = point_data[idx]
-                                query_results.append(SearchResult(
-                                    message_id=payload.get("message_id"),
-                                    channel_id=payload.get("channel_id"),
-                                    user_id=payload.get("user_id"),
-                                    content=payload.get("content", ""),
-                                    date=datetime.fromisoformat(payload.get("date", "")) if isinstance(payload.get("date"), str) else datetime.now(),
-                                    relevance_score=float(confidence),
-                                    match_type=SearchType.SEMANTIC,
-                                    metadata={'algorithm': 'qihse_batch'},
-                                ))
-                        
-                        results[query] = query_results[:limit_per_query]
+                    # Convert to SearchResult format
+                    formatted_results = []
+                    for result in query_results:
+                        formatted_results.append(SearchResult(
+                            message_id=result.get("message_id"),
+                            channel_id=result.get("channel_id"),
+                            user_id=result.get("user_id"),
+                            content=result.get("content", ""),
+                            date=datetime.fromisoformat(result.get("date", "")) if isinstance(result.get("date"), str) else datetime.now(),
+                            relevance_score=result.get("relevance_score", 0.0),
+                            match_type=SearchType.SEMANTIC,
+                            metadata={'algorithm': 'qihse'},
+                        ))
+                    
+                    results[query] = formatted_results
             except Exception as e:
                 logger.warning(f"QIHSE batch processing failed: {e}")
         

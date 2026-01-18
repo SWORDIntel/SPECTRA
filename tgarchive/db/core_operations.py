@@ -15,10 +15,11 @@ logger = logging.getLogger(__name__)
 class CoreOperations:
     """Core operations for users, messages, media, and timeline queries."""
 
-    def __init__(self, db):
+    def __init__(self, db, advanced_features_manager=None):
         self.db = db
         self.cur = db.cur
         self._exec_retry = db._exec_retry
+        self.advanced_features = advanced_features_manager
 
     # Users ----------------------------------------------------------------
     def upsert_user(self, user: User) -> None:
@@ -90,6 +91,39 @@ class CoreOperations:
                 msg.checksum,
             ),
         )
+        
+        # Advanced features integration
+        if self.advanced_features:
+            try:
+                # Vector indexing
+                if msg.content:
+                    self.advanced_features.index_message(
+                        message_id=msg.id,
+                        content=msg.content,
+                        user_id=msg.user.id if msg.user else None,
+                        channel_id=None,  # Channel ID not available in Message model
+                        date=msg.date,
+                    )
+                
+                # User activity analysis (triggered periodically)
+                if msg.user and self.advanced_features:
+                    try:
+                        # Count messages for this user from database
+                        cursor = self.cur.execute(
+                            "SELECT COUNT(*) FROM messages WHERE user_id = ?",
+                            (msg.user.id,)
+                        )
+                        message_count = cursor.fetchone()[0]
+                        
+                        # Trigger analysis if threshold met
+                        self.advanced_features.analyze_user_activity(
+                            user_id=msg.user.id,
+                            message_count=message_count
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to analyze user activity for user {msg.user.id}: {e}")
+            except Exception as e:
+                logger.warning(f"Advanced features processing failed for message {msg.id}: {e}")
 
     # Account Channel Access -----------------------------------------------
     def upsert_account_channel_access(

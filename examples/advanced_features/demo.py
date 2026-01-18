@@ -2,7 +2,7 @@
 SPECTRA Advanced Features Demonstration
 
 Showcases:
-1. Vector database integration (Qdrant/ChromaDB)
+1. Vector database integration (QIHSE - primary backend)
 2. CNSA 2.0 post-quantum cryptography
 3. Enhanced threat actor tracking
    - Temporal analysis
@@ -10,7 +10,7 @@ Showcases:
    - Writing style analysis
 
 Usage:
-    python examples/advanced_features_demo.py
+    python examples/advanced_features/demo.py
 
 Author: SPECTRA Intelligence System
 """
@@ -20,8 +20,8 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add parent directory to path (go up to SPECTRA root)
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 print("=" * 70)
 print("SPECTRA ADVANCED FEATURES DEMONSTRATION")
@@ -39,31 +39,48 @@ try:
     from tgarchive.db.vector_store import VectorStoreManager, VectorStoreConfig
     import numpy as np
 
-    # Configure vector store
+    # Configure vector store (QIHSE is primary)
     config = VectorStoreConfig(
-        backend="qdrant",  # Try Qdrant first
+        backend="qihse",  # Primary: QIHSE quantum-inspired vector storage
         path="./data/demo_vectors",
         vector_size=384,
-        distance_metric="cosine"
+        distance_metric="cosine",
+        confidence_threshold=0.95
     )
 
     try:
         store = VectorStoreManager(config)
         print(f"✓ Vector store initialized: {store.store.__class__.__name__}")
+        if hasattr(store.store, 'qihse_engine'):
+            print("  Using QIHSE quantum-inspired search algorithm")
     except Exception as e:
-        print(f"! Qdrant not available ({e}), trying ChromaDB...")
-        config.backend = "chromadb"
+        print(f"! QIHSE not available ({e}), trying fallback...")
+        config.backend = "qdrant"
         try:
             store = VectorStoreManager(config)
-            print(f"✓ Vector store initialized: ChromaDB")
+            print(f"✓ Vector store initialized: Qdrant (fallback)")
         except Exception as e2:
-            print(f"! ChromaDB not available ({e2}), using Numpy fallback...")
-            config.backend = "numpy"
-            store = VectorStoreManager(config)
-            print(f"✓ Vector store initialized: Numpy (testing only)")
+            print(f"! Qdrant not available ({e2}), trying ChromaDB...")
+            config.backend = "chromadb"
+            try:
+                store = VectorStoreManager(config)
+                print(f"✓ Vector store initialized: ChromaDB (fallback)")
+            except Exception as e3:
+                print(f"! ChromaDB not available ({e3}), using Numpy fallback...")
+                config.backend = "numpy"
+                store = VectorStoreManager(config)
+                print(f"✓ Vector store initialized: Numpy (testing only)")
 
-    # Generate sample embeddings (normally from sentence-transformers)
+    # Generate sample embeddings using SentenceTransformer
     print("\nIndexing sample messages...")
+    try:
+        from sentence_transformers import SentenceTransformer
+        model = SentenceTransformer('all-MiniLM-L6-v2')
+        print("✓ Loaded SentenceTransformer model for embeddings")
+    except ImportError:
+        print("! SentenceTransformer not available, using random embeddings for demo")
+        model = None
+    
     sample_messages = [
         (1, "Discussing zero-day exploit in popular browser"),
         (2, "Ransomware campaign targeting healthcare sector"),
@@ -73,8 +90,12 @@ try:
     ]
 
     for msg_id, text in sample_messages:
-        # Simulate embedding (in production, use actual embedding model)
-        embedding = np.random.rand(384).astype(np.float32)
+        # Generate real embedding using SentenceTransformer
+        if model:
+            embedding = model.encode(text).astype(np.float32)
+        else:
+            # Fallback to random only if SentenceTransformer unavailable
+            embedding = np.random.rand(384).astype(np.float32)
 
         store.index_message(
             message_id=msg_id,
@@ -90,7 +111,13 @@ try:
     print(f"✓ Indexed {len(sample_messages)} messages")
 
     # Search for similar messages
-    query_embedding = np.random.rand(384).astype(np.float32)
+    query_text = "cyber attack infrastructure"
+    if model:
+        query_embedding = model.encode(query_text).astype(np.float32)
+        print(f"✓ Generated query embedding for: '{query_text}'")
+    else:
+        query_embedding = np.random.rand(384).astype(np.float32)
+        print("! Using random query embedding (SentenceTransformer unavailable)")
     results = store.semantic_search(
         query_embedding=query_embedding,
         top_k=3,
@@ -372,13 +399,17 @@ print("✓ Attribution Engine: Writing style analysis, tool fingerprinting, AI d
 print()
 print("For production use:")
 print("  1. Install dependencies: pip install -r requirements-advanced.txt")
-print("  2. Configure vector store backend (Qdrant recommended)")
+print("  2. Configure vector store backend (QIHSE is primary, Qdrant/ChromaDB fallback)")
 print("  3. Generate and securely store CNSA 2.0 keys")
-print("  4. Integrate with existing SPECTRA workflows")
+print("  4. Enable advanced features in spectra_config.json")
+print("  5. Features automatically integrate into archiving workflow")
 print()
 print("Documentation:")
-print("  - Vector DB: docs/ADVANCED_ENHANCEMENTS_PLAN.md (Section 1)")
-print("  - CNSA 2.0: docs/ADVANCED_ENHANCEMENTS_PLAN.md (Section 2)")
-print("  - Threat Tracking: docs/ADVANCED_ENHANCEMENTS_PLAN.md (Section 3)")
+print("  - Main Guide: examples/advanced_features/README.md")
+print("  - Architecture: examples/advanced_features/docs/ARCHITECTURE.md")
+print("  - Vector DB: examples/advanced_features/docs/VECTOR_DATABASE.md")
+print("  - CNSA 2.0: examples/advanced_features/docs/CNSA_CRYPTOGRAPHY.md")
+print("  - Temporal: examples/advanced_features/docs/TEMPORAL_ANALYSIS.md")
+print("  - Attribution: examples/advanced_features/docs/ATTRIBUTION_ENGINE.md")
 print()
 print("=" * 70)

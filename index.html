@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>SPECTRA Documentation</title>
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="SPECTRA Documentation">
+    <meta property="og:description" content="Spectrally-Processing Extraction, Crawling, & Tele-Reconnaissance Archive">
+    
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:title" content="SPECTRA Documentation">
+    <meta property="twitter:description" content="Spectrally-Processing Extraction, Crawling, & Tele-Reconnaissance Archive">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+                'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+                sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+        }
+        
+        .container {
+            text-align: center;
+            max-width: 600px;
+            padding: 2rem;
+        }
+        
+        .logo {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 2rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3rem;
+            font-weight: bold;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            font-weight: 700;
+        }
+        
+        .tagline {
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+            opacity: 0.9;
+            line-height: 1.6;
+        }
+        
+        .buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 1rem 2rem;
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        }
+        
+        .btn-primary {
+            background: rgba(255, 255, 255, 0.3);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+        }
+        
+        .btn-primary:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+        
+        .info {
+            margin-top: 3rem;
+            padding: 1.5rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+        
+        .info a {
+            color: #fff;
+            text-decoration: underline;
+        }
+        
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .tagline {
+                font-size: 1rem;
+            }
+            
+            .buttons {
+                flex-direction: column;
+            }
+            
+            .btn {
+                width: 100%;
+            }
+        }
+    </style>
+    
+    <!-- Auto-redirect after 3 seconds -->
+    <script>
+        // Check if we're in the docs directory structure
+        const currentPath = window.location.pathname;
+        const docsPath = currentPath.includes('/docs/') ? '../docs/html/' : 'docs/html/';
+        
+        // Redirect after 3 seconds
+        setTimeout(function() {
+            window.location.href = docsPath + 'index.html';
+        }, 3000);
+        
+        // Also handle immediate click
+        document.addEventListener('DOMContentLoaded', function() {
+            const btn = document.getElementById('goto-docs');
+            if (btn) {
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    window.location.href = docsPath + 'index.html';
+                });
+            }
+        });
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">SPECTRA</div>
+        <h1>SPECTRA Documentation</h1>
+        <p class="tagline">
+            Spectrally-Processing Extraction, Crawling, & Tele-Reconnaissance Archive
+        </p>
+        
+        <div class="buttons">
+            <a href="docs/html/index.html" id="goto-docs" class="btn btn-primary">
+                View Documentation →
+            </a>
+            <a href="https://github.com/SWORDIntel/SPECTRA" class="btn" target="_blank" rel="noopener">
+                GitHub Repository
+            </a>
+        </div>
+        
+        <div class="info">
+            <p>
+                <strong>Redirecting to documentation in 3 seconds...</strong><br>
+                If you are not redirected automatically, click the button above.
+            </p>
+            <p style="margin-top: 1rem; opacity: 0.8;">
+                SPECTRA is a professional-grade Telegram intelligence collection and archiving system
+                with advanced AI/ML capabilities, threat scoring, and network analysis features.
+            </p>
+        </div>
+    </div>
+</body>
+</html>

@@ -76,6 +76,22 @@ docs: ## Generate/view documentation
 	@echo "$(BLUE)▶$(NC) Documentation available at: docs/"
 	@ls -lh docs/*.md 2>/dev/null | awk '{print "  - " $$9}'
 
+docs-install: ## Install Docusaurus documentation dependencies
+	@echo "$(BLUE)▶$(NC) Installing documentation dependencies..."
+	@cd docs && npm install
+
+docs-build: ## Build Docusaurus documentation
+	@echo "$(BLUE)▶$(NC) Building documentation..."
+	@cd docs && npm run build
+
+docs-serve: ## Serve Docusaurus documentation locally
+	@echo "$(BLUE)▶$(NC) Starting documentation server..."
+	@cd docs && npm start
+
+docs-deploy: ## Deploy documentation to GitHub Pages
+	@echo "$(BLUE)▶$(NC) Deploying documentation..."
+	@cd docs && npm run deploy
+
 version: ## Show SPECTRA version
 	@python3 -c "from tgarchive import __version__; print(f'SPECTRA v{__version__}')" 2>/dev/null || \
 		echo "Version info: Check tgarchive/__init__.py"

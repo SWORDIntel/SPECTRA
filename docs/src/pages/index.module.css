@@ -1,0 +1,107 @@
+/**
+ * CSS files with the .module.css extension will be treated as CSS modules
+ * and scoped locally.
+ */
+
+.heroBanner {
+  padding: 4rem 0;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+}
+
+.heroContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.heroContent h1 {
+  color: white;
+  font-size: 3rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.heroContent p {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1.5rem;
+  margin: 0;
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.buttons a {
+  color: white;
+  border-color: white;
+}
+
+.buttons a:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-color: white;
+}
+
+.features {
+  display: flex;
+  align-items: center;
+  padding: 4rem 0;
+  width: 100%;
+}
+
+.feature {
+  padding: 2rem;
+}
+
+.featureIcon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.quickLinks {
+  padding: 4rem 0;
+  background-color: var(--ifm-color-emphasis-100);
+}
+
+.quickLinks h2 {
+  text-align: center;
+  margin-bottom: 3rem;
+}
+
+.quickLinks h3 {
+  margin-bottom: 1rem;
+}
+
+.quickLinks ul {
+  list-style: none;
+  padding: 0;
+}
+
+.quickLinks li {
+  margin: 0.5rem 0;
+}
+
+@media screen and (max-width: 996px) {
+  .heroBanner {
+    padding: 2rem;
+  }
+
+  .heroContent h1 {
+    font-size: 2rem;
+  }
+
+  .heroContent p {
+    font-size: 1.25rem;
+  }
+
+  .buttons {
+    flex-direction: column;
+  }
+}

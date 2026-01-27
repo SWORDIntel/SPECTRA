@@ -754,8 +754,17 @@ class SpectraGUILauncher:
         (templates_dir / "unified_dashboard.html").write_text(template_content)
 
     def _generate_unified_template(self) -> str:
-        """Generate unified dashboard HTML template"""
-        return """
+        """Generate unified dashboard HTML template with dynamic content"""
+        # Get current component status for dynamic template
+        component_status = self.get_component_status()
+        enabled_components = len([c for c in self.config.enable_components if c in component_status])
+        system_status = self.get_system_status()
+        total_agents = system_status.get('total_agents', 0)
+        security_level = "HIGH" if self.local_only else "LOW"
+        access_port = str(self.available_port or self.config.port)
+        
+        # Generate template with computed values
+        template = f"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1051,7 +1060,7 @@ class SpectraGUILauncher:
             <div class="security-details">
                 <p><strong>📍 README and system access is LOCAL SYSTEM ONLY</strong></p>
                 <p>🔐 No external file access • 💻 Local installation files only • 🚫 No network sharing</p>
-                <p>Host: <span id="access-host">127.0.0.1</span> | Port: <span id="access-port">5000</span> | Status: <span id="security-status">SECURE</span></p>
+                <p>Host: <span id="access-host">{self.config.host}</span> | Port: <span id="access-port">{access_port}</span> | Status: <span id="security-status">{security_level}</span></p>
             </div>
         </div>
     </div>
@@ -1064,11 +1073,11 @@ class SpectraGUILauncher:
                 <div>System Status</div>
             </div>
             <div class="status-card">
-                <div class="status-value" id="component-count">5</div>
+                <div class="status-value" id="component-count">{enabled_components}</div>
                 <div>Active Components</div>
             </div>
             <div class="status-card">
-                <div class="status-value" id="agent-count">0</div>
+                <div class="status-value" id="agent-count">{total_agents}</div>
                 <div>Available Agents</div>
             </div>
             <div class="status-card">

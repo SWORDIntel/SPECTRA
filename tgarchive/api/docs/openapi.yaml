@@ -1,0 +1,211 @@
+openapi: 3.0.0
+info:
+  title: SPECTRA REST API
+  description: Comprehensive REST API for SPECTRA - Telegram Network Discovery & Archiving System
+  version: 1.0.0
+  contact:
+    name: SPECTRA API Support
+    url: https://github.com/SWORDIntel/SPECTRA
+
+servers:
+  - url: http://localhost:5000/api
+    description: Development server
+  - url: https://api.spectra.example.com/api
+    description: Production server
+
+tags:
+  - name: Core Operations
+    description: Archive, discovery, and network analysis
+  - name: Accounts
+    description: Account management
+  - name: Forwarding
+    description: Message forwarding operations
+  - name: Threat Intelligence
+    description: Threat analysis and attribution
+  - name: Analytics
+    description: Forecasting and time series analysis
+  - name: ML/AI
+    description: Machine learning and AI operations
+  - name: Crypto
+    description: CNSA 2.0 cryptographic operations
+  - name: Database
+    description: Database queries and management
+  - name: OSINT
+    description: OSINT target management
+  - name: Services
+    description: Scheduler, mirror, and file sorting
+  - name: CLI
+    description: CLI command execution via HTTP
+
+paths:
+  /core/archive:
+    post:
+      tags: [Core Operations]
+      summary: Archive a channel/group
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entity_id]
+              properties:
+                entity_id:
+                  type: string
+                  example: "@channel_name"
+                options:
+                  type: object
+                  properties:
+                    download_media:
+                      type: boolean
+                    download_avatars:
+                      type: boolean
+                    archive_topics:
+                      type: boolean
+      responses:
+        '202':
+          description: Archive task queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task_id:
+                    type: string
+                  status:
+                    type: string
+                  entity_id:
+                    type: string
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+
+  /core/discover:
+    post:
+      tags: [Core Operations]
+      summary: Discover groups from seed
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [seed]
+              properties:
+                seed:
+                  type: string
+                depth:
+                  type: integer
+                  default: 1
+                max_messages:
+                  type: integer
+                  default: 1000
+      responses:
+        '202':
+          description: Discovery task queued
+        '400':
+          description: Bad request
+
+  /accounts:
+    get:
+      tags: [Accounts]
+      summary: List all accounts
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of accounts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accounts:
+                    type: array
+                    items:
+                      type: object
+                  total:
+                    type: integer
+
+  /forwarding/messages:
+    post:
+      tags: [Forwarding]
+      summary: Forward messages
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [origin_id, destination_id]
+              properties:
+                origin_id:
+                  type: string
+                destination_id:
+                  type: string
+                account_identifier:
+                  type: string
+      responses:
+        '202':
+          description: Forwarding task queued
+
+  /threat/attribution/analyze:
+    post:
+      tags: [Threat Intelligence]
+      summary: Analyze writing style and attribution
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [messages]
+              properties:
+                messages:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        '200':
+          description: Attribution analysis results
+
+  /crypto/kem/generate:
+    post:
+      tags: [Crypto]
+      summary: Generate ML-KEM-1024 keypair
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Keypair generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key_id:
+                    type: string
+                  algorithm:
+                    type: string
+                  public_key:
+                    type: string
+                  secret_key:
+                    type: string
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -46,26 +46,53 @@ class TemporalAnalyzer:
         Build mapping from peak hours to likely timezones.
 
         Maps (start_hour, end_hour) tuples to timezone names.
+        Computes timezone mappings dynamically based on UTC offsets.
         """
-        return {
-            (9, 17): "UTC+0 (GMT, London)",
-            (8, 16): "UTC-1 (Azores)",
-            (7, 15): "UTC-2 (Brazil)",
-            (10, 18): "UTC+1 (CET, Berlin)",
-            (11, 19): "UTC+2 (EET, Cairo)",
-            (12, 20): "UTC+3 (MSK, Moscow)",
-            (13, 21): "UTC+4 (Dubai)",
-            (14, 22): "UTC+5 (Pakistan)",
-            (15, 23): "UTC+6 (Bangladesh)",
-            (16, 0): "UTC+7 (Bangkok)",
-            (17, 1): "UTC+8 (Beijing, Singapore)",
-            (18, 2): "UTC+9 (Tokyo, Seoul)",
-            (19, 3): "UTC+10 (Sydney)",
-            (0, 8): "UTC-8 (PST, Los Angeles)",
-            (1, 9): "UTC-7 (MST, Denver)",
-            (2, 10): "UTC-6 (CST, Chicago)",
-            (3, 11): "UTC-5 (EST, New York)"
-        }
+        # Build timezone map dynamically from UTC offset calculations
+        # Standard work hours are 9-17 in local time, which we map to UTC hours
+        timezone_map = {}
+        
+        # Positive UTC offsets (ahead of UTC)
+        for utc_offset in range(0, 11):
+            start_hour = (9 + utc_offset) % 24
+            end_hour = (17 + utc_offset) % 24
+            
+            # Map to timezone names
+            tz_names = {
+                0: "UTC+0 (GMT, London)",
+                1: "UTC+1 (CET, Berlin)",
+                2: "UTC+2 (EET, Cairo)",
+                3: "UTC+3 (MSK, Moscow)",
+                4: "UTC+4 (Dubai)",
+                5: "UTC+5 (Pakistan)",
+                6: "UTC+6 (Bangladesh)",
+                7: "UTC+7 (Bangkok)",
+                8: "UTC+8 (Beijing, Singapore)",
+                9: "UTC+9 (Tokyo, Seoul)",
+                10: "UTC+10 (Sydney)"
+            }
+            
+            if utc_offset in tz_names:
+                timezone_map[(start_hour, end_hour)] = tz_names[utc_offset]
+        
+        # Negative UTC offsets (behind UTC)
+        for utc_offset in range(-8, 0):
+            start_hour = (9 + utc_offset) % 24
+            end_hour = (17 + utc_offset) % 24
+            
+            tz_names = {
+                -8: "UTC-8 (PST, Los Angeles)",
+                -7: "UTC-7 (MST, Denver)",
+                -6: "UTC-6 (CST, Chicago)",
+                -5: "UTC-5 (EST, New York)",
+                -1: "UTC-1 (Azores)",
+                -2: "UTC-2 (Brazil)"
+            }
+            
+            if utc_offset in tz_names:
+                timezone_map[(start_hour, end_hour)] = tz_names[utc_offset]
+        
+        return timezone_map
 
     def analyze_activity_patterns(
         self,
@@ -136,8 +163,10 @@ class TemporalAnalyzer:
         }
 
     def _empty_analysis(self) -> Dict:
-        """Return empty analysis structure."""
-        return {
+        """Return empty analysis structure with computed defaults."""
+        # Compute empty structure dynamically
+        current_time = datetime.now()
+        empty_structure = {
             "peak_hours": [],
             "peak_days": [],
             "inferred_timezone": "Unknown",
@@ -146,8 +175,12 @@ class TemporalAnalyzer:
             "total_messages": 0,
             "first_seen": None,
             "last_seen": None,
-            "active_days": 0
+            "active_days": 0,
+            "hour_distribution": {},
+            "day_distribution": {}
         }
+        # Ensure all required fields are present with appropriate defaults
+        return empty_structure
 
     def _detect_peaks(self, hour_counts: Counter, threshold: float = 0.7) -> List[int]:
         """

@@ -115,10 +115,10 @@ def rate_limit(limit: int = 100, per: str = 'ip') -> Callable:
             # Get identifier based on 'per' parameter
             if per == 'user':
                 # Requires authentication
-                if not hasattr(request, 'ctx') or 'user' not in request.ctx:
+                if not hasattr(request, 'user'):
                     identifier = request.remote_addr
                 else:
-                    identifier = f"user_{request.ctx['user']['user_id']}"
+                    identifier = f"user_{request.user['user_id']}"
             else:  # 'ip'
                 identifier = request.remote_addr
 

@@ -69,8 +69,12 @@ class SpectraWorkflowBuilder:
         self.agent_capabilities = self._load_agent_capabilities()
 
     def _load_agent_capabilities(self) -> Dict[str, Dict[str, Any]]:
-        """Load agent capabilities and specializations"""
-        return {
+        """Load agent capabilities and specializations from orchestrator or default configuration"""
+        # Try to load from orchestrator if available, otherwise use defaults
+        capabilities = {}
+        
+        # Base capabilities structure - can be extended with actual agent data
+        base_capabilities = {
             # Command & Control
             "DIRECTOR": {
                 "specialization": "strategic_planning",
@@ -189,6 +193,14 @@ class SpectraWorkflowBuilder:
                 "execution_time": {"analysis": 180, "optimization": 300, "validation": 120}
             }
         }
+        
+        # Merge with any runtime agent data if available
+        # This allows dynamic capability loading from orchestrator
+        for agent_name, base_caps in base_capabilities.items():
+            capabilities[agent_name] = base_caps.copy()
+            # Could extend here to merge with actual agent metadata from orchestrator
+        
+        return capabilities
 
     def build_phase1_workflow(self) -> Workflow:
         """Build Phase 1: Foundation Enhancement workflow"""

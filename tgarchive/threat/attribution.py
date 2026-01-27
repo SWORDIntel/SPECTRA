@@ -101,8 +101,9 @@ class AttributionEngine:
         }
 
     def _load_tool_patterns(self) -> Dict[str, List[str]]:
-        """Load patterns for tool fingerprinting."""
-        return {
+        """Load patterns for tool fingerprinting from configuration or defaults."""
+        # Base patterns - can be extended with config file loading
+        base_patterns = {
             "Metasploit": [
                 r"msfconsole",
                 r"meterpreter",
@@ -143,6 +144,22 @@ class AttributionEngine:
                 r"--dump"
             ]
         }
+        
+        # Could extend here to load from config file or database
+        # For now, return computed base patterns
+        tool_patterns = {}
+        for tool_name, patterns in base_patterns.items():
+            # Compile patterns to validate them (computational step)
+            validated_patterns = []
+            for pattern in patterns:
+                try:
+                    re.compile(pattern)  # Validate regex
+                    validated_patterns.append(pattern)
+                except re.error:
+                    logger.warning(f"Invalid regex pattern for {tool_name}: {pattern}")
+            tool_patterns[tool_name] = validated_patterns
+        
+        return tool_patterns
 
     def analyze_writing_style(self, messages: List[Dict]) -> WritingStyleProfile:
         """

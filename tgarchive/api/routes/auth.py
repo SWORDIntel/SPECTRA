@@ -150,7 +150,7 @@ def logout():
             "message": "Logged out successfully"
         }
     """
-    user = request.ctx['user']
+    user = request.user
     logger.info(f"User logged out: {user['username']}")
 
     return {'message': 'Logged out successfully'}, 200
@@ -171,7 +171,7 @@ def get_profile():
             "created_at": "..."
         }
     """
-    user = request.ctx['user']
+    user = request.user
 
     return {
         'user_id': user['user_id'],
@@ -200,7 +200,7 @@ def update_profile():
         }
     """
     try:
-        user = request.ctx['user']
+        user = request.user
         data = request.get_json() or {}
 
         # Validate input

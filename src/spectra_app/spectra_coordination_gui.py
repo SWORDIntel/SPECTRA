@@ -929,8 +929,16 @@ class SpectraCoordinationGUI:
         (templates_dir / "implementation_tools.html").write_text(tools_template)
 
     def _create_main_template(self) -> str:
-        """Create main coordination GUI template"""
-        return """
+        """Create main coordination GUI template with dynamic content"""
+        # Get current system state for dynamic template generation
+        system_status = self._get_system_status()
+        total_agents = system_status.get('total_agents', 0)
+        active_workflows = system_status.get('active_workflows', 0)
+        security_status = "SECURE" if self.local_only else "EXPOSED"
+        access_port = str(self.available_port or self.port)
+        
+        # Generate template with dynamic values
+        template = f"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1369,7 +1377,7 @@ class SpectraCoordinationGUI:
             <div class="security-details">
                 <p><strong>📍 README and documentation access is LOCAL SYSTEM ONLY</strong></p>
                 <p>🔐 No external file system access • 💻 Local installation files only</p>
-                <p>Host: <span id="access-host">127.0.0.1</span> | Port: <span id="access-port">5001</span> | Status: <span id="security-status">SECURE</span></p>
+                <p>Host: <span id="access-host">{self.host}</span> | Port: <span id="access-port">{access_port}</span> | Status: <span id="security-status">{security_status}</span></p>
             </div>
         </div>
     </div>
@@ -1760,8 +1768,9 @@ class SpectraCoordinationGUI:
         });
     </script>
 </body>
-</html>
+        </html>
         """
+        return template
 
     # Additional helper methods would continue here...
     # (Implementation continues with more helper methods and template creation functions)

@@ -1,20 +1,25 @@
 """
-CSNA 2.0 Security Module for SPECTRA API
-=========================================
+API Security Module
+===================
 
-Implements security controls for the REST API including:
-- JWT authentication and token management
-- Rate limiting and DDoS protection
-- CSRF/XSS prevention
-- Input validation and sanitization
-- Secure headers
-- Audit logging
+Authentication, authorization, rate limiting, and validation.
 """
 
 from .auth import TokenManager, require_auth, require_role
 from .rate_limit import RateLimiter, rate_limit
-from .validation import validate_input, sanitize_string
+from .validation import validate_input, ValidationError
 from .headers import SecurityHeaders
+
+# WebSocket auth decorator (placeholder - would need socketio-specific implementation)
+from functools import wraps
+
+def require_auth_ws(f):
+    """WebSocket authentication decorator."""
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        # WebSocket auth would be implemented here
+        return f(*args, **kwargs)
+    return wrapper
 
 __all__ = [
     'TokenManager',
@@ -23,6 +28,7 @@ __all__ = [
     'RateLimiter',
     'rate_limit',
     'validate_input',
-    'sanitize_string',
+    'ValidationError',
     'SecurityHeaders',
+    'require_auth_ws',
 ]

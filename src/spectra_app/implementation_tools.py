@@ -1012,12 +1012,47 @@ class ImplementationTools:
         }
 
     def _generate_forecast(self) -> Dict[str, Any]:
-        """Generate forecast for next period"""
+        """Generate forecast for next period based on current progress and trends"""
+        # Calculate expected completion based on current progress
+        total_tasks = len(self.work_breakdown)
+        completed_tasks = len([item for item in self.work_breakdown.values() 
+                               if item.status == TaskStatus.COMPLETED])
+        in_progress_tasks = len([item for item in self.work_breakdown.values() 
+                                 if item.status == TaskStatus.IN_PROGRESS])
+        
+        current_completion = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0.0
+        
+        # Estimate next period completion based on current velocity
+        # Assume similar velocity for next period
+        tasks_per_period = max(1, in_progress_tasks)
+        expected_next_period_completion = min(100.0, current_completion + (tasks_per_period / total_tasks * 100) if total_tasks > 0 else 0.0)
+        
+        # Calculate risk probability from actual risks
+        high_risks = [r for r in self.risks.values() if r.risk_score > 0.6]
+        medium_risks = [r for r in self.risks.values() if 0.3 <= r.risk_score <= 0.6]
+        risk_probability = min(1.0, (len(high_risks) * 0.3 + len(medium_risks) * 0.15) / max(1, len(self.risks)))
+        
+        # Identify resource needs from work breakdown
+        resource_needs = []
+        for item in self.work_breakdown.values():
+            if item.status == TaskStatus.BLOCKED:
+                resource_needs.append(f"Unblock {item.name}")
+            elif item.status == TaskStatus.IN_PROGRESS and item.completion_percentage < 50:
+                resource_needs.append(f"Accelerate {item.name}")
+        
+        # Identify critical path items (tasks with dependencies or high priority)
+        critical_path = []
+        for item in self.work_breakdown.values():
+            if item.priority == Priority.CRITICAL and item.status != TaskStatus.COMPLETED:
+                critical_path.append(item.name)
+            elif len(item.dependencies) > 2:  # Tasks with many dependencies are critical
+                critical_path.append(item.name)
+        
         return {
-            "expected_completion_percentage": 25.0,  # Would use predictive modeling
-            "risk_probability": 0.15,
-            "resource_needs": ["Additional testing support"],
-            "critical_path_items": ["Database migration", "ML model training"]
+            "expected_completion_percentage": round(expected_next_period_completion, 1),
+            "risk_probability": round(risk_probability, 2),
+            "resource_needs": resource_needs[:5] if resource_needs else ["No immediate resource needs"],
+            "critical_path_items": critical_path[:5] if critical_path else ["All tasks on schedule"]
         }
 
     def _notify_stakeholder(self, stakeholder: str, communication_type: str, subject: str, content: str):

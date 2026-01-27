@@ -98,8 +98,15 @@ class CNSA20CryptoManager:
         self.sig_algorithm = "ML-DSA-87"    # FIPS 204 (formerly Dilithium5)
         self.hash_algorithm = "sha384"      # FIPS 180-4
 
+        # Cache key sizes from algorithm specifications (avoid generating keys just to measure)
+        self._kem_key_sizes = None
+        self._sig_key_sizes = None
+
         # Verify algorithms are available
         self._verify_algorithms()
+        
+        # Initialize key size cache
+        self._initialize_key_size_cache()
 
         logger.info("CNSA 2.0 Crypto Manager initialized")
         logger.info(f"  - KEM: {self.kem_algorithm}")
@@ -125,6 +132,31 @@ class CNSA20CryptoManager:
             )
 
         logger.debug("✓ All CNSA 2.0 algorithms verified as available")
+    
+    def _initialize_key_size_cache(self):
+        """Initialize key size cache by generating one keypair of each type."""
+        try:
+            # Generate one KEM keypair to cache sizes
+            kem_keypair = self.generate_kem_keypair()
+            self._kem_key_sizes = {
+                "public_key_size": len(kem_keypair.public_key),
+                "secret_key_size": len(kem_keypair.secret_key)
+            }
+            
+            # Generate one signature keypair to cache sizes
+            sig_keypair = self.generate_signature_keypair()
+            self._sig_key_sizes = {
+                "public_key_size": len(sig_keypair.public_key),
+                "secret_key_size": len(sig_keypair.secret_key)
+            }
+            
+            logger.debug(f"Cached KEM key sizes: {self._kem_key_sizes}")
+            logger.debug(f"Cached signature key sizes: {self._sig_key_sizes}")
+        except Exception as e:
+            logger.warning(f"Could not initialize key size cache: {e}")
+            # Fallback to known sizes from specifications
+            self._kem_key_sizes = {"public_key_size": 1568, "secret_key_size": 3168}  # ML-KEM-1024
+            self._sig_key_sizes = {"public_key_size": 2592, "secret_key_size": 4864}  # ML-DSA-87
 
     # ========================================================================
     # KEY ENCAPSULATION (ML-KEM-1024)
@@ -513,26 +545,39 @@ class CNSA20CryptoManager:
     # ========================================================================
 
     def get_algorithm_info(self) -> Dict[str, Any]:
-        """Get information about configured algorithms."""
+        """Get information about configured algorithms using cached key sizes."""
+        # Use cached key sizes if available, otherwise compute from known specifications
+        if self._kem_key_sizes is None:
+            # Fallback: use known sizes from FIPS 203 specification
+            self._kem_key_sizes = {"public_key_size": 1568, "secret_key_size": 3168}
+        
+        if self._sig_key_sizes is None:
+            # Fallback: use known sizes from FIPS 204 specification
+            self._sig_key_sizes = {"public_key_size": 2592, "secret_key_size": 4864}
+        
+        # Compute hash output size dynamically
+        test_hash = self.hash(b"test")
+        hash_output_size = len(test_hash)
+        
         return {
             "kem": {
                 "algorithm": self.kem_algorithm,
                 "standard": "FIPS 203",
                 "security_level": "NIST Level 5 (256-bit quantum)",
-                "public_key_size": len(self.generate_kem_keypair().public_key),
-                "secret_key_size": len(self.generate_kem_keypair().secret_key)
+                "public_key_size": self._kem_key_sizes["public_key_size"],
+                "secret_key_size": self._kem_key_sizes["secret_key_size"]
             },
             "signature": {
                 "algorithm": self.sig_algorithm,
                 "standard": "FIPS 204",
                 "security_level": "NIST Level 5 (256-bit quantum)",
-                "public_key_size": len(self.generate_signature_keypair().public_key),
-                "secret_key_size": len(self.generate_signature_keypair().secret_key)
+                "public_key_size": self._sig_key_sizes["public_key_size"],
+                "secret_key_size": self._sig_key_sizes["secret_key_size"]
             },
             "hash": {
                 "algorithm": self.hash_algorithm.upper(),
                 "standard": "FIPS 180-4",
-                "output_size": 48  # 384 bits = 48 bytes
+                "output_size": hash_output_size  # Computed dynamically
             },
             "compliance": "CNSA 2.0",
             "quantum_resistant": True

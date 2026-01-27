@@ -1,0 +1,111 @@
+# SPECTRA GraphQL Schema
+
+type Query {
+  # Health check
+  hello: String!
+  
+  # Channels
+  channels(page: Int, limit: Int, search: String): [Channel!]!
+  channel(channelId: ID!): Channel
+  
+  # Messages
+  messages(channelId: ID, page: Int, limit: Int): [Message!]!
+  message(messageId: ID!): Message
+  
+  # Users
+  users(page: Int, limit: Int, search: String): [User!]!
+  user(userId: ID!): User
+}
+
+type Mutation {
+  # Archive operations
+  archiveChannel(entityId: String!): ArchiveTask!
+  
+  # Discovery operations
+  discover(seed: String!, depth: Int, maxMessages: Int): DiscoveryTask!
+  
+  # Forwarding operations
+  forwardMessages(originId: String!, destinationId: String!): ForwardTask!
+}
+
+type Subscription {
+  # Real-time updates
+  archiveProgress(taskId: ID!): ArchiveProgress!
+  discoverProgress(discoveryId: ID!): DiscoveryProgress!
+  systemStatus: SystemStatus!
+}
+
+# Types
+type Channel {
+  channelId: ID!
+  title: String
+  username: String
+  type: String
+  archivedMessages: Int
+  lastUpdated: DateTime
+}
+
+type Message {
+  messageId: ID!
+  channelId: ID
+  text: String
+  senderId: ID
+  date: DateTime
+  reactions: [String!]
+  repliesCount: Int
+}
+
+type User {
+  userId: ID!
+  username: String
+  firstName: String
+  lastName: String
+}
+
+type ArchiveTask {
+  taskId: ID!
+  status: String!
+  entityId: String!
+  progress: Float
+}
+
+type DiscoveryTask {
+  taskId: ID!
+  discoveryId: ID!
+  status: String!
+  seed: String!
+}
+
+type ForwardTask {
+  taskId: ID!
+  forwardId: ID!
+  status: String!
+  originId: String!
+  destinationId: String!
+}
+
+type ArchiveProgress {
+  taskId: ID!
+  progress: Float!
+  status: String!
+}
+
+type DiscoveryProgress {
+  discoveryId: ID!
+  progress: Float!
+  status: String!
+  discoveredCount: Int
+}
+
+type SystemStatus {
+  status: String!
+  metrics: SystemMetrics!
+}
+
+type SystemMetrics {
+  totalChannels: Int!
+  totalMessages: Int!
+  activeOperations: Int!
+}
+
+scalar DateTime

@@ -151,9 +151,34 @@ class DBHandler(contextlib.AbstractContextManager):
         return self
 
     def __exit__(self, exc_type, exc, tb):
-        self.conn.rollback() if exc else self.conn.commit()
-        self.conn.close()
-        return False
+        """Handle context manager exit with proper transaction management"""
+        try:
+            if exc_type is not None:
+                # Exception occurred - rollback transaction
+                if self.conn:
+                    self.conn.rollback()
+                    logger.debug(f"Transaction rolled back due to exception: {exc_type.__name__}")
+            else:
+                # Normal exit - commit transaction
+                if self.conn:
+                    self.conn.commit()
+                    logger.debug("Transaction committed successfully")
+        except Exception as e:
+            logger.error(f"Error during transaction cleanup: {e}")
+            if self.conn:
+                try:
+                    self.conn.rollback()
+                except Exception:
+                    pass
+        finally:
+            # Always close connection
+            if self.conn:
+                try:
+                    self.conn.close()
+                    logger.debug("Database connection closed")
+                except Exception as e:
+                    logger.warning(f"Error closing database connection: {e}")
+        return False  # Don't suppress exceptions
 
     def _schema(self):
         self.cur.executescript(

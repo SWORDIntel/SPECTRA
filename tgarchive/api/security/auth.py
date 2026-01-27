@@ -161,7 +161,7 @@ def require_auth(f: Callable) -> Callable:
         @app.route('/protected')
         @require_auth
         def protected_route():
-            current_user = request.ctx['user']
+            current_user = request.user
             ...
     """
     @wraps(f)
@@ -191,8 +191,10 @@ def require_auth(f: Callable) -> Callable:
         if not payload:
             return jsonify({'error': 'Invalid or expired token'}), 401
 
-        # Store user info in request context
-        request.ctx = {'user': payload}
+        # Store user info in request context (Flask doesn't have request.ctx by default)
+        # Use g or a custom attribute
+        if not hasattr(request, 'user'):
+            request.user = payload
         logger.debug(f"Authenticated user: {payload['username']}")
 
         return f(*args, **kwargs)
@@ -215,10 +217,10 @@ def require_role(*allowed_roles: str) -> Callable:
         @wraps(f)
         def decorated(*args, **kwargs):
             # This assumes require_auth has already been applied
-            if not hasattr(request, 'ctx') or 'user' not in request.ctx:
+            if not hasattr(request, 'user'):
                 return jsonify({'error': 'Authentication required'}), 401
 
-            user = request.ctx['user']
+            user = request.user
             user_roles = user.get('roles', [])
 
             # Check if user has required role

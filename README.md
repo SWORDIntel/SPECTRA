@@ -101,12 +101,28 @@ python -m tgarchive accounts --import
 
 ### 📚 [Full Documentation Site](https://swordintel.github.io/SPECTRA/)
 
-**Complete HTML documentation with search, navigation, and interactive features.**
+**Complete HTML documentation built with [Docusaurus](https://docusaurus.io/) - a modern static site generator with:**
+- 🔍 **Full-text search** across all documentation
+- 🌙 **Dark theme** (default) with light mode toggle
+- 📱 **Responsive design** for mobile and desktop
+- 🧭 **Interactive navigation** with organized sidebar
+- ⚡ **Fast loading** with optimized static HTML
+- 🔗 **Versioning support** for future releases
 
-For local development:
+**For local development:**
 ```bash
-cd docs && npm install && npm start
+cd docs
+npm install          # Install Docusaurus dependencies
+npm start            # Start development server (http://localhost:3000)
+npm run build        # Build static HTML to docs/html/
 ```
+
+**Documentation Framework:**
+- Built with Docusaurus 3.x
+- Source files: `docs/docs/` (markdown with frontmatter)
+- Configuration: `docs/docusaurus.config.js`
+- Build output: `docs/html/` (generated HTML files)
+- Root entry point: `index.html` (redirects to documentation)
 
 ### Quick Links
 

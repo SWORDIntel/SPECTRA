@@ -470,8 +470,15 @@ class SpectraOrchestrationDashboard:
             return {"error": str(e)}
 
     def create_html_template(self) -> str:
-        """Create HTML template for web dashboard"""
-        return """
+        """Create HTML template for web dashboard with dynamic content"""
+        # Get current system metrics for template
+        system_status = self._get_system_status()
+        active_workflows = system_status.get('active_workflows', 0)
+        total_agents = system_status.get('total_agents', 0)
+        system_load = system_status.get('system_load', 0.0)
+        
+        # Generate template with computed values
+        template = f"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -573,13 +580,13 @@ class SpectraOrchestrationDashboard:
         <div class="card">
             <h3>System Overview</h3>
             <div id="system-status">
-                <div class="metric-value" id="active-workflows">0</div>
+                <div class="metric-value" id="active-workflows">{active_workflows}</div>
                 <div>Active Workflows</div>
                 <br>
-                <div class="metric-value" id="active-tasks">0</div>
+                <div class="metric-value" id="active-tasks">{system_status.get('active_tasks', 0)}</div>
                 <div>Active Tasks</div>
                 <br>
-                <div class="metric-value" id="system-load">0%</div>
+                <div class="metric-value" id="system-load">{system_load * 100:.1f}%</div>
                 <div>System Load</div>
             </div>
         </div>
@@ -828,8 +835,9 @@ class SpectraOrchestrationDashboard:
             });
     </script>
 </body>
-</html>
+        </html>
         """
+        return template
 
 
 # CLI interface for the dashboard

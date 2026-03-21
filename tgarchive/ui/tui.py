@@ -1363,6 +1363,17 @@ class SetForwardDestForm(npyscreen.ActionFormMinimal):
         self.parentApp.switchForm("FORWARDING")
 
 
+# ── Forwarding Helpers ─────────────────────────────────────────────────────
+def _parse_optional_integer(value, field_name: str):
+    raw_value = (value or "").strip()
+    if not raw_value:
+        return None
+    try:
+        return int(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be an integer.") from exc
+
+
 # ── Total Forwarding Form ──────────────────────────────────────────────────
 class TotalForwardForm(npyscreen.Form):
     """Form for total forwarding of all accessible channel messages."""
@@ -1375,6 +1386,11 @@ class TotalForwardForm(npyscreen.Form):
         self.add(npyscreen.FixedText, value="-" * 40, editable=False)
 
         self.destination_id_widget = self.add(npyscreen.TitleText, name="Dest. ID/Username:")
+        self.destination_topic_widget = self.add(
+            npyscreen.TitleText,
+            name="Dest. Topic/Room ID (Optional):",
+            footer="Forum topic ID inside the destination group.",
+        )
         self.account_id_widget = self.add(npyscreen.TitleText, name="Orchestration Account (Optional):",
                                           footer="Session name or phone for the client connection.")
         self.source_accounts_widget = self.add(
@@ -1394,10 +1410,20 @@ class TotalForwardForm(npyscreen.Form):
         self.add(npyscreen.FixedText, value="", editable=False) # Spacer
         self.to_all_saved_widget = self.add(npyscreen.Checkbox, name="Forward to all Saved Messages accounts", value=False)
         self.prepend_info_widget = self.add(npyscreen.Checkbox, name="Prepend Origin Info to messages", value=True)
+        self.include_text_widget = self.add(
+            npyscreen.Checkbox,
+            name="Include text-only messages",
+            value=False,
+        )
         self.copy_into_destination_widget = self.add(
             npyscreen.Checkbox,
-            name="Copy into destination (posted as this account, no 'Forwarded from' tag)",
+            name="Copy without quote/forward header",
             value=True,
+        )
+        self.quote_copied_widget = self.add(
+            npyscreen.Checkbox,
+            name="Quote copied text",
+            value=False,
         )
         self.add(npyscreen.FixedText, value="", editable=False) # Spacer
 
@@ -1448,6 +1474,7 @@ class TotalForwardForm(npyscreen.Form):
             return
 
         destination_id = self.destination_id_widget.value
+        destination_topic_id_raw = self.destination_topic_widget.value
         account_identifier = (self.account_id_widget.value or "").strip() or None
         raw_source_accounts = self.source_accounts_widget.value or ""
         allowed_accounts = [acc.strip() for acc in raw_source_accounts.replace(",", " ").split() if acc.strip()]
@@ -1458,10 +1485,18 @@ class TotalForwardForm(npyscreen.Form):
         include_saved = self.include_saved_widget.value
         to_all_saved = self.to_all_saved_widget.value
         prepend_info = self.prepend_info_widget.value
+        include_text_messages = self.include_text_widget.value
         copy_into_destination = self.copy_into_destination_widget.value
+        quote_copied_messages = self.quote_copied_widget.value
 
         if not destination_id:
             self.status_widget.add_message("Destination ID/Username is required for forwarding.", "ERROR")
+            return
+
+        try:
+            destination_topic_id = _parse_optional_integer(destination_topic_id_raw, "Destination topic ID")
+        except ValueError as e:
+            self.status_widget.add_message(str(e), "ERROR")
             return
 
         if to_all_saved:
@@ -1480,7 +1515,10 @@ class TotalForwardForm(npyscreen.Form):
                     db=None,
                     forward_to_all_saved_messages=to_all_saved,
                     prepend_origin_info=prepend_info,
+                    destination_topic_id=destination_topic_id,
                     copy_messages_into_destination=copy_into_destination,
+                    quote_copied_messages=quote_copied_messages,
+                    include_text_messages=include_text_messages,
                 )
                 display_dest = "all Saved Messages" if to_all_saved else destination_id
                 self.status_widget.add_message(
@@ -1517,7 +1555,10 @@ class TotalForwardForm(npyscreen.Form):
                     db=self.db_instance, # Pass the initialized SpectraDB instance
                     forward_to_all_saved_messages=to_all_saved,
                     prepend_origin_info=prepend_info,
+                    destination_topic_id=destination_topic_id,
                     copy_messages_into_destination=copy_into_destination,
+                    quote_copied_messages=quote_copied_messages,
+                    include_text_messages=include_text_messages,
                 )
 
                 display_dest = "all Saved Messages" if to_all_saved else destination_id
@@ -1569,17 +1610,37 @@ class SelectiveForwardForm(npyscreen.Form):
         self.add(npyscreen.FixedText, value="-" * 40, editable=False)
 
         self.origin_id_widget = self.add(npyscreen.TitleText, name="Origin ID/Username:")
+        self.source_topic_widget = self.add(
+            npyscreen.TitleText,
+            name="Source Topic/Thread ID (Optional):",
+            footer="Forward a single forum topic/thread from the origin.",
+        )
         self.destination_id_widget = self.add(npyscreen.TitleText, name="Dest. ID/Username:")
+        self.destination_topic_widget = self.add(
+            npyscreen.TitleText,
+            name="Dest. Topic/Room ID (Optional):",
+            footer="Forum topic ID inside the destination group.",
+        )
         self.account_id_widget = self.add(npyscreen.TitleText, name="Account (Optional):", 
                                           footer="Leave blank for default/any.")
         
         self.add(npyscreen.FixedText, value="", editable=False) # Spacer
         self.to_all_saved_widget = self.add(npyscreen.Checkbox, name="Forward to all Saved Messages accounts", value=False)
         self.prepend_info_widget = self.add(npyscreen.Checkbox, name="Prepend Origin Info to messages", value=True)
+        self.include_text_widget = self.add(
+            npyscreen.Checkbox,
+            name="Include text-only messages",
+            value=False,
+        )
         self.copy_into_destination_widget = self.add(
             npyscreen.Checkbox,
-            name="Copy into destination (no 'Forwarded from' tag)",
+            name="Copy without quote/forward header",
             value=True,
+        )
+        self.quote_copied_widget = self.add(
+            npyscreen.Checkbox,
+            name="Quote copied text",
+            value=False,
         )
         self.add(npyscreen.FixedText, value="", editable=False) # Spacer
 
@@ -1622,17 +1683,28 @@ class SelectiveForwardForm(npyscreen.Form):
             return
 
         origin_id = self.origin_id_widget.value
+        source_topic_id_raw = self.source_topic_widget.value
         destination_id = self.destination_id_widget.value
+        destination_topic_id_raw = self.destination_topic_widget.value
         account_identifier = self.account_id_widget.value or None # Ensure None if empty
         to_all_saved = self.to_all_saved_widget.value
         prepend_info = self.prepend_info_widget.value
+        include_text_messages = self.include_text_widget.value
         copy_into_destination = self.copy_into_destination_widget.value
+        quote_copied_messages = self.quote_copied_widget.value
 
         if not origin_id:
             self.status_widget.add_message("Origin ID/Username is required.", "ERROR")
             return
         if not destination_id:
             self.status_widget.add_message("Destination ID/Username is required for forwarding.", "ERROR")
+            return
+
+        try:
+            source_topic_id = _parse_optional_integer(source_topic_id_raw, "Source topic ID")
+            destination_topic_id = _parse_optional_integer(destination_topic_id_raw, "Destination topic ID")
+        except ValueError as e:
+            self.status_widget.add_message(str(e), "ERROR")
             return
         if to_all_saved:
             self.status_widget.add_message(
@@ -1649,7 +1721,11 @@ class SelectiveForwardForm(npyscreen.Form):
                 db=None,  # Passing db=None
                 forward_to_all_saved_messages=to_all_saved,
                 prepend_origin_info=prepend_info,
+                destination_topic_id=destination_topic_id,
+                source_topic_id=source_topic_id,
                 copy_messages_into_destination=copy_into_destination,
+                quote_copied_messages=quote_copied_messages,
+                include_text_messages=include_text_messages or source_topic_id is not None,
             )
 
             display_dest = "all Saved Messages" if to_all_saved else destination_id

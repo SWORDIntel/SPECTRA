@@ -116,6 +116,52 @@ class AgentHealthMetrics:
     coordination_score: float
     health_score: float
 
+    def __init__(
+        self,
+        agent_name: Optional[str] = None,
+        status: AgentStatus = AgentStatus.IDLE,
+        last_heartbeat: Optional[datetime] = None,
+        response_time_avg: float = 0.0,
+        response_time_p95: float = 0.0,
+        success_rate: float = 1.0,
+        error_count: int = 0,
+        active_tasks: int = 0,
+        queue_length: int = 0,
+        cpu_usage: float = 0.0,
+        memory_usage: float = 0.0,
+        network_latency: float = 0.0,
+        coordination_score: float = 0.0,
+        health_score: float = 0.0,
+        agent_id: Optional[str] = None,
+        timestamp: Optional[datetime] = None,
+        response_time: Optional[float] = None,
+        error_rate: Optional[float] = None,
+        task_completion_rate: Optional[float] = None,
+        availability_score: Optional[float] = None,
+        performance_score: Optional[float] = None,
+    ):
+        self.agent_name = agent_name or agent_id or ""
+        self.agent_id = agent_id or self.agent_name
+        self.status = status
+        self.last_heartbeat = last_heartbeat or timestamp or datetime.now()
+        self.response_time_avg = response_time_avg or response_time or 0.0
+        self.response_time_p95 = response_time_p95 or self.response_time_avg
+        self.success_rate = success_rate if task_completion_rate is None else task_completion_rate
+        self.error_count = error_count
+        self.active_tasks = active_tasks
+        self.queue_length = queue_length
+        self.cpu_usage = cpu_usage
+        self.memory_usage = memory_usage
+        self.network_latency = network_latency
+        self.coordination_score = coordination_score if availability_score is None else availability_score
+        self.health_score = health_score if performance_score is None else performance_score
+        self.timestamp = self.last_heartbeat
+        self.response_time = self.response_time_avg
+        self.error_rate = error_rate if error_rate is not None else max(0.0, 1.0 - self.success_rate)
+        self.task_completion_rate = task_completion_rate if task_completion_rate is not None else self.success_rate
+        self.availability_score = availability_score if availability_score is not None else self.coordination_score
+        self.performance_score = performance_score if performance_score is not None else self.health_score
+
 
 @dataclass
 class TaskExecutionTrace:
@@ -147,6 +193,42 @@ class CoordinationAlert:
     auto_resolved: bool = False
     resolution_time: Optional[datetime] = None
 
+    def __init__(
+        self,
+        id: Optional[str] = None,
+        timestamp: Optional[datetime] = None,
+        level: AlertLevel = AlertLevel.INFO,
+        category: str = "",
+        message: str = "",
+        affected_agents: Optional[List[str]] = None,
+        suggested_actions: Optional[List[str]] = None,
+        auto_resolved: bool = False,
+        resolution_time: Optional[datetime] = None,
+        alert_id: Optional[str] = None,
+        alert_type: Optional[str] = None,
+        severity: Optional[str] = None,
+        source_agent: Optional[str] = None,
+        status: Optional[str] = None,
+        affected_workflows: Optional[List[str]] = None,
+        recommended_actions: Optional[List[str]] = None,
+    ):
+        self.id = id or alert_id or ""
+        self.alert_id = self.id
+        self.timestamp = timestamp or datetime.now()
+        self.level = level if severity is None else AlertLevel(severity)
+        self.severity = self.level.value
+        self.category = category or alert_type or ""
+        self.alert_type = self.category
+        self.message = message
+        self.affected_agents = list(affected_agents or ([source_agent] if source_agent else []))
+        self.suggested_actions = list(suggested_actions or recommended_actions or [])
+        self.recommended_actions = self.suggested_actions
+        self.auto_resolved = auto_resolved
+        self.resolution_time = resolution_time
+        self.status = status or ("resolved" if auto_resolved else "active")
+        self.affected_workflows = list(affected_workflows or [])
+        self.source_agent = source_agent
+
 
 @dataclass
 class CommunicationPattern:
@@ -160,6 +242,32 @@ class CommunicationPattern:
     interaction_frequency: float
     bandwidth_usage: float
     pattern_type: str  # frequent, occasional, rare, problematic
+
+    def __init__(
+        self,
+        source_agent: str,
+        target_agent: str,
+        message_count: int,
+        avg_response_time: float,
+        success_rate: float,
+        last_interaction: Optional[datetime] = None,
+        interaction_frequency: float = 0.0,
+        bandwidth_usage: float = 0.0,
+        pattern_type: str = "occasional",
+        last_communication: Optional[datetime] = None,
+        communication_type: Optional[str] = None,
+    ):
+        self.source_agent = source_agent
+        self.target_agent = target_agent
+        self.message_count = message_count
+        self.avg_response_time = avg_response_time
+        self.success_rate = success_rate
+        self.last_interaction = last_interaction or last_communication or datetime.now()
+        self.last_communication = self.last_interaction
+        self.interaction_frequency = interaction_frequency
+        self.bandwidth_usage = bandwidth_usage
+        self.pattern_type = pattern_type
+        self.communication_type = communication_type or pattern_type
 
 
 class CoordinationInterface:

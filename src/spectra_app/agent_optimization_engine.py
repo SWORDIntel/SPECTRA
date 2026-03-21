@@ -83,6 +83,25 @@ class CapabilityRequirement:
     is_critical: bool = False
     alternatives: List[str] = field(default_factory=list)
 
+    def __init__(
+        self,
+        capability_name: Optional[str] = None,
+        required_level: float = 0.0,
+        weight: float = 1.0,
+        is_critical: bool = False,
+        alternatives: Optional[List[str]] = None,
+        capability: Optional[str] = None,
+        priority: Optional[str] = None,
+        estimated_effort: Optional[float] = None,
+    ):
+        self.capability_name = capability_name or capability or ""
+        self.required_level = required_level
+        self.weight = weight
+        self.is_critical = is_critical or (priority == "high")
+        self.alternatives = list(alternatives or [])
+        self.priority = priority
+        self.estimated_effort = estimated_effort
+
 
 @dataclass
 class AgentPerformanceProfile:
@@ -98,6 +117,48 @@ class AgentPerformanceProfile:
     learning_rate: float  # How quickly agent improves
     stress_tolerance: float  # Performance under high load
     specialization_breadth: float  # Generalist vs specialist
+
+    def __init__(
+        self,
+        agent_name: str,
+        capabilities: Any,
+        performance_metrics: Dict[str, float],
+        resource_efficiency: Optional[Dict[str, float]] = None,
+        collaboration_scores: Optional[Dict[str, float]] = None,
+        workload_capacity: float = 0.0,
+        cost_per_hour: float = 0.0,
+        availability_probability: float = 1.0,
+        learning_rate: float = 0.0,
+        stress_tolerance: float = 0.0,
+        specialization_breadth: float = 0.0,
+        agent_id: Optional[str] = None,
+        resource_requirements: Optional[Dict[str, float]] = None,
+        specialization_score: Optional[float] = None,
+        collaboration_score: Optional[float] = None,
+    ):
+        self.agent_id = agent_id
+        if isinstance(capabilities, list):
+            capabilities = {cap: 1.0 for cap in capabilities}
+        self.agent_name = agent_name
+        self.capabilities = dict(capabilities or {})
+        self.performance_metrics = dict(performance_metrics or {})
+        self.resource_efficiency = dict(resource_efficiency or resource_requirements or {})
+        self.collaboration_scores = dict(collaboration_scores or {})
+        self.workload_capacity = workload_capacity
+        self.cost_per_hour = cost_per_hour
+        self.availability_probability = availability_probability
+        self.learning_rate = learning_rate
+        self.stress_tolerance = stress_tolerance
+        self.specialization_breadth = specialization_breadth
+        self.resource_requirements = self.resource_efficiency
+        self.specialization_score = (
+            specialization_score if specialization_score is not None else specialization_breadth
+        )
+        self.collaboration_score = (
+            collaboration_score
+            if collaboration_score is not None
+            else (sum(self.collaboration_scores.values()) / len(self.collaboration_scores) if self.collaboration_scores else 0.0)
+        )
 
 
 @dataclass
@@ -129,9 +190,9 @@ class AgentOptimizationEngine:
     constraint satisfaction, and machine learning for performance prediction.
     """
 
-    def __init__(self, agents: Dict[str, AgentMetadata], historical_data: Optional[Dict] = None):
+    def __init__(self, agents: Optional[Dict[str, AgentMetadata]] = None, historical_data: Optional[Dict] = None):
         """Initialize the optimization engine"""
-        self.agents = agents
+        self.agents = self._normalize_agents(agents or {})
         self.historical_data = historical_data or {}
 
         # Performance profiles
@@ -162,6 +223,28 @@ class AgentOptimizationEngine:
         self._build_compatibility_graph()
         if OPTIMIZATION_LIBS_AVAILABLE:
             self._train_prediction_models()
+
+    def _normalize_agents(self, agents: Dict[str, Any]) -> Dict[str, AgentMetadata]:
+        normalized: Dict[str, AgentMetadata] = {}
+        for agent_name, agent in agents.items():
+            if isinstance(agent, AgentMetadata):
+                normalized[agent_name] = agent
+            elif isinstance(agent, dict):
+                normalized[agent_name] = AgentMetadata(
+                    name=agent.get("name", agent_name),
+                    category=agent.get("category", "general"),
+                    capabilities=list(agent.get("capabilities", [])),
+                    max_concurrent_tasks=agent.get("max_concurrent_tasks", 1),
+                    average_execution_time=agent.get("average_execution_time", 1.0),
+                    success_rate=agent.get("success_rate", 1.0),
+                )
+            else:
+                normalized[agent_name] = AgentMetadata(
+                    name=agent_name,
+                    category="general",
+                    capabilities=[],
+                )
+        return normalized
 
     def _initialize_agent_profiles(self):
         """Initialize comprehensive agent performance profiles"""

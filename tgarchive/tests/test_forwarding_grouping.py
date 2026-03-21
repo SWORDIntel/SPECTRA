@@ -280,6 +280,74 @@ class TestAttachmentForwarderAttribution(unittest.TestCase):
         client.send_message.assert_not_called()
         client.forward_messages.assert_called_once()
 
+
+class TestAttachmentForwarderTopicSupport(unittest.TestCase):
+
+    def setUp(self):
+        mock_path = MagicMock(spec=Path)
+        mock_path.exists.return_value = False
+        self.config = Config(path=mock_path)
+        self.config.data["accounts"] = [{"api_id": 123, "api_hash": "abc", "session_name": "test"}]
+
+    def test_message_matches_source_topic_via_reply_to_top_id(self):
+        forwarder = AttachmentForwarder(config=self.config, db=None, source_topic_id=42)
+        message = MockMessage(
+            id=100,
+            date=datetime.now(timezone.utc),
+            sender_id=1,
+            text="hello",
+        )
+        message.reply_to_top_id = 42
+        self.assertTrue(forwarder._message_matches_source_topic(message))
+
+    def test_copy_mode_quotes_text_and_targets_destination_topic(self):
+        asyncio.run(self._test_copy_mode_quotes_text_and_targets_destination_topic())
+
+    async def _test_copy_mode_quotes_text_and_targets_destination_topic(self):
+        forwarder = AttachmentForwarder(
+            config=self.config,
+            db=None,
+            source_topic_id=42,
+            destination_topic_id=77,
+            copy_messages_into_destination=True,
+            quote_copied_messages=True,
+        )
+
+        client = MagicMock()
+        client.get_entity = AsyncMock(side_effect=[MagicMock(id=1, title="Origin"), MagicMock(id=2, title="Dest")])
+        client.send_message = AsyncMock()
+        client.forward_messages = AsyncMock()
+        client.iter_messages = MagicMock()
+        forwarder.client_manager.get_client = AsyncMock(return_value=client)
+
+        sender = MockSender(id=55)
+        message = MockMessage(
+            id=5,
+            date=datetime.now(timezone.utc),
+            sender_id=55,
+            text="line one\nline two",
+        )
+        message.reply_to_top_id = 42
+
+        async def get_sender_async():
+            return sender
+
+        message.get_sender = get_sender_async
+
+        async def message_generator():
+            yield message
+
+        client.iter_messages.return_value = message_generator()
+
+        await forwarder.forward_messages(origin_id="origin", destination_id="dest")
+
+        client.forward_messages.assert_not_called()
+        client.send_message.assert_called_once()
+        kwargs = client.send_message.await_args.kwargs
+        self.assertEqual(kwargs["reply_to"], 77)
+        self.assertIn("> line one", kwargs["message"])
+        self.assertIn("> line two", kwargs["message"])
+
 # Need to import re in forwarding.py
 # Need to import List, Tuple, timedelta in forwarding.py
 # Need to add filename_group_pattern to AttachmentForwarder __init__

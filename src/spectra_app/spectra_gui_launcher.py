@@ -26,6 +26,8 @@ Date: September 18, 2025
 import asyncio
 import json
 import logging
+import os
+import secrets
 import signal
 import socket
 import sys
@@ -47,11 +49,37 @@ except ImportError:
 
 # GUI Framework Integration
 try:
-    from flask import Flask, render_template, jsonify, redirect, url_for, request
-    from flask_socketio import SocketIO, emit
+    from flask import Flask, render_template, jsonify, redirect, url_for, request, session
     FLASK_AVAILABLE = True
 except ImportError:
     FLASK_AVAILABLE = False
+
+try:
+    from flask_socketio import SocketIO, emit
+    SOCKETIO_AVAILABLE = True
+except ImportError:
+    SOCKETIO_AVAILABLE = False
+
+    class SocketIO:  # type: ignore[override]
+        """Minimal SocketIO fallback used when Flask-SocketIO is unavailable."""
+
+        def __init__(self, app, cors_allowed_origins="*"):
+            self.app = app
+
+        def on(self, _event_name):
+            def decorator(func):
+                return func
+
+            return decorator
+
+        def emit(self, _event_name, _payload):
+            return None
+
+        def run(self, app, host, port, debug=False, use_reloader=False):
+            app.run(host=host, port=port, debug=debug, use_reloader=use_reloader)
+
+    def emit(_event_name, _payload):
+        return None
 
 # SPECTRA Component Imports
 from .spectra_orchestrator import SpectraOrchestrator
@@ -60,6 +88,7 @@ from .phase_management_dashboard import PhaseManagementDashboard
 from .coordination_interface import CoordinationInterface
 from .implementation_tools import ImplementationTools
 from .agent_optimization_engine import AgentOptimizationEngine
+from .programmatic_api import SpectraProgrammaticAPI
 
 
 def check_port_available(host: str, port: int, timeout: float = 3.0) -> bool:
@@ -148,6 +177,11 @@ class SystemMode(Enum):
     PRODUCTION = "production"
     DEMO = "demo"
 
+    def __eq__(self, other):
+        if isinstance(other, str):
+            return self.value == other
+        return super().__eq__(other)
+
 
 @dataclass
 class ComponentHealth:
@@ -177,6 +211,51 @@ class SystemConfiguration:
     component_ports: Dict[str, int]
     security_enabled: bool
     monitoring_interval: float
+    api_key: Optional[str]
+    home_page: str
+
+    def __init__(
+        self,
+        mode: Any = SystemMode.DEVELOPMENT,
+        host: str = "127.0.0.1",
+        port: int = 5000,
+        debug: bool = False,
+        orchestrator_config: str = "spectra_config.json",
+        database_path: str = "spectra.db",
+        log_level: str = "INFO",
+        enable_components: Optional[List[str]] = None,
+        component_ports: Optional[Dict[str, int]] = None,
+        security_enabled: bool = True,
+        monitoring_interval: float = 5.0,
+        config_file: Optional[str] = None,
+        api_key: Optional[str] = None,
+        home_page: str = "console",
+    ):
+        self.mode = mode if isinstance(mode, SystemMode) else SystemMode(str(mode))
+        self.host = host
+        self.port = port
+        self.debug = debug
+        self.orchestrator_config = orchestrator_config if config_file is None else config_file
+        self.database_path = database_path
+        self.log_level = log_level
+        self.enable_components = enable_components or [
+            "orchestrator",
+            "optimization",
+            "phase_dashboard",
+            "coordination",
+            "implementation",
+        ]
+        self.component_ports = component_ports or {
+            "main_gui": 5001,
+            "coordination": 5002,
+            "phase_dashboard": 5003,
+            "implementation": 5004,
+        }
+        self.security_enabled = security_enabled
+        self.monitoring_interval = monitoring_interval
+        self.config_file = config_file
+        self.api_key = api_key
+        self.home_page = home_page
 
 
 class SpectraGUILauncher:
@@ -197,6 +276,7 @@ class SpectraGUILauncher:
         # Security configuration
         self.local_only = config.host in ["127.0.0.1", "localhost"]
         self.available_port = None
+        self.api_key_enabled = bool(config.api_key)
 
         # Core components
         self.orchestrator: Optional[SpectraOrchestrator] = None
@@ -205,12 +285,15 @@ class SpectraGUILauncher:
         self.coordination_interface: Optional[CoordinationInterface] = None
         self.implementation_tools: Optional[ImplementationTools] = None
         self.optimization_engine: Optional[AgentOptimizationEngine] = None
+        self.programmatic_api: Optional[SpectraProgrammaticAPI] = None
 
         # Flask application for unified interface
         if FLASK_AVAILABLE:
             self.app = Flask(__name__, static_folder='static', static_url_path='/static')
             self.app.config['SECRET_KEY'] = 'spectra_gui_system'
             self.socketio = SocketIO(self.app, cors_allowed_origins="*")
+            self.programmatic_api = SpectraProgrammaticAPI(self)
+            self._setup_auth_middleware()
             self._setup_unified_routes()
         else:
             raise ImportError("Flask is required for the GUI system")
@@ -315,16 +398,58 @@ class SpectraGUILauncher:
     def _setup_unified_routes(self):
         """Setup unified Flask routes for the complete system"""
 
+        @self.app.route('/login', methods=['GET', 'POST'])
+        def login():
+            """Simple API-key login flow for browser access."""
+            if request.method == 'POST':
+                submitted_key = request.form.get("api_key") or request.json.get("api_key") if request.is_json else None
+                if self._is_valid_api_key(submitted_key):
+                    session["spectra_api_key_authenticated"] = True
+                    next_url = request.args.get("next") or url_for("index")
+                    if request.is_json:
+                        return jsonify({"success": True, "redirect_to": next_url})
+                    return redirect(next_url)
+                if request.is_json:
+                    return jsonify({"success": False, "error": "Invalid API key"}), 401
+                return self._render_api_key_login(error_message="Invalid API key"), 401
+            return self._render_api_key_login()
+
+        @self.app.route('/logout', methods=['POST'])
+        def logout():
+            session.pop("spectra_api_key_authenticated", None)
+            return jsonify({"success": True})
+
         @self.app.route('/')
         def index():
             """Main system dashboard"""
+            if self.config.home_page == "docs":
+                return redirect(url_for("readme_help"))
             return render_template('unified_dashboard.html',
                                  system_status=self.get_system_status(),
-                                 components=self.get_component_status())
+                                 components=self.get_component_status(),
+                                 access_host=self.config.host,
+                                 access_port=self.available_port or self.config.port,
+                                 local_only=self.local_only)
 
         @self.app.route('/agent-selection')
         def agent_selection():
             """Agent selection and team optimization interface"""
+            if 'agent_gui' in self.config.enable_components and self.main_gui:
+                return render_template(
+                    'workspace_embed.html',
+                    title="SPECTRA Agent Selection",
+                    kicker="Embedded Workspace",
+                    heading="Agent Selection",
+                    description="Agent selection remains accessible inside the same web shell rather than breaking into a mismatched standalone page.",
+                    iframe_src="/agent-selection/raw",
+                    secondary_href="/api/system/status",
+                    secondary_label="Status JSON",
+                )
+            return self._render_component_unavailable("Agent Selection")
+
+        @self.app.route('/agent-selection/raw')
+        def agent_selection_raw():
+            """Raw agent selection view for embedding."""
             if 'agent_gui' in self.config.enable_components and self.main_gui:
                 return redirect(f"http://{self.config.host}:{self.config.component_ports['main_gui']}/agent-selection")
             return self._render_component_unavailable("Agent Selection")
@@ -333,19 +458,63 @@ class SpectraGUILauncher:
         def phase_management():
             """Phase management dashboard"""
             if 'phase_dashboard' in self.config.enable_components and self.phase_dashboard:
+                return render_template(
+                    'workspace_embed.html',
+                    title="SPECTRA Phase Management",
+                    kicker="Embedded Workspace",
+                    heading="Phase Management",
+                    description="Timeline and phase tracking inside the same launcher shell.",
+                    iframe_src="/phase-management/raw",
+                    secondary_href="/api/system/status",
+                    secondary_label="Status JSON",
+                )
+            return self._render_component_unavailable("Phase Management")
+
+        @self.app.route('/phase-management/raw')
+        def phase_management_raw():
+            """Raw phase management view for embedding."""
+            if 'phase_dashboard' in self.config.enable_components and self.phase_dashboard:
                 return self.phase_dashboard.generate_timeline_html()
             return self._render_component_unavailable("Phase Management")
 
         @self.app.route('/coordination')
         def coordination():
             """Real-time coordination interface"""
+            if 'coordination' in self.config.enable_components:
+                return render_template(
+                    'coordination_hub.html',
+                    system_status=self.get_system_status(),
+                    access_host=self.config.host,
+                    access_port=self.available_port or self.config.port,
+                )
+            return self._render_component_unavailable("Coordination Interface")
+
+        @self.app.route('/coordination-monitor')
+        def coordination_monitor():
+            """Raw coordination monitor view for embedding."""
             if 'coordination' in self.config.enable_components and self.coordination_interface:
                 return self.coordination_interface.generate_coordination_html()
-            return self._render_component_unavailable("Coordination Interface")
+            return self._render_component_unavailable("Coordination Monitor")
 
         @self.app.route('/implementation')
         def implementation():
             """Implementation management tools"""
+            if 'implementation' in self.config.enable_components and self.implementation_tools:
+                return render_template(
+                    'workspace_embed.html',
+                    title="SPECTRA Implementation Tools",
+                    kicker="Embedded Workspace",
+                    heading="Implementation Tools",
+                    description="Implementation planning and control surfaces inside the same launcher shell.",
+                    iframe_src="/implementation/raw",
+                    secondary_href="/api/system/status",
+                    secondary_label="Status JSON",
+                )
+            return self._render_component_unavailable("Implementation Tools")
+
+        @self.app.route('/implementation/raw')
+        def implementation_raw():
+            """Raw implementation tools view for embedding."""
             if 'implementation' in self.config.enable_components and self.implementation_tools:
                 return self.implementation_tools.generate_implementation_html()
             return self._render_component_unavailable("Implementation Tools")
@@ -428,6 +597,32 @@ class SpectraGUILauncher:
                 "data_access": "Local system files only"
             })
 
+        @self.app.route('/openapi.json')
+        @self.app.route('/.well-known/openapi.json')
+        def api_openapi_spec():
+            """OpenAPI 3.1 document for standard AI/client integration."""
+            return jsonify(self.programmatic_api.get_openapi_spec())
+
+        @self.app.route('/docs')
+        def api_docs():
+            """Interactive API documentation page."""
+            return self._render_api_docs()
+
+        @self.app.route('/api/v1/context')
+        def api_standard_context():
+            """Structured snapshot optimized for machine clients."""
+            return jsonify(self.programmatic_api.get_context_snapshot())
+
+        @self.app.route('/api/v1/readme')
+        def api_standard_readme():
+            """Structured README excerpt for standard machine clients."""
+            try:
+                max_chars = int(request.args.get("max_chars", "4000"))
+            except ValueError:
+                max_chars = 4000
+            max_chars = max(200, min(12000, max_chars))
+            return jsonify(self.programmatic_api.get_readme_resource(max_chars))
+
         # WebSocket events
         @self.socketio.on('connect')
         def handle_connect():
@@ -449,6 +644,174 @@ class SpectraGUILauncher:
             <p>This component is currently unavailable.</p>
             <p>Please check the system configuration and component status.</p>
             <a href="/">← Back to System Dashboard</a>
+        </body>
+        </html>
+        """
+
+    def _render_api_docs(self) -> str:
+        """Render a lightweight Swagger UI page for the local control API."""
+        return """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>SPECTRA API Docs</title>
+            <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+            <style>
+                body {
+                    margin: 0;
+                    background:
+                        radial-gradient(circle at top right, rgba(76, 214, 192, 0.12), transparent 24%),
+                        linear-gradient(180deg, #0a1016 0%, #0c131a 100%);
+                }
+                .topbar { display: none; }
+                .spectra-banner {
+                    background: linear-gradient(90deg, #0d1319, #17323a 65%, #1f5b67);
+                    color: #eef4fb;
+                    padding: 18px 22px;
+                    font-family: "Trebuchet MS", Verdana, sans-serif;
+                    border-bottom: 1px solid rgba(76, 214, 192, 0.14);
+                    box-shadow: 0 18px 36px rgba(0, 0, 0, 0.22);
+                }
+                .spectra-banner small { color: #a7c4ce; }
+                .swagger-ui .scheme-container {
+                    background: rgba(21, 31, 41, 0.94);
+                    box-shadow: none;
+                    border-bottom: 1px solid rgba(111, 138, 163, 0.2);
+                }
+            </style>
+        </head>
+        <body>
+            <div class="spectra-banner">
+                <div>SPECTRA Local Control API</div>
+                <small>Standard OpenAPI 3.1 interface for local automation and operator tooling</small>
+            </div>
+            <div id="swagger-ui"></div>
+            <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+            <script>
+                window.ui = SwaggerUIBundle({
+                    url: '/openapi.json',
+                    dom_id: '#swagger-ui',
+                    deepLinking: true,
+                    displayRequestDuration: true,
+                    persistAuthorization: true
+                });
+            </script>
+        </body>
+        </html>
+        """
+
+    def _setup_auth_middleware(self):
+        """Protect the interface and APIs with an optional API key."""
+
+        @self.app.before_request
+        def require_api_key():
+            if not self.api_key_enabled:
+                return None
+
+            public_paths = {
+                "/login",
+                "/static",
+            }
+            if request.path == "/favicon.ico" or any(request.path.startswith(path) for path in public_paths):
+                return None
+
+            if self._request_is_authenticated():
+                return None
+
+            if request.path.startswith("/api/"):
+                return jsonify({
+                    "success": False,
+                    "error": "API key required",
+                    "auth": {
+                        "header": "X-API-Key",
+                        "query_param": "api_key",
+                        "login_path": "/login",
+                    },
+                }), 401
+
+            return redirect(url_for("login", next=request.full_path if request.query_string else request.path))
+
+    def _request_is_authenticated(self) -> bool:
+        """Allow either browser session auth or direct API-key auth."""
+        if session.get("spectra_api_key_authenticated"):
+            return True
+        submitted_key = request.headers.get("X-API-Key") or request.args.get("api_key")
+        return self._is_valid_api_key(submitted_key)
+
+    def _is_valid_api_key(self, submitted_key: Optional[str]) -> bool:
+        """Constant-time API key comparison."""
+        if not self.api_key_enabled or not self.config.api_key:
+            return True
+        if not submitted_key:
+            return False
+        return secrets.compare_digest(str(submitted_key), str(self.config.api_key))
+
+    def _render_api_key_login(self, error_message: Optional[str] = None) -> str:
+        """Render a compact API-key login form for browser use."""
+        error_html = f'<p style="color:#b91c1c;margin:0 0 1rem 0;">{error_message}</p>' if error_message else ""
+        return f"""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>SPECTRA Login</title>
+            <style>
+                body {{
+                    font-family: monospace;
+                    background: #0f172a;
+                    color: #e2e8f0;
+                    min-height: 100vh;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin: 0;
+                }}
+                .card {{
+                    width: min(420px, 92vw);
+                    background: #111827;
+                    border: 1px solid #334155;
+                    border-radius: 12px;
+                    padding: 24px;
+                    box-shadow: 0 20px 40px rgba(0,0,0,0.35);
+                }}
+                input {{
+                    width: 100%;
+                    padding: 12px;
+                    border-radius: 8px;
+                    border: 1px solid #475569;
+                    background: #020617;
+                    color: #e2e8f0;
+                    box-sizing: border-box;
+                    margin-bottom: 12px;
+                }}
+                button {{
+                    width: 100%;
+                    padding: 12px;
+                    border: 0;
+                    border-radius: 8px;
+                    background: #2563eb;
+                    color: white;
+                    cursor: pointer;
+                }}
+                code {{
+                    color: #93c5fd;
+                }}
+            </style>
+        </head>
+        <body>
+            <form class="card" method="post">
+                <h2 style="margin-top:0;">SPECTRA Access</h2>
+                <p>Enter the configured API key to open the interface.</p>
+                {error_html}
+                <input type="password" name="api_key" placeholder="API key" autofocus />
+                <button type="submit">Open Interface</button>
+                <p style="margin-bottom:0;margin-top:12px;font-size:12px;color:#94a3b8;">
+                    Programmatic clients can also send <code>X-API-Key</code> or <code>?api_key=...</code>.
+                </p>
+            </form>
         </body>
         </html>
         """
@@ -615,9 +978,6 @@ class SpectraGUILauncher:
                 else:
                     self.logger.warning("⚠ Main GUI initialization failed")
 
-            # Create unified dashboard template
-            await self._create_unified_template()
-
             self.logger.info("System initialization completed")
             return True
 
@@ -746,12 +1106,8 @@ class SpectraGUILauncher:
             return False
 
     async def _create_unified_template(self):
-        """Create unified dashboard template"""
-        templates_dir = Path("templates")
-        templates_dir.mkdir(exist_ok=True)
-
-        template_content = self._generate_unified_template()
-        (templates_dir / "unified_dashboard.html").write_text(template_content)
+        """Legacy no-op retained for compatibility."""
+        return None
 
     def _generate_unified_template(self) -> str:
         """Generate unified dashboard HTML template with dynamic content"""
@@ -764,7 +1120,7 @@ class SpectraGUILauncher:
         access_port = str(self.available_port or self.config.port)
         
         # Generate template with computed values
-        template = f"""
+        template = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1060,7 +1416,7 @@ class SpectraGUILauncher:
             <div class="security-details">
                 <p><strong>📍 README and system access is LOCAL SYSTEM ONLY</strong></p>
                 <p>🔐 No external file access • 💻 Local installation files only • 🚫 No network sharing</p>
-                <p>Host: <span id="access-host">{self.config.host}</span> | Port: <span id="access-port">{access_port}</span> | Status: <span id="security-status">{security_level}</span></p>
+                <p>Host: <span id="access-host">__HOST__</span> | Port: <span id="access-port">__ACCESS_PORT__</span> | Status: <span id="security-status">__SECURITY_LEVEL__</span></p>
             </div>
         </div>
     </div>
@@ -1073,11 +1429,11 @@ class SpectraGUILauncher:
                 <div>System Status</div>
             </div>
             <div class="status-card">
-                <div class="status-value" id="component-count">{enabled_components}</div>
+                <div class="status-value" id="component-count">__ENABLED_COMPONENTS__</div>
                 <div>Active Components</div>
             </div>
             <div class="status-card">
-                <div class="status-value" id="agent-count">{total_agents}</div>
+                <div class="status-value" id="agent-count">__TOTAL_AGENTS__</div>
                 <div>Available Agents</div>
             </div>
             <div class="status-card">
@@ -1330,6 +1686,14 @@ class SpectraGUILauncher:
 </body>
 </html>
         """
+        return (
+            template
+            .replace("__HOST__", self.config.host)
+            .replace("__ACCESS_PORT__", access_port)
+            .replace("__SECURITY_LEVEL__", security_level)
+            .replace("__ENABLED_COMPONENTS__", str(enabled_components))
+            .replace("__TOTAL_AGENTS__", str(total_agents))
+        )
 
     def _update_component_health(self, component_name: str, status: ComponentStatus):
         """Update component health status"""
@@ -1511,6 +1875,21 @@ class SpectraGUILauncher:
             "active_agents": len([a for a in self.orchestrator.agents.values()
                                 if hasattr(a, 'status') and a.status.value == 'running']) if self.orchestrator else 0,
             "components_enabled": self.config.enable_components,
+            "auth": {
+                "api_key_required": self.api_key_enabled,
+                "browser_login": "/login" if self.api_key_enabled else None,
+                "header": "X-API-Key" if self.api_key_enabled else None,
+                "query_param": "api_key" if self.api_key_enabled else None,
+            },
+            "api_endpoints": {
+                "status": "/api/system/status",
+                "components": "/api/components/health",
+                "security": "/api/security/warnings",
+                "openapi": "/openapi.json",
+                "docs": "/docs",
+                "standard_context": "/api/v1/context",
+                "standard_readme": "/api/v1/readme",
+            },
             "timestamp": datetime.now().isoformat()
         }
 
@@ -1540,7 +1919,9 @@ def create_default_config() -> SystemConfiguration:
             "implementation": 5004
         },
         security_enabled=True,  # SECURITY: Enable security by default
-        monitoring_interval=5.0
+        monitoring_interval=5.0,
+        api_key=None,
+        home_page="console",
     )
 
 
@@ -1555,6 +1936,18 @@ async def main():
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"],
                        default="INFO", help="Log level")
+    parser.add_argument("--api-key", help="Require this API key for browser and API access")
+    parser.add_argument(
+        "--api-key-env",
+        default="SPECTRA_GUI_API_KEY",
+        help="Environment variable to read the API key from if --api-key is unset",
+    )
+    parser.add_argument(
+        "--home-page",
+        choices=["console", "docs"],
+        default="console",
+        help="Select the initial route served at /",
+    )
 
     args = parser.parse_args()
 
@@ -1565,6 +1958,8 @@ async def main():
     config.mode = SystemMode(args.mode)
     config.debug = args.debug
     config.log_level = args.log_level
+    config.api_key = args.api_key or os.environ.get(args.api_key_env)
+    config.home_page = args.home_page
 
     # Initialize and start system
     launcher = SpectraGUILauncher(config)

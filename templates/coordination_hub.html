@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPECTRA Coordination Hub</title>
+    <style>
+        :root {
+            --bg: #0a0f15;
+            --panel: #151f29;
+            --panel-soft: #1a2632;
+            --line: rgba(111, 138, 163, 0.22);
+            --ink: #eef4fb;
+            --muted: #9ab0c3;
+            --accent: #4cd6c0;
+            --accent-dim: rgba(76, 214, 192, 0.1);
+            --accent-strong: #2bd0c7;
+            --shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            color: var(--ink);
+            font-family: "Trebuchet MS", Verdana, sans-serif;
+            background:
+                radial-gradient(circle at top right, rgba(76, 214, 192, 0.13), transparent 24%),
+                linear-gradient(180deg, #0a1016 0%, #0c131a 100%);
+        }
+        .shell {
+            max-width: 1360px;
+            margin: 0 auto;
+            padding: 18px;
+        }
+        .layout {
+            display: grid;
+            grid-template-columns: 300px minmax(0, 1fr);
+            gap: 18px;
+        }
+        .sidebar {
+            position: sticky;
+            top: 18px;
+            background: linear-gradient(180deg, rgba(18, 26, 34, 0.98), rgba(11, 18, 24, 0.96));
+            border: 1px solid var(--line);
+            border-radius: 24px;
+            padding: 20px;
+            box-shadow: var(--shadow);
+        }
+        .eyebrow {
+            font-size: 11px;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--accent);
+            margin-bottom: 8px;
+        }
+        h1, h2, h3 {
+            margin-top: 0;
+        }
+        .sidebar p, .sidebar li {
+            color: var(--muted);
+            line-height: 1.6;
+        }
+        .link-list {
+            display: grid;
+            gap: 8px;
+            margin-top: 16px;
+        }
+        .link-card {
+            display: block;
+            text-decoration: none;
+            color: var(--ink);
+            padding: 12px 14px;
+            border-radius: 14px;
+            border: 1px solid transparent;
+            background: transparent;
+            transition: 140ms ease;
+        }
+        .link-card:hover {
+            background: var(--accent-dim);
+            border-color: rgba(76, 214, 192, 0.18);
+            transform: translateX(3px);
+        }
+        .link-card small {
+            display: block;
+            margin-top: 4px;
+            color: var(--muted);
+        }
+        .meta {
+            margin-top: 18px;
+            display: grid;
+            gap: 10px;
+        }
+        .meta-block {
+            padding: 12px;
+            border-radius: 14px;
+            border: 1px solid var(--line);
+            background: rgba(76, 214, 192, 0.05);
+        }
+        .meta-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--muted);
+            margin-bottom: 4px;
+        }
+        .meta-value {
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            color: #dbfaf5;
+        }
+        .content {
+            display: grid;
+            gap: 18px;
+        }
+        .masthead {
+            background:
+                linear-gradient(135deg, rgba(10, 16, 22, 0.98), rgba(18, 31, 41, 0.95)),
+                linear-gradient(135deg, #101820, #15222d);
+            border: 1px solid var(--line);
+            border-radius: 28px;
+            padding: 26px;
+            box-shadow: var(--shadow);
+            position: relative;
+            overflow: hidden;
+        }
+        .masthead::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(125deg, transparent 0 62%, rgba(76, 214, 192, 0.08) 62% 74%, transparent 74%),
+                radial-gradient(circle at top right, rgba(76, 214, 192, 0.16), transparent 28%);
+            pointer-events: none;
+        }
+        .masthead-content {
+            position: relative;
+            z-index: 1;
+            display: grid;
+            grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.7fr);
+            gap: 18px;
+        }
+        .masthead h1 {
+            font-size: 42px;
+            margin-bottom: 10px;
+            line-height: 1;
+        }
+        .masthead p {
+            margin: 0;
+            color: #c7d5e2;
+            line-height: 1.7;
+        }
+        .hero-panel {
+            background: rgba(76, 214, 192, 0.06);
+            border: 1px solid rgba(76, 214, 192, 0.14);
+            border-radius: 20px;
+            padding: 18px;
+        }
+        .hero-panel h2 {
+            color: var(--accent);
+            font-size: 15px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 12px;
+        }
+        .hero-panel div {
+            margin-bottom: 6px;
+            color: #e0eff8;
+        }
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 18px;
+            position: relative;
+            z-index: 1;
+        }
+        .btn {
+            text-decoration: none;
+            border-radius: 13px;
+            padding: 10px 14px;
+            font-weight: 700;
+            font-size: 14px;
+            transition: 140ms ease;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+            color: #071117;
+        }
+        .btn-secondary {
+            background: #1f2d39;
+            color: #deecf7;
+            border: 1px solid var(--line);
+        }
+        .btn:hover { filter: brightness(1.05); }
+        .viewer {
+            background: linear-gradient(180deg, rgba(19, 28, 37, 0.96), rgba(16, 24, 31, 0.94));
+            border: 1px solid var(--line);
+            border-radius: 24px;
+            padding: 14px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.18);
+        }
+        .viewer-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: center;
+            padding: 6px 8px 14px;
+        }
+        .viewer-head h2 {
+            margin: 0;
+            font-size: 22px;
+        }
+        .viewer-head p {
+            margin: 0;
+            color: var(--muted);
+        }
+        iframe {
+            width: 100%;
+            min-height: 980px;
+            border: 0;
+            border-radius: 18px;
+            background: white;
+        }
+        @media (max-width: 980px) {
+            .layout { grid-template-columns: 1fr; }
+            .sidebar { position: static; }
+            .masthead-content { grid-template-columns: 1fr; }
+            iframe { min-height: 760px; }
+        }
+    </style>
+</head>
+<body>
+    <main class="shell">
+        <div class="layout">
+            <aside class="sidebar">
+                <div class="eyebrow">Primary Workspace</div>
+                <h1 style="font-size:28px;margin-bottom:8px;">Coordination Hub</h1>
+                <p>This dedicated page separates coordination from the root console while keeping it inside the same web-based entry ecosystem.</p>
+
+                <div class="link-list">
+                    <a class="link-card" href="/">
+                        Web Console
+                        <small>Back to the root launcher shell</small>
+                    </a>
+                    <a class="link-card" href="/coordination-monitor">
+                        Raw Monitor
+                        <small>Direct monitor view without hub framing</small>
+                    </a>
+                    <a class="link-card" href="/phase-management">
+                        Phase Management
+                        <small>Timeline and delivery view</small>
+                    </a>
+                    <a class="link-card" href="/implementation">
+                        Implementation Tools
+                        <small>Operational planning surface</small>
+                    </a>
+                    <a class="link-card" href="/docs">
+                        API Docs
+                        <small>OpenAPI and interactive reference</small>
+                    </a>
+                </div>
+
+                <div class="meta">
+                    <div class="meta-block">
+                        <div class="meta-label">Host</div>
+                        <div class="meta-value">{{ access_host }}</div>
+                    </div>
+                    <div class="meta-block">
+                        <div class="meta-label">Port</div>
+                        <div class="meta-value">{{ access_port }}</div>
+                    </div>
+                    <div class="meta-block">
+                        <div class="meta-label">Mode</div>
+                        <div class="meta-value">{{ system_status.mode }}</div>
+                    </div>
+                </div>
+            </aside>
+
+            <section class="content">
+                <section class="masthead">
+                    <div class="masthead-content">
+                        <div>
+                            <div class="eyebrow">Live Coordination</div>
+                            <h1>Embedded Monitor Workspace</h1>
+                            <p>The coordination monitor remains web-first and directly reachable from the root entry point, but now lives inside its own higher-level operational workspace.</p>
+                        </div>
+                        <aside class="hero-panel">
+                            <h2>Session</h2>
+                            <div>Mode: {{ system_status.mode }}</div>
+                            <div>Agents: {{ system_status.total_agents }}</div>
+                            <div>Runtime: {{ 'Live' if system_status.system_running else 'Idle' }}</div>
+                        </aside>
+                    </div>
+                    <div class="toolbar">
+                        <a class="btn btn-primary" href="/">Back To Console</a>
+                        <a class="btn btn-secondary" href="/coordination-monitor">Open Raw Monitor</a>
+                        <a class="btn btn-secondary" href="/api/system/status">Status JSON</a>
+                    </div>
+                </section>
+
+                <section class="viewer">
+                    <div class="viewer-head">
+                        <div>
+                            <h2>Coordination Monitor</h2>
+                            <p>Embedded as the main live surface for this page.</p>
+                        </div>
+                    </div>
+                    <iframe src="/coordination-monitor" title="Coordination Monitor"></iframe>
+                </section>
+            </section>
+        </div>
+    </main>
+</body>
+</html>

@@ -110,6 +110,48 @@ class WorkBreakdownItem:
     acceptance_criteria: List[str]
     priority: Priority
 
+    def __init__(
+        self,
+        id: Optional[str] = None,
+        name: str = "",
+        description: str = "",
+        parent_id: Optional[str] = None,
+        level: int = 0,
+        estimated_hours: float = 0.0,
+        actual_hours: float = 0.0,
+        assigned_agents: Optional[List[str]] = None,
+        dependencies: Optional[List[str]] = None,
+        status: TaskStatus = TaskStatus.NOT_STARTED,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        completion_percentage: float = 0.0,
+        deliverables: Optional[List[str]] = None,
+        acceptance_criteria: Optional[List[str]] = None,
+        priority: Priority = Priority.MEDIUM,
+        item_id: Optional[str] = None,
+        estimated_effort: Optional[float] = None,
+        actual_effort: Optional[float] = None,
+    ):
+        self.id = id or item_id or ""
+        self.item_id = self.id
+        self.name = name
+        self.description = description
+        self.parent_id = parent_id
+        self.level = level
+        self.estimated_hours = estimated_hours if estimated_effort is None else estimated_effort
+        self.actual_hours = actual_hours if actual_effort is None else actual_effort
+        self.estimated_effort = self.estimated_hours
+        self.actual_effort = self.actual_hours
+        self.assigned_agents = list(assigned_agents or [])
+        self.dependencies = list(dependencies or [])
+        self.status = status
+        self.start_date = start_date
+        self.end_date = end_date
+        self.completion_percentage = completion_percentage
+        self.deliverables = list(deliverables or [])
+        self.acceptance_criteria = list(acceptance_criteria or [])
+        self.priority = priority
+
 
 @dataclass
 class ResourceAllocation:
@@ -146,6 +188,46 @@ class RiskItem:
     review_date: datetime
     escalation_required: bool
 
+    def __init__(
+        self,
+        id: Optional[str] = None,
+        title: str = "",
+        description: str = "",
+        category: str = "",
+        probability: float = 0.0,
+        impact: float = 0.0,
+        risk_score: float = 0.0,
+        status: RiskStatus = RiskStatus.IDENTIFIED,
+        owner: str = "",
+        mitigation_plan: str = "",
+        mitigation_actions: Optional[List[str]] = None,
+        target_resolution_date: Optional[datetime] = None,
+        actual_resolution_date: Optional[datetime] = None,
+        review_date: Optional[datetime] = None,
+        escalation_required: bool = False,
+        risk_id: Optional[str] = None,
+        mitigation_strategies: Optional[List[str]] = None,
+        contingency_plans: Optional[List[str]] = None,
+    ):
+        self.id = id or risk_id or ""
+        self.risk_id = self.id
+        self.title = title
+        self.description = description
+        self.category = category
+        self.probability = probability
+        self.impact = impact
+        self.risk_score = risk_score or (probability * impact)
+        self.status = status if isinstance(status, RiskStatus) else RiskStatus(status)
+        self.owner = owner
+        self.mitigation_plan = mitigation_plan
+        self.mitigation_actions = list(mitigation_actions or mitigation_strategies or [])
+        self.mitigation_strategies = self.mitigation_actions
+        self.contingency_plans = list(contingency_plans or [])
+        self.target_resolution_date = target_resolution_date or datetime.now()
+        self.actual_resolution_date = actual_resolution_date
+        self.review_date = review_date or self.target_resolution_date
+        self.escalation_required = escalation_required
+
 
 @dataclass
 class QualityGate:
@@ -165,6 +247,50 @@ class QualityGate:
     comments: List[str]
     artifacts: List[str]
     exit_criteria_met: bool
+
+    def __init__(
+        self,
+        id: Optional[str] = None,
+        name: str = "",
+        description: str = "",
+        phase_id: str = "",
+        milestone_id: Optional[str] = None,
+        criteria: Optional[List[str]] = None,
+        validation_methods: Optional[List[str]] = None,
+        approvers: Optional[List[str]] = None,
+        status: QualityGateStatus = QualityGateStatus.PENDING,
+        submission_date: Optional[datetime] = None,
+        review_start_date: Optional[datetime] = None,
+        approval_date: Optional[datetime] = None,
+        comments: Optional[List[str]] = None,
+        artifacts: Optional[List[str]] = None,
+        exit_criteria_met: bool = False,
+        gate_id: Optional[str] = None,
+        phase: Optional[str] = None,
+        required_approvers: Optional[List[str]] = None,
+        automated_checks: Optional[List[str]] = None,
+        manual_reviews: Optional[List[str]] = None,
+    ):
+        self.id = id or gate_id or ""
+        self.gate_id = self.id
+        self.name = name
+        self.description = description
+        self.phase_id = phase_id or phase or ""
+        self.phase = self.phase_id
+        self.milestone_id = milestone_id
+        self.criteria = list(criteria or [])
+        self.validation_methods = list(validation_methods or automated_checks or [])
+        self.automated_checks = list(automated_checks or self.validation_methods)
+        self.manual_reviews = list(manual_reviews or [])
+        self.approvers = list(approvers or required_approvers or [])
+        self.required_approvers = self.approvers
+        self.status = status if isinstance(status, QualityGateStatus) else QualityGateStatus(status)
+        self.submission_date = submission_date
+        self.review_start_date = review_start_date
+        self.approval_date = approval_date
+        self.comments = list(comments or [])
+        self.artifacts = list(artifacts or [])
+        self.exit_criteria_met = exit_criteria_met
 
 
 @dataclass
@@ -226,10 +352,10 @@ class ImplementationTools:
 
     def __init__(self,
                  orchestrator: SpectraOrchestrator,
-                 phase_dashboard: PhaseManagementDashboard):
+                 phase_dashboard: Optional[PhaseManagementDashboard] = None):
         """Initialize implementation tools"""
         self.orchestrator = orchestrator
-        self.phase_dashboard = phase_dashboard
+        self.phase_dashboard = phase_dashboard or PhaseManagementDashboard(orchestrator)
         self.optimization_engine = AgentOptimizationEngine(orchestrator.agents)
 
         # Work breakdown and planning

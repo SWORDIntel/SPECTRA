@@ -938,7 +938,7 @@ class SpectraCoordinationGUI:
         access_port = str(self.available_port or self.port)
         
         # Generate template with dynamic values
-        template = f"""
+        template = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1377,7 +1377,7 @@ class SpectraCoordinationGUI:
             <div class="security-details">
                 <p><strong>📍 README and documentation access is LOCAL SYSTEM ONLY</strong></p>
                 <p>🔐 No external file system access • 💻 Local installation files only</p>
-                <p>Host: <span id="access-host">{self.host}</span> | Port: <span id="access-port">{access_port}</span> | Status: <span id="security-status">{security_status}</span></p>
+                <p>Host: <span id="access-host">__HOST__</span> | Port: <span id="access-port">__ACCESS_PORT__</span> | Status: <span id="security-status">__SECURITY_STATUS__</span></p>
             </div>
         </div>
     </div>
@@ -1770,7 +1770,12 @@ class SpectraCoordinationGUI:
 </body>
         </html>
         """
-        return template
+        return (
+            template
+            .replace("__HOST__", self.host)
+            .replace("__ACCESS_PORT__", access_port)
+            .replace("__SECURITY_STATUS__", security_status)
+        )
 
     # Additional helper methods would continue here...
     # (Implementation continues with more helper methods and template creation functions)

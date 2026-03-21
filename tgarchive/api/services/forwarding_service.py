@@ -10,12 +10,34 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from ..core.config_models import Config
-from ..forwarding import AttachmentForwarder
-from ..db import SpectraDB
+from ...core.config_models import Config
+from ...forwarding import AttachmentForwarder
+from ...db import SpectraDB
 from .tasks import TaskManager, TaskStatus
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_optional_int(value):
+    if value in (None, ""):
+        return None
+    return int(value)
+
+
+def _resolve_copy_mode(options: Dict[str, Any]) -> bool:
+    quote_mode = options.get("quote_mode")
+    if isinstance(quote_mode, str):
+        normalized = quote_mode.strip().lower()
+        if normalized in {"copy", "plain", "without_quote", "without-quote", "no_quote", "no-quote"}:
+            return True
+        if normalized in {"forward", "quoted", "with_quote", "with-quote"}:
+            return False
+
+    preserve_forward_header = options.get("preserve_forward_header")
+    if preserve_forward_header is not None:
+        return not bool(preserve_forward_header)
+
+    return bool(options.get("copy_into_destination", False))
 
 
 class ForwardingService:
@@ -25,6 +47,24 @@ class ForwardingService:
         self.config = config
         self.task_manager = task_manager
         self.db = db or SpectraDB(Path(config.data.get("db_path", "spectra.db")))
+
+    def _build_forwarder(self, options: Dict[str, Any]) -> AttachmentForwarder:
+        source_topic_id = _coerce_optional_int(options.get("source_topic_id"))
+        destination_topic_id = _coerce_optional_int(options.get("destination_topic_id"))
+        include_text_messages = bool(options.get("include_text_messages", False) or source_topic_id is not None)
+
+        return AttachmentForwarder(
+            config=self.config,
+            db=self.db,
+            forward_to_all_saved_messages=options.get("forward_to_all_saved", False),
+            prepend_origin_info=options.get("prepend_origin_info", False),
+            destination_topic_id=destination_topic_id,
+            source_topic_id=source_topic_id,
+            enable_deduplication=options.get("enable_deduplication", True),
+            copy_messages_into_destination=_resolve_copy_mode(options),
+            quote_copied_messages=bool(options.get("quote_copied_messages", False)),
+            include_text_messages=include_text_messages,
+        )
     
     async def forward_messages(
         self,
@@ -82,14 +122,7 @@ class ForwardingService:
             await self.task_manager.update_task_status(task_id, TaskStatus.RUNNING)
             
             # Create forwarder
-            forwarder = AttachmentForwarder(
-                config=self.config,
-                db=self.db,
-                forward_to_all_saved_messages=options.get("forward_to_all_saved", False),
-                prepend_origin_info=options.get("prepend_origin_info", False),
-                enable_deduplication=options.get("enable_deduplication", True),
-                copy_messages_into_destination=options.get("copy_into_destination", False)
-            )
+            forwarder = self._build_forwarder(options)
             
             try:
                 # Forward messages
@@ -164,13 +197,9 @@ class ForwardingService:
         try:
             await self.task_manager.update_task_status(task_id, TaskStatus.RUNNING)
             
-            forwarder = AttachmentForwarder(
-                config=self.config,
-                db=self.db,
-                forward_to_all_saved_messages=options.get("forward_to_all_saved", False),
-                prepend_origin_info=options.get("prepend_origin_info", False),
-                enable_deduplication=options.get("enable_deduplication", True)
-            )
+            forwarder_options = dict(options)
+            forwarder_options.pop("source_topic_id", None)
+            forwarder = self._build_forwarder(forwarder_options)
             
             try:
                 await forwarder.forward_all_dialogs(
@@ -243,13 +272,9 @@ class ForwardingService:
         try:
             await self.task_manager.update_task_status(task_id, TaskStatus.RUNNING)
             
-            forwarder = AttachmentForwarder(
-                config=self.config,
-                db=self.db,
-                forward_to_all_saved_messages=options.get("forward_to_all_saved", False),
-                prepend_origin_info=options.get("prepend_origin_info", False),
-                enable_deduplication=options.get("enable_deduplication", True)
-            )
+            forwarder_options = dict(options)
+            forwarder_options.pop("source_topic_id", None)
+            forwarder = self._build_forwarder(forwarder_options)
             
             try:
                 await forwarder.forward_all_accessible_channels(

@@ -110,12 +110,15 @@ def batch_forward():
             return jsonify({'error': 'forwards array is required'}), 400
         
         task_ids = []
+        shared_options = data.get('options', {})
         for forward in forwards:
+            forward_options = dict(shared_options)
+            forward_options.update(forward.get('options', {}))
             result = asyncio.run(_forwarding_service.forward_messages(
                 forward.get('origin_id'),
                 forward.get('destination_id'),
                 forward.get('account_identifier'),
-                data.get('options', {})
+                forward_options
             ))
             task_ids.append(result['task_id'])
         

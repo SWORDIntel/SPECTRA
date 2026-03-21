@@ -6,8 +6,13 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from telethon import TelegramClient
-from telethon.tl import types
+try:
+    from telethon import TelegramClient
+except ImportError:  # pragma: no cover - allows logic tests without Telethon installed
+    class TelegramClient:  # type: ignore[override]
+        def __init__(self, *args, **kwargs):
+            raise ImportError("telethon is required to create Telegram clients")
+
 from tgarchive.core.config_models import Config
 
 class ClientManager:

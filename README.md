@@ -25,27 +25,42 @@ SPECTRA is an advanced framework for Telegram data collection, network discovery
 
 ## ⚡ Quick Start
 
-**One-command setup and launch:**
+**Root launchers:**
 
 ```bash
 # Clone and enter directory
 git clone https://github.com/SWORDIntel/SPECTRA.git
 cd SPECTRA
 
-# Bootstrap (automatic setup + launch)
-./bootstrap
-# OR use make
-make bootstrap
+# Main web console
+./spectra
 
-# On subsequent runs, just launch the TUI
-make run
-# OR
-python -m tgarchive
+# Documentation launcher
+python3 webapp.py
 ```
 
-The TUI (Terminal User Interface) is the primary way to interact with SPECTRA. It provides an intuitive, menu-driven interface for all operations including archiving, discovery, network analysis, and forwarding.
+`./spectra` is the primary entry point for the web console. `python3 webapp.py` opens the documentation shell and lands on `/docs`.
 
-For more commands: `make help`
+## Local GUI
+
+The repository also includes a local web launcher for orchestration, status, and documentation:
+
+```bash
+./spectra
+```
+
+Optional API key protection:
+
+```bash
+export SPECTRA_GUI_API_KEY="change-me"
+./spectra --api-key "$SPECTRA_GUI_API_KEY"
+```
+
+Standard machine-readable API surfaces:
+
+- `/openapi.json`
+- `/.well-known/openapi.json`
+- `/docs`
 
 ## Installation
 
@@ -153,24 +168,26 @@ Original markdown files are still available in:
 
 ```
 SPECTRA/
-├── scripts/          ← Executable scripts (install, launch, setup)
-├── docs/             ← Documentation and guides
-├── data/             ← Runtime data (not tracked in git)
-├── src/              ← Archived/deprecated code
-├── tgarchive/        ← Main Python package
-│   ├── core/         ← Core business logic
-│   ├── ui/           ← User interfaces (TUI)
-│   ├── services/     ← Background services
-│   ├── utils/        ← Utility functions
-│   ├── db/           ← Database layer
-│   ├── forwarding/   ← Message forwarding
-│   └── osint/        ← Intelligence gathering
-├── tests/            ← Test suite
-├── examples/         ← Example scripts
-├── bootstrap         ← Auto-setup entry point (recommended)
-├── Makefile          ← Common commands (make help)
-└── setup.py          ← Python package setup
+├── spectra              ← Main launcher for the local web console
+├── webapp.py            ← Documentation launcher (`/docs`)
+├── spectra.sh           ← Compatibility wrapper
+├── tgarchive/           ← Core CLI/TUI/archive/forwarding package
+├── src/spectra_app/     ← Web launcher and orchestration implementation
+├── spectra_app/         ← Compatibility package for repo-root imports
+├── templates/           ← Shared web UI templates
+├── docs/                ← Docusaurus source and compatibility docs
+├── scripts/             ← Install, launch, and maintenance helpers
+├── examples/            ← Example scripts
+├── tests/               ← Repo-level smoke/integration scripts
+├── deployment/          ← Docker/system deployment assets
+├── bootstrap            ← Bootstrap entrypoint
+├── index.html           ← Root redirect into the documentation site
+├── Makefile             ← Common development commands
+├── setup.py             ← Packaging entrypoint
+└── CONTRIBUTING.md      ← Development workflow guide
 ```
+
+Local runtime output such as `logs/`, `spectra_venv/`, and `spectra_config.json` is intentionally kept out of version control.
 
 For detailed structure explanation, see [PROJECT_STRUCTURE.md](docs/reference/PROJECT_STRUCTURE.md)
 
@@ -183,7 +200,7 @@ For detailed structure explanation, see [PROJECT_STRUCTURE.md](docs/reference/PR
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow and verification guidance.
 
 ## License
 

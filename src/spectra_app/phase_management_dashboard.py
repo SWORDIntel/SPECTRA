@@ -98,6 +98,46 @@ class Milestone:
     risk_level: RiskLevel = RiskLevel.LOW
     notes: str = ""
 
+    def __init__(
+        self,
+        id: Optional[str] = None,
+        name: str = "",
+        description: str = "",
+        phase_id: str = "",
+        planned_date: Optional[datetime] = None,
+        actual_date: Optional[datetime] = None,
+        status: MilestoneStatus = MilestoneStatus.NOT_STARTED,
+        dependencies: Optional[List[str]] = None,
+        deliverables: Optional[List[str]] = None,
+        assigned_team: Optional[List[str]] = None,
+        completion_criteria: Optional[List[str]] = None,
+        progress_percentage: float = 0.0,
+        risk_level: RiskLevel = RiskLevel.LOW,
+        notes: str = "",
+        milestone_id: Optional[str] = None,
+        target_date: Optional[datetime] = None,
+        completion_percentage: Optional[float] = None,
+        success_criteria: Optional[List[str]] = None,
+    ):
+        self.id = id or milestone_id or ""
+        self.milestone_id = self.id
+        self.name = name
+        self.description = description
+        self.phase_id = phase_id
+        self.planned_date = planned_date or target_date or datetime.now()
+        self.target_date = self.planned_date
+        self.actual_date = actual_date
+        self.status = status
+        self.dependencies = list(dependencies or [])
+        self.deliverables = list(deliverables or [])
+        self.assigned_team = list(assigned_team or [])
+        self.completion_criteria = list(completion_criteria or success_criteria or [])
+        self.success_criteria = self.completion_criteria
+        self.progress_percentage = progress_percentage if completion_percentage is None else completion_percentage
+        self.completion_percentage = self.progress_percentage
+        self.risk_level = risk_level
+        self.notes = notes
+
 
 @dataclass
 class PhaseDefinition:
@@ -135,6 +175,44 @@ class TimelineEvent:
     assigned_agents: List[str] = field(default_factory=list)
     priority: Priority = Priority.MEDIUM
     color: str = "#3498db"
+
+    def __init__(
+        self,
+        id: Optional[str] = None,
+        name: str = "",
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        event_type: str = "milestone",
+        phase_id: str = "",
+        status: Any = "",
+        progress: float = 0.0,
+        dependencies: Optional[List[str]] = None,
+        assigned_agents: Optional[List[str]] = None,
+        priority: Priority = Priority.MEDIUM,
+        color: str = "#3498db",
+        event_id: Optional[str] = None,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        milestone_id: Optional[str] = None,
+        required_resources: Optional[Dict[str, Any]] = None,
+    ):
+        self.id = id or event_id or ""
+        self.event_id = self.id
+        self.name = name or title or ""
+        self.title = self.name
+        self.description = description or ""
+        self.start_date = start_date or datetime.now()
+        self.end_date = end_date or self.start_date
+        self.event_type = event_type
+        self.phase_id = phase_id
+        self.status = status
+        self.progress = progress
+        self.dependencies = list(dependencies or [])
+        self.assigned_agents = list(assigned_agents or [])
+        self.priority = priority
+        self.color = color
+        self.milestone_id = milestone_id
+        self.required_resources = dict(required_resources or {})
 
 
 @dataclass
@@ -585,6 +663,22 @@ class PhaseManagementDashboard:
 
         # Generate timeline events
         self._generate_timeline_events()
+
+    def get_phase_overview(self) -> Dict[str, Any]:
+        """Return a compact, machine-readable overview of project phases."""
+        overview = {}
+        for phase_id, phase in self.phases.items():
+            overview[phase_id] = {
+                "name": phase.name,
+                "status": phase.status.value if isinstance(phase.status, Enum) else phase.status,
+                "progress_percentage": phase.progress_percentage,
+                "milestone_count": len(phase.milestones),
+                "budget_allocated": phase.budget_allocated,
+                "budget_spent": phase.budget_spent,
+                "start_date": phase.start_date.isoformat(),
+                "end_date": phase.end_date.isoformat(),
+            }
+        return overview
 
         # Initialize resource allocations
         self._initialize_resource_allocations()

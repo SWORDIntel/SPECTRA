@@ -95,3 +95,9 @@ spectra.db-wal
 # Other runtime files
 logs/
 *.log
+
+# Local editor / workspace state
+.cursor/
+
+# Local virtual environments
+spectra_venv/

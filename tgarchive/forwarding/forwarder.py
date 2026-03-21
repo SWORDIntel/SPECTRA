@@ -7,20 +7,56 @@ import asyncio
 import logging
 from typing import List, Optional, Sequence, Tuple
 
-from telethon.errors import (
-    AuthKeyError,
-    ChannelPrivateError,
-    ChatAdminRequiredError,
-    FloodWaitError,
-    RPCError,
-    UserBannedInChannelError,
-    UserDeactivatedError,
-)
-from telethon.tl.types import Channel, Chat, User
+try:
+    from telethon.errors import (
+        AuthKeyError,
+        ChannelPrivateError,
+        ChatAdminRequiredError,
+        FloodWaitError,
+        RPCError,
+        UserBannedInChannelError,
+        UserDeactivatedError,
+    )
+    from telethon.tl.types import Channel, Chat, User
+except ImportError:  # pragma: no cover - local test environments may not ship Telethon
+    class RPCError(Exception):
+        pass
+
+    class AuthKeyError(RPCError):
+        pass
+
+    class ChannelPrivateError(RPCError):
+        pass
+
+    class ChatAdminRequiredError(RPCError):
+        pass
+
+    class FloodWaitError(RPCError):
+        def __init__(self, seconds: int = 0):
+            super().__init__(f"Flood wait: {seconds}")
+            self.seconds = seconds
+
+    class UserBannedInChannelError(RPCError):
+        pass
+
+    class UserDeactivatedError(RPCError):
+        pass
+
+    class User:
+        pass
+
+    class Channel:
+        pass
+
+    class Chat:
+        pass
 
 from tgarchive.utils.attribution import AttributionFormatter
 from tgarchive.core.config_models import Config
-from tgarchive.db import SpectraDB
+try:
+    from tgarchive.db import SpectraDB
+except ImportError:  # pragma: no cover - optional for unit tests that do not touch the DB
+    SpectraDB = object
 
 from .client import ClientManager
 from .deduplication import Deduplicator
@@ -38,12 +74,15 @@ class AttachmentForwarder:
         db: Optional[SpectraDB] = None,
         forward_to_all_saved_messages: bool = False,
         destination_topic_id: Optional[int] = None,
+        source_topic_id: Optional[int] = None,
         secondary_unique_destination: Optional[str] = None,
         enable_deduplication: bool = True,
         grouping_strategy: str = "none",
         grouping_time_window_seconds: int = 300,
         prepend_origin_info: bool = False,
         copy_messages_into_destination: bool = False,
+        quote_copied_messages: bool = False,
+        include_text_messages: bool = False,
     ):
         self.config = config
         self.db = db
@@ -57,8 +96,103 @@ class AttachmentForwarder:
         self.force_prepend_origin_info = prepend_origin_info
         self.forward_with_attribution = self.force_prepend_origin_info or self.config.forward_with_attribution
         self.destination_topic_id = destination_topic_id
+        self.source_topic_id = source_topic_id
         self.secondary_unique_destination = secondary_unique_destination
         self.copy_messages_into_destination = copy_messages_into_destination
+        self.quote_copied_messages = quote_copied_messages
+        self.include_text_messages = include_text_messages or source_topic_id is not None
+
+    @staticmethod
+    def _get_message_text(message) -> str:
+        return (getattr(message, "text", None) or getattr(message, "message", None) or "").strip()
+
+    def _extract_message_topic_id(self, message) -> Optional[int]:
+        topic_markers = (
+            getattr(message, "reply_to_top_id", None),
+            getattr(message, "top_msg_id", None),
+            getattr(message, "thread_id", None),
+            getattr(message, "topic_id", None),
+        )
+        for marker in topic_markers:
+            if isinstance(marker, int) and marker > 0:
+                return marker
+
+        reply_to = getattr(message, "reply_to", None)
+        if reply_to is not None:
+            for attr in ("reply_to_top_id", "top_msg_id", "topic_id", "reply_to_msg_id"):
+                marker = getattr(reply_to, attr, None)
+                if isinstance(marker, int) and marker > 0:
+                    return marker
+
+        if getattr(message, "forum_topic", False) or getattr(message, "is_topic_message", False):
+            marker = getattr(message, "id", None)
+            if isinstance(marker, int) and marker > 0:
+                return marker
+        return None
+
+    def _message_matches_source_topic(self, message) -> bool:
+        if self.source_topic_id is None:
+            return True
+        topic_id = self._extract_message_topic_id(message)
+        return topic_id == self.source_topic_id or getattr(message, "id", None) == self.source_topic_id
+
+    def _message_is_forwardable(self, message) -> bool:
+        if not self._message_matches_source_topic(message):
+            return False
+        if getattr(message, "media", None):
+            return True
+        return self.include_text_messages and bool(self._get_message_text(message))
+
+    def _quote_text(self, text: str) -> str:
+        if not text:
+            return ""
+        return "\n".join(f"> {line}" if line else ">" for line in text.splitlines())
+
+    async def _build_copy_text(
+        self,
+        current_message,
+        origin_entity,
+        destination_entity,
+        group_index: int,
+        group_size: int,
+    ) -> str:
+        message_text = self._get_message_text(current_message)
+        body_parts: list[str] = []
+
+        disabled_groups = self.config.data.get("attribution", {}).get("disable_attribution_for_groups", [])
+        attribution_enabled = getattr(destination_entity, "id", None) not in disabled_groups
+
+        if self.forward_with_attribution and attribution_enabled:
+            sender = await current_message.get_sender()
+            sender_name = getattr(
+                sender,
+                "username",
+                f"{getattr(sender, 'first_name', '')} {getattr(sender, 'last_name', '')}".strip(),
+            )
+            attribution = self.attribution_formatter.format_attribution(
+                message=current_message,
+                source_channel_name=getattr(origin_entity, "title", f"ID: {origin_entity.id}"),
+                source_channel_id=origin_entity.id,
+                sender_name=sender_name,
+                sender_id=getattr(sender, "id", 0),
+                timestamp=current_message.date,
+            )
+            if attribution:
+                body_parts.append(attribution)
+            if self.db:
+                self.db.update_attribution_stats(origin_entity.id)
+
+        if self.force_prepend_origin_info or self.quote_copied_messages:
+            group_info = ""
+            if group_size > 1:
+                group_info = f"[Group item {group_index + 1}/{group_size}] "
+            origin_title = getattr(origin_entity, "title", f"ID: {origin_entity.id}")
+            body_parts.append(f"{group_info}[Forwarded from {origin_title} (ID: {origin_entity.id})]")
+
+        if message_text:
+            body_parts.append(self._quote_text(message_text) if self.quote_copied_messages else message_text)
+
+        return "\n\n".join(part for part in body_parts if part)
 
     async def forward_messages(
         self,
@@ -86,15 +220,25 @@ class AttachmentForwarder:
             if not origin_entity or not destination_entity:
                 raise ValueError("Could not resolve one or both Telegram entities.")
 
-            self.logger.info(f"Fetching all media messages from origin: {origin_id} before grouping and forwarding.")
-            all_media_messages = []
+            scope = "source topic" if self.source_topic_id is not None else "origin"
+            self.logger.info(
+                "Fetching forwardable messages from %s: %s before grouping and forwarding.",
+                scope,
+                self.source_topic_id if self.source_topic_id is not None else origin_id,
+            )
+            forwardable_messages = []
             async for msg in client.iter_messages(origin_entity, min_id=start_message_id or 0):
-                if msg.media:
-                    all_media_messages.append(msg)
-            all_media_messages.reverse()
-            self.logger.info(f"Fetched {len(all_media_messages)} media messages from {origin_id}.")
+                if self._message_is_forwardable(msg):
+                    forwardable_messages.append(msg)
+            forwardable_messages.reverse()
+            self.logger.info(
+                "Fetched %s forwardable messages from %s%s.",
+                len(forwardable_messages),
+                origin_id,
+                f" (source topic {self.source_topic_id})" if self.source_topic_id is not None else "",
+            )
 
-            message_groups = self.grouper.group_messages(all_media_messages)
+            message_groups = self.grouper.group_messages(forwardable_messages)
             self.logger.info(f"Processing {len(message_groups)} message group(s) after applying '{self.grouper.grouping_strategy}' strategy.")
 
             for group_idx, message_group in enumerate(message_groups):
@@ -115,9 +259,21 @@ class AttachmentForwarder:
                     for msg_in_group_idx, current_message_in_group in enumerate(message_group):
                         self.logger.info(f"Forwarding item {msg_in_group_idx + 1}/{len(message_group)} (Msg ID: {current_message_in_group.id}) of current group.")
                         if self.copy_messages_into_destination:
+                            message_text = await self._build_copy_text(
+                                current_message_in_group,
+                                origin_entity,
+                                destination_entity,
+                                msg_in_group_idx,
+                                len(message_group),
+                            )
+                            if not message_text and not current_message_in_group.media:
+                                self.logger.info(
+                                    f"Skipping copied message {current_message_in_group.id} because it contains no forwardable content."
+                                )
+                                continue
                             await client.send_message(
                                 entity=destination_entity,
-                                message=current_message_in_group.text or "",
+                                message=message_text,
                                 file=current_message_in_group.media,
                                 reply_to=main_reply_to_arg,
                             )
@@ -128,28 +284,19 @@ class AttachmentForwarder:
                             if main_reply_to_arg:
                                 log_msg += f" (Topic/ReplyTo: {main_reply_to_arg})"
                             self.logger.info(log_msg)
-                        elif self.forward_with_attribution and not self.destination_topic_id:
-                            if destination_entity.id in self.config.get("attribution", {}).get("disable_attribution_for_groups", []):
-                                attribution = ""
-                            else:
-                                sender = await current_message_in_group.get_sender()
-                                sender_name = getattr(sender, 'username', f"{getattr(sender, 'first_name', '')} {getattr(sender, 'last_name', '')}".strip())
-                                attribution = self.attribution_formatter.format_attribution(
-                                    message=current_message_in_group,
-                                    source_channel_name=getattr(origin_entity, 'title', f"ID: {origin_entity.id}"),
-                                    source_channel_id=origin_entity.id,
-                                    sender_name=sender_name,
-                                    sender_id=sender.id,
-                                    timestamp=current_message_in_group.date,
+                        elif self.forward_with_attribution:
+                            message_content = await self._build_copy_text(
+                                current_message_in_group,
+                                origin_entity,
+                                destination_entity,
+                                msg_in_group_idx,
+                                len(message_group),
+                            )
+                            if not message_content and not current_message_in_group.media:
+                                self.logger.info(
+                                    f"Skipping attributed message {current_message_in_group.id} because it contains no forwardable content."
                                 )
-                                if self.db:
-                                    self.db.update_attribution_stats(origin_entity.id)
-                            origin_title = getattr(origin_entity, 'title', f"ID: {origin_entity.id}")
-                            group_info_header = ""
-                            if len(message_group) > 1:
-                                group_info_header = f"[Group item {msg_in_group_idx+1}/{len(message_group)}] "
-                            header = f"{group_info_header}[Forwarded from {origin_title} (ID: {origin_entity.id})]\n"
-                            message_content = attribution + "\n\n" + (current_message_in_group.text or "")
+                                continue
                             await client.send_message(
                                 entity=destination_entity,
                                 message=message_content,
@@ -171,10 +318,13 @@ class AttachmentForwarder:
                         if len(message_group) > 1 and msg_in_group_idx < len(message_group) - 1:
                             await asyncio.sleep(1)
                     successfully_forwarded_main = True
-                    stats["messages_forwarded"] += 1
-                    if message.file:
-                        stats["files_forwarded"] += 1
-                        stats["bytes_forwarded"] += message.file.size
+                    stats["messages_forwarded"] += len(message_group)
+                    stats["files_forwarded"] += sum(1 for grouped_message in message_group if getattr(grouped_message, "file", None))
+                    stats["bytes_forwarded"] += sum(
+                        getattr(grouped_message.file, "size", 0)
+                        for grouped_message in message_group
+                        if getattr(grouped_message, "file", None)
+                    )
                     new_last_message_id = message.id
                 except FloodWaitError as e_flood:
                     self.logger.warning(f"Rate limit hit (main destination) while processing group (representative Msg ID: {message.id}). Waiting for {e_flood.seconds} seconds.")
@@ -198,9 +348,21 @@ class AttachmentForwarder:
                             secondary_dest_entity = await client.get_entity(self.secondary_unique_destination)
                             for msg_s_idx, msg_in_group_secondary in enumerate(message_group):
                                 if self.copy_messages_into_destination:
+                                    message_text = await self._build_copy_text(
+                                        msg_in_group_secondary,
+                                        origin_entity,
+                                        secondary_dest_entity,
+                                        msg_s_idx,
+                                        len(message_group),
+                                    )
+                                    if not message_text and not msg_in_group_secondary.media:
+                                        self.logger.info(
+                                            f"Skipping copied secondary message {msg_in_group_secondary.id} because it contains no forwardable content."
+                                        )
+                                        continue
                                     await client.send_message(
                                         entity=secondary_dest_entity,
-                                        message=msg_in_group_secondary.text or "",
+                                        message=message_text,
                                         file=msg_in_group_secondary.media,
                                     )
                                     copy_log = f"  Copied item {msg_s_idx+1}/{len(message_group)} (Msg ID: {msg_in_group_secondary.id}) to secondary dest '{self.secondary_unique_destination}'."
@@ -235,9 +397,21 @@ class AttachmentForwarder:
                                 target_client = await self.client_manager.get_client(saved_messages_account_id)
                                 for msg_sv_idx, msg_in_group_saved in enumerate(message_group):
                                     if self.copy_messages_into_destination:
+                                        message_text = await self._build_copy_text(
+                                            msg_in_group_saved,
+                                            origin_entity,
+                                            destination_entity,
+                                            msg_sv_idx,
+                                            len(message_group),
+                                        )
+                                        if not message_text and not msg_in_group_saved.media:
+                                            self.logger.info(
+                                                f"Skipping copied Saved Messages item {msg_in_group_saved.id} because it contains no forwardable content."
+                                            )
+                                            continue
                                         await target_client.send_message(
                                             entity='me',
-                                            message=msg_in_group_saved.text or "",
+                                            message=message_text,
                                             file=msg_in_group_saved.media,
                                         )
                                         self.logger.info(

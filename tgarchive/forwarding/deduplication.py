@@ -10,10 +10,20 @@ import sqlite3
 import tempfile
 from typing import List, Set
 
-from telethon import TelegramClient
-from telethon.tl.types import Message as TLMessage
+try:
+    from telethon import TelegramClient
+    from telethon.tl.types import Message as TLMessage
+except ImportError:  # pragma: no cover - allows unit tests without Telethon
+    class TelegramClient:  # type: ignore[override]
+        pass
 
-from tgarchive.db import SpectraDB
+    class TLMessage:  # type: ignore[override]
+        pass
+
+try:
+    from tgarchive.db import SpectraDB
+except ImportError:  # pragma: no cover - optional for unit tests that do not touch the DB
+    SpectraDB = object
 
 
 def get_sha256_hash(file_path, chunk_size=8192):

@@ -1,44 +1,13 @@
-"""
-High-level application package for SPECTRA orchestration and UI components.
+"""High-level application package for SPECTRA orchestration/UI components.
 
-This package consolidates the previously top-level modules into a structured
-namespace so downstream code can rely on explicit imports while keeping the
-repository root clean.
+Avoid importing the full backend graph at package import time. The GUI layer is
+used by standalone tooling and tests that should not require every optional
+dependency to be present merely to import the package.
 """
 
-from . import agent_communication
-from . import agent_optimization_engine
-from . import coordination_interface
-from . import implementation_tools
-from . import orchestration_dashboard
-from . import orchestration_integration
-from . import orchestration_workflows
-from . import phase_management_dashboard
-from . import workflow_automation
-from . import spectra_coordination_gui
-from . import spectra_gui_launcher
-from .spectra_orchestrator import (
-    SpectraOrchestrator,
-    AgentStatus,
-    WorkflowStatus,
-    Priority,
-    AgentMetadata,
-    Task,
-    Workflow,
-)
+from __future__ import annotations
 
 __all__ = [
-    "agent_communication",
-    "agent_optimization_engine",
-    "coordination_interface",
-    "implementation_tools",
-    "orchestration_dashboard",
-    "orchestration_integration",
-    "orchestration_workflows",
-    "phase_management_dashboard",
-    "workflow_automation",
-    "spectra_coordination_gui",
-    "spectra_gui_launcher",
     "SpectraOrchestrator",
     "AgentStatus",
     "WorkflowStatus",
@@ -47,3 +16,28 @@ __all__ = [
     "Task",
     "Workflow",
 ]
+
+
+def __getattr__(name: str):
+    if name in __all__:
+        from .spectra_orchestrator import (
+            AgentMetadata,
+            AgentStatus,
+            Priority,
+            SpectraOrchestrator,
+            Task,
+            Workflow,
+            WorkflowStatus,
+        )
+
+        exports = {
+            "SpectraOrchestrator": SpectraOrchestrator,
+            "AgentStatus": AgentStatus,
+            "WorkflowStatus": WorkflowStatus,
+            "Priority": Priority,
+            "AgentMetadata": AgentMetadata,
+            "Task": Task,
+            "Workflow": Workflow,
+        }
+        return exports[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

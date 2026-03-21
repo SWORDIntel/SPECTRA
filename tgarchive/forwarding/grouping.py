@@ -8,7 +8,11 @@ import re
 from datetime import timedelta
 from typing import List, Tuple, Optional
 
-from telethon.tl.types import Message as TLMessage
+try:
+    from telethon.tl.types import Message as TLMessage
+except ImportError:  # pragma: no cover - type-only fallback for tests
+    class TLMessage:  # type: ignore[override]
+        pass
 
 
 class MessageGrouper:

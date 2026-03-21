@@ -210,13 +210,46 @@ For more help, visit: https://github.com/SWORDIntel/SPECTRA
     forward_parser.add_argument("--all-dialogs", action="store_true", help="Sweep and forward every accessible dialog (groups, channels, private chats) to the destination.")
     forward_parser.add_argument("--forward-to-all-saved", action="store_true", help="Also forward to 'Saved Messages' of all configured accounts (for backup)")
     forward_parser.add_argument("--prepend-origin-info", action="store_true", help="Prepend origin channel info to the message text (useful for recovery tracking)")
-    forward_parser.add_argument(
+    forward_mode_group = forward_parser.add_mutually_exclusive_group()
+    forward_mode_group.add_argument(
         "--copy-into-destination",
+        "--copy-mode",
+        dest="copy_into_destination",
         action="store_true",
+        default=False,
         help=(
-            "Copy messages into the destination using the active account so they look native (no 'Forwarded from'"
-            " header). Leave unset to preserve origin attribution."
+            "Repost messages into the destination as native posts from the active account instead of using"
+            " Telegram's forward header."
         ),
+    )
+    forward_mode_group.add_argument(
+        "--preserve-forward-header",
+        "--forward-mode",
+        dest="copy_into_destination",
+        action="store_false",
+        help="Use Telegram's native forward behavior and preserve the forwarded attribution/header.",
+    )
+    forward_parser.add_argument(
+        "--source-topic-id",
+        "--source-room-id",
+        type=int,
+        help="Restrict a single-origin forward to one source forum topic/thread.",
+    )
+    forward_parser.add_argument(
+        "--destination-topic-id",
+        "--destination-room-id",
+        type=int,
+        help="Post forwarded content into a specific destination topic/room inside a forum group.",
+    )
+    forward_parser.add_argument(
+        "--include-text-messages",
+        action="store_true",
+        help="Include text-only messages in addition to media. Automatically enabled for topic/thread forwarding.",
+    )
+    forward_parser.add_argument(
+        "--quote-copied-messages",
+        action="store_true",
+        help="When using copy mode, render the original text as a quote block inside the copied post.",
     )
     forward_parser.add_argument("--secondary-unique-destination", type=str, default=None, help="Secondary destination for unique messages only (deduplication required)")
     forward_parser.add_argument("--source-accounts", nargs="+", help="Limit total-mode forwarding to these account identifiers (phone number or session name). Uses all accounts if omitted.")
@@ -764,6 +797,14 @@ async def handle_attachment_forwarding(args: argparse.Namespace) -> int:
         include_private_chats = args.include_private_chats if hasattr(args, "include_private_chats") else True
         include_saved_messages = args.include_saved_messages if hasattr(args, "include_saved_messages") else False
         copy_into_destination = args.copy_into_destination if hasattr(args, "copy_into_destination") else False
+        quote_copied_messages = bool(getattr(args, "quote_copied_messages", False))
+        source_topic_id = args.source_topic_id if hasattr(args, "source_topic_id") else None
+        destination_topic_id = args.destination_topic_id if hasattr(args, "destination_topic_id") else None
+        include_text_messages = bool(getattr(args, "include_text_messages", False) or source_topic_id is not None)
+
+        if source_topic_id is not None and (args.all_dialogs or args.total_mode):
+            logger.error("--source-topic-id is only supported for single-origin forwarding.")
+            return 1
 
         forwarder = AttachmentForwarder(
             config=cfg,
@@ -773,6 +814,10 @@ async def handle_attachment_forwarding(args: argparse.Namespace) -> int:
             enable_deduplication=enable_dedup,
             secondary_unique_destination=secondary_dest,
             copy_messages_into_destination=copy_into_destination,
+            quote_copied_messages=quote_copied_messages,
+            destination_topic_id=destination_topic_id,
+            source_topic_id=source_topic_id,
+            include_text_messages=include_text_messages,
         )
         try:
             if args.all_dialogs:

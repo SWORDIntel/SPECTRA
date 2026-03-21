@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+        :root {
+            --bg: #0a0f15;
+            --panel: #151f29;
+            --line: rgba(111, 138, 163, 0.22);
+            --ink: #eef4fb;
+            --muted: #9ab0c3;
+            --accent: #4cd6c0;
+            --accent-strong: #2bd0c7;
+            --shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            color: var(--ink);
+            font-family: "Trebuchet MS", Verdana, sans-serif;
+            background:
+                radial-gradient(circle at top right, rgba(76, 214, 192, 0.12), transparent 24%),
+                linear-gradient(180deg, #0a1016 0%, #0c131a 100%);
+        }
+        .shell {
+            max-width: 1360px;
+            margin: 0 auto;
+            padding: 18px;
+        }
+        .hero {
+            background: linear-gradient(135deg, rgba(10, 16, 22, 0.98), rgba(18, 31, 41, 0.95));
+            border: 1px solid var(--line);
+            border-radius: 28px;
+            padding: 24px;
+            box-shadow: var(--shadow);
+            margin-bottom: 18px;
+        }
+        .eyebrow {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.18em;
+            color: var(--accent);
+            margin-bottom: 8px;
+        }
+        h1 {
+            margin: 0 0 10px 0;
+            font-size: 40px;
+            line-height: 1;
+        }
+        p {
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.7;
+            max-width: 760px;
+        }
+        .actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 16px;
+        }
+        .btn {
+            text-decoration: none;
+            border-radius: 13px;
+            padding: 10px 14px;
+            font-weight: 700;
+            font-size: 14px;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+            color: #071117;
+        }
+        .btn-secondary {
+            background: #1f2d39;
+            color: #deecf7;
+            border: 1px solid var(--line);
+        }
+        .viewer {
+            background: linear-gradient(180deg, rgba(19, 28, 37, 0.96), rgba(16, 24, 31, 0.94));
+            border: 1px solid var(--line);
+            border-radius: 24px;
+            padding: 14px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.18);
+        }
+        iframe {
+            width: 100%;
+            min-height: 980px;
+            border: 0;
+            border-radius: 18px;
+            background: white;
+        }
+        @media (max-width: 980px) {
+            iframe { min-height: 760px; }
+        }
+    </style>
+</head>
+<body>
+    <main class="shell">
+        <section class="hero">
+            <div class="eyebrow">{{ kicker }}</div>
+            <h1>{{ heading }}</h1>
+            <p>{{ description }}</p>
+            <div class="actions">
+                <a class="btn btn-primary" href="/">Back To Console</a>
+                {% if secondary_href %}
+                <a class="btn btn-secondary" href="{{ secondary_href }}">{{ secondary_label }}</a>
+                {% endif %}
+            </div>
+        </section>
+
+        <section class="viewer">
+            <iframe src="{{ iframe_src }}" title="{{ title }}"></iframe>
+        </section>
+    </main>
+</body>
+</html>

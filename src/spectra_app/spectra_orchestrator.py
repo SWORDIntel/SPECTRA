@@ -23,12 +23,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 import signal
 import sys
+from types import SimpleNamespace
 
-# SPECTRA-specific imports
-from tgarchive.config_models import Config
-from tgarchive.db import SpectraDB
-from tgarchive.scheduler_service import SchedulerDaemon
-from tgarchive.notifications import NotificationManager
+# SPECTRA-specific imports are loaded lazily so the orchestration/UI surface
+# remains importable without the Telegram archiver stack being installed.
+Config = Any
+SpectraDB = Any
+SchedulerDaemon = Any
+NotificationManager = Any
 
 
 class AgentStatus(Enum):
@@ -200,20 +202,25 @@ class SpectraOrchestrator:
     async def initialize(self) -> bool:
         """Initialize orchestrator components and load configurations"""
         try:
+            from tgarchive.core.config_models import Config as TgConfig
+            from tgarchive.db import SpectraDB as TgSpectraDB
+            from tgarchive.services.scheduler_service import SchedulerDaemon as TgSchedulerDaemon
+            from tgarchive.utils.notifications import NotificationManager as TgNotificationManager
+
             # Load configuration
             from pathlib import Path
             config_path = Path(self.config_path)
-            self.config = Config(path=config_path)
+            self.config = TgConfig(path=config_path)
             if not self.config.data:
                 self.logger.error(f"Failed to load configuration from {self.config_path}")
                 return False
 
             # Initialize database
-            self.db = SpectraDB(self.db_path)
+            self.db = TgSpectraDB(self.db_path)
 
             # Initialize notification manager
             notification_config = self.config.data.get("notifications", {})
-            self.notification_manager = NotificationManager(notification_config)
+            self.notification_manager = TgNotificationManager(notification_config)
 
             # Load agent definitions
             await self._load_agent_definitions()

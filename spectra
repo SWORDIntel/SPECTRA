@@ -1,15 +1,12 @@
 #!/bin/bash
 ################################################################################
-# SPECTRA Launcher - Smart auto-bootstrap and launch
+# SPECTRA Launcher - Main entry point
 ################################################################################
 #
-# This is the main entry point for SPECTRA.
-# It automatically:
-# - Detects if setup is needed
-# - Runs bootstrap if required
-# - Launches the TUI
+# Default: launch the main web console.
+# Compatibility: preserve legacy install/repair/bootstrap paths.
 #
-# Usage: ./spectra [OPTIONS]
+# Usage: ./spectra [COMMAND]
 #
 ################################################################################
 
@@ -38,21 +35,30 @@ print_status() {
 }
 
 # Handle command line arguments
-case "${1:-bootstrap}" in
-    "bootstrap")
-        # Full bootstrap (setup + launch)
-        exec "$SCRIPT_DIR/bootstrap"
+COMMAND="${1:-web}"
+if [[ $# -gt 0 && "${1:0:1}" == "-" ]]; then
+    COMMAND="web"
+elif [[ $# -gt 0 ]]; then
+    shift
+fi
+
+case "$COMMAND" in
+    "web"|"gui"|"ui"|"")
+        exec python3 -m spectra_app.spectra_gui_launcher --host 127.0.0.1 --port 5000 "$@"
         ;;
-    "run"|"launch"|"tui")
-        # Just launch the TUI
+    "docs"|"documentation")
+        exec python3 "$SCRIPT_DIR/webapp.py" "$@"
+        ;;
+    "tui"|"run"|"launch")
         exec "$SCRIPT_DIR/scripts/launch/spectra-launch.sh"
         ;;
+    "bootstrap")
+        exec "$SCRIPT_DIR/bootstrap"
+        ;;
     "install")
-        # Just install
         exec bash "$SCRIPT_DIR/scripts/install/install-spectra.sh"
         ;;
     "repair")
-        # Just repair
         exec bash "$SCRIPT_DIR/scripts/install/repair-installation.sh"
         ;;
     "help"|"-h"|"--help")
@@ -62,17 +68,19 @@ SPECTRA - Telegram Network Discovery & Archiving System
 Usage: ./spectra [COMMAND]
 
 Commands:
-  bootstrap    Auto-setup and launch SPECTRA (default, recommended)
-  run          Launch SPECTRA TUI immediately
+  web          Launch the main web console (default)
+  docs         Launch the documentation console
+  tui          Launch the legacy TUI
+  bootstrap    Auto-setup and launch SPECTRA
   install      Install/update SPECTRA
   repair       Repair broken SPECTRA installation
   help         Show this help message
 
 Examples:
-  ./spectra              # Full setup + launch
-  ./spectra run          # Just launch
-  ./spectra install      # Just install
-  ./spectra repair       # Fix broken installation
+  ./spectra              # Launch the main web console
+  ./spectra docs         # Open the documentation launcher
+  ./spectra install      # Install or update
+  ./spectra repair       # Repair a broken installation
 
 For more options, see:
   - Makefile (use: make help)

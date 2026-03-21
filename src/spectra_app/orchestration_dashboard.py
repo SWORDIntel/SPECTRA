@@ -478,7 +478,7 @@ class SpectraOrchestrationDashboard:
         system_load = system_status.get('system_load', 0.0)
         
         # Generate template with computed values
-        template = f"""
+        template = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -580,13 +580,13 @@ class SpectraOrchestrationDashboard:
         <div class="card">
             <h3>System Overview</h3>
             <div id="system-status">
-                <div class="metric-value" id="active-workflows">{active_workflows}</div>
+                <div class="metric-value" id="active-workflows">__ACTIVE_WORKFLOWS__</div>
                 <div>Active Workflows</div>
                 <br>
-                <div class="metric-value" id="active-tasks">{system_status.get('active_tasks', 0)}</div>
+                <div class="metric-value" id="active-tasks">__ACTIVE_TASKS__</div>
                 <div>Active Tasks</div>
                 <br>
-                <div class="metric-value" id="system-load">{system_load * 100:.1f}%</div>
+                <div class="metric-value" id="system-load">__SYSTEM_LOAD__%</div>
                 <div>System Load</div>
             </div>
         </div>
@@ -837,7 +837,12 @@ class SpectraOrchestrationDashboard:
 </body>
         </html>
         """
-        return template
+        return (
+            template
+            .replace("__ACTIVE_WORKFLOWS__", str(active_workflows))
+            .replace("__ACTIVE_TASKS__", str(system_status.get("active_tasks", 0)))
+            .replace("__SYSTEM_LOAD__", f"{system_load * 100:.1f}")
+        )
 
 
 # CLI interface for the dashboard

@@ -5,7 +5,7 @@ Sorting Forwarder for SPECTRA
 This module contains the SortingForwarder class for forwarding files with sorting.
 """
 
-from .forwarding import AttachmentForwarder
+from tgarchive.forwarding import AttachmentForwarder
 from datetime import datetime
 import logging
 

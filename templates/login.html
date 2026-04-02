@@ -1,10 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SPECTRA - Intelligence Platform</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SPECTRA Access Console</title>
     <style>
+        @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap");
+
+        :root {
+            --bg: #0b0f1a;
+            --bg-alt: #101827;
+            --panel: rgba(15, 23, 42, 0.92);
+            --panel-border: rgba(148, 163, 184, 0.2);
+            --accent: #f97316;
+            --accent-soft: rgba(249, 115, 22, 0.15);
+            --ink: #e2e8f0;
+            --muted: #94a3b8;
+            --danger: #f43f5e;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            --sans: "Space Grotesk", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -12,296 +30,666 @@
         }
 
         body {
-            font-family: 'Courier New', monospace;
-            background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
-            color: #00ff88;
+            font-family: var(--sans);
+            color: var(--ink);
+            background: radial-gradient(circle at top, #1f2937, transparent 65%), var(--bg);
             min-height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
-            position: relative;
-            overflow: hidden;
+            padding: 40px 24px;
         }
 
-        /* Animated background grid */
         body::before {
-            content: '';
+            content: "";
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-image:
-                linear-gradient(0deg, transparent 24%, rgba(0, 255, 136, 0.05) 25%, rgba(0, 255, 136, 0.05) 26%, transparent 27%, transparent 74%, rgba(0, 255, 136, 0.05) 75%, rgba(0, 255, 136, 0.05) 76%, transparent 77%, transparent),
-                linear-gradient(90deg, transparent 24%, rgba(0, 255, 136, 0.05) 25%, rgba(0, 255, 136, 0.05) 26%, transparent 27%, transparent 74%, rgba(0, 255, 136, 0.05) 75%, rgba(0, 255, 136, 0.05) 76%, transparent 77%, transparent);
-            background-size: 50px 50px;
-            animation: grid-shift 20s linear infinite;
+            inset: 0;
+            background: linear-gradient(120deg, rgba(249, 115, 22, 0.08), transparent 60%),
+                        linear-gradient(240deg, rgba(14, 116, 144, 0.08), transparent 50%);
             pointer-events: none;
             z-index: 0;
         }
 
-        @keyframes grid-shift {
-            0% { background-position: 0 0; }
-            100% { background-position: 50px 50px; }
-        }
-
-        .container {
+        .shell {
             position: relative;
             z-index: 1;
-            width: 100%;
-            max-width: 500px;
-            padding: 40px;
-            background: rgba(10, 14, 39, 0.8);
-            border: 2px solid #00ff88;
-            box-shadow: 0 0 20px rgba(0, 255, 136, 0.3), inset 0 0 20px rgba(0, 255, 136, 0.05);
-            backdrop-filter: blur(10px);
+            width: min(1080px, 100%);
+            display: grid;
+            gap: 24px;
         }
 
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            border-bottom: 1px solid #00ff8844;
-            padding-bottom: 20px;
-        }
-
-        .header h1 {
-            font-size: 28px;
-            color: #00ffff;
-            text-transform: uppercase;
-            letter-spacing: 3px;
-            margin-bottom: 5px;
-            text-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
-        }
-
-        .header p {
-            color: #00ff88;
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-        }
-
-        .form-group {
-            margin-bottom: 25px;
-        }
-
-        .form-group label {
-            display: block;
-            color: #00ffff;
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 8px;
-        }
-
-        .form-group input {
-            width: 100%;
-            padding: 12px;
-            background: rgba(0, 255, 136, 0.05);
-            border: 1px solid #00ff8844;
-            color: #00ff88;
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
-            transition: all 0.3s ease;
-        }
-
-        .form-group input:focus {
-            outline: none;
-            border-color: #00ffff;
-            box-shadow: 0 0 10px rgba(0, 255, 255, 0.5), inset 0 0 10px rgba(0, 255, 136, 0.1);
-            background: rgba(0, 255, 136, 0.1);
-        }
-
-        .form-group input::placeholder {
-            color: #00ff8844;
-        }
-
-        .button-group {
+        header {
             display: flex;
-            gap: 10px;
-            margin-top: 30px;
+            justify-content: space-between;
+            align-items: flex-end;
+            gap: 16px;
+            padding: 24px;
+            background: var(--panel);
+            border: 1px solid var(--panel-border);
+            border-radius: 20px;
+            backdrop-filter: blur(14px);
+        }
+
+        .brand h1 {
+            font-size: clamp(26px, 4vw, 36px);
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .brand p {
+            font-family: var(--mono);
+            font-size: 13px;
+            text-transform: uppercase;
+            color: var(--muted);
+            letter-spacing: 0.2em;
+        }
+
+        .status-card {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: flex-end;
+            font-family: var(--mono);
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--panel-border);
+        }
+
+        .status-pill.good {
+            color: var(--success);
+            border-color: rgba(34, 197, 94, 0.4);
+            background: rgba(34, 197, 94, 0.1);
+        }
+
+        .status-pill.warn {
+            color: var(--warning);
+            border-color: rgba(245, 158, 11, 0.4);
+            background: rgba(245, 158, 11, 0.1);
+        }
+
+        .status-pill.bad {
+            color: var(--danger);
+            border-color: rgba(244, 63, 94, 0.4);
+            background: rgba(244, 63, 94, 0.1);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--panel-border);
+            border-radius: 20px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            min-height: 280px;
+        }
+
+        .panel h2 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .panel p {
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        .note {
+            padding: 14px 16px;
+            border-radius: 14px;
+            background: rgba(148, 163, 184, 0.08);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            font-family: var(--mono);
+            font-size: 12px;
+        }
+
+        .note strong {
+            color: var(--ink);
+        }
+
+        form {
+            display: grid;
+            gap: 14px;
+        }
+
+        label {
+            font-size: 12px;
+            font-family: var(--mono);
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            color: var(--muted);
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 12px;
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            background: rgba(15, 23, 42, 0.6);
+            color: var(--ink);
+            font-size: 14px;
+            font-family: var(--sans);
+        }
+
+        input:focus {
+            outline: 2px solid var(--accent);
+            border-color: transparent;
+            box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.15);
         }
 
         button {
-            flex: 1;
-            padding: 12px;
-            background: linear-gradient(135deg, #00ff88 0%, #00ffff 100%);
             border: none;
-            color: #0a0e27;
-            font-family: 'Courier New', monospace;
+            padding: 12px 18px;
+            border-radius: 12px;
+            font-family: var(--mono);
             font-size: 12px;
-            font-weight: bold;
+            font-weight: 600;
+            letter-spacing: 0.16em;
             text-transform: uppercase;
-            letter-spacing: 2px;
             cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
 
-        button:hover {
-            box-shadow: 0 0 30px rgba(0, 255, 255, 0.5);
-            transform: translateY(-2px);
+        .primary {
+            background: var(--accent);
+            color: #0b0f1a;
+            box-shadow: 0 10px 24px rgba(249, 115, 22, 0.25);
         }
 
-        button:active {
-            transform: translateY(0);
+        .secondary {
+            background: transparent;
+            color: var(--ink);
+            border: 1px solid rgba(148, 163, 184, 0.4);
         }
 
-        .button-reset {
-            background: rgba(0, 255, 136, 0.1);
-            color: #00ff88;
-            border: 1px solid #00ff88;
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
             box-shadow: none;
         }
 
-        .button-reset:hover {
-            box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
-            background: rgba(0, 255, 136, 0.2);
+        button:hover:not(:disabled) {
+            transform: translateY(-1px);
         }
 
-        .error-message {
-            display: none;
-            background: rgba(255, 0, 0, 0.1);
-            border: 1px solid #ff0044;
-            color: #ff0088;
-            padding: 12px;
-            margin-bottom: 20px;
+        .row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .alert {
+            padding: 12px 14px;
+            border-radius: 12px;
+            font-family: var(--mono);
             font-size: 12px;
-            text-align: center;
-            animation: pulse-error 0.5s ease;
+            border: 1px solid rgba(244, 63, 94, 0.4);
+            background: rgba(244, 63, 94, 0.1);
+            color: var(--danger);
+            display: none;
         }
 
-        .error-message.show {
+        .alert.show {
             display: block;
         }
 
-        @keyframes pulse-error {
-            0% { opacity: 0; }
-            100% { opacity: 1; }
+        .success {
+            border-color: rgba(34, 197, 94, 0.4);
+            background: rgba(34, 197, 94, 0.1);
+            color: var(--success);
         }
 
-        .footer {
-            margin-top: 30px;
-            padding-top: 20px;
-            border-top: 1px solid #00ff8844;
-            text-align: center;
-            font-size: 11px;
-            color: #00ff8844;
-        }
-
-        .loading {
-            display: none;
-            text-align: center;
-            color: #00ffff;
-            font-size: 12px;
-        }
-
-        .loader {
-            width: 20px;
-            height: 20px;
-            border: 2px solid #00ff8844;
-            border-top: 2px solid #00ffff;
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(226, 232, 240, 0.2);
+            border-top: 2px solid var(--accent);
             border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 10px auto;
+            animation: spin 0.8s linear infinite;
         }
 
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        footer {
+            font-family: var(--mono);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.18em;
+            color: var(--muted);
+            text-align: center;
+        }
+
+        @media (max-width: 720px) {
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .status-card {
+                align-items: flex-start;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>◆ SPECTRA ◆</h1>
-            <p>Intelligence Gathering Platform</p>
+    <script type="application/json" id="authState">{{ auth_state_json|safe }}</script>
+
+    <main class="shell">
+        <header>
+            <div class="brand">
+                <h1>SPECTRA</h1>
+                <p>Secure operator console</p>
+            </div>
+            <div class="status-card">
+                <div id="authBackend" class="status-pill">WebAuthn</div>
+                <div id="authSummary">Checking access policy</div>
+            </div>
+        </header>
+
+        <div class="grid">
+            <section class="panel" id="bootstrapPanel">
+                <h2>Bootstrap admin enrollment</h2>
+                <p data-testid="bootstrap-admin-note">
+                    First-run enrollment requires a bootstrap secret. The first operator to enroll becomes the admin.
+                    Use a YubiKey or passkey-ready security key to register.
+                </p>
+                <div class="note">
+                    <strong>Required only once.</strong> After the first admin exists, this path is disabled.
+                </div>
+                <form id="bootstrapForm">
+                    <div>
+                        <label for="bootstrapSecret">Bootstrap secret</label>
+                        <input id="bootstrapSecret" type="password" autocomplete="off" required />
+                    </div>
+                    <div>
+                        <label for="bootstrapUsername">Username</label>
+                        <input id="bootstrapUsername" type="text" autocomplete="username" placeholder="operator" required />
+                    </div>
+                    <div>
+                        <label for="bootstrapDisplay">Display name</label>
+                        <input id="bootstrapDisplay" type="text" placeholder="Operator Name" />
+                    </div>
+                    <div>
+                        <label for="bootstrapLabel">Security key label</label>
+                        <input id="bootstrapLabel" type="text" placeholder="Primary YubiKey" />
+                    </div>
+                    <div class="row">
+                        <button class="primary" type="submit" id="bootstrapSubmit">
+                            <span>Enroll admin key</span>
+                        </button>
+                        <button class="secondary" type="button" id="bootstrapReset">Clear</button>
+                    </div>
+                </form>
+            </section>
+
+            <section class="panel" id="signinPanel">
+                <h2>Sign in with security key</h2>
+                <p>
+                    Authenticate with your registered YubiKey or passkey. Usernames are optional if the key is already
+                    registered.
+                </p>
+                <form id="signinForm">
+                    <div>
+                        <label for="signinUsername">Username (optional)</label>
+                        <input id="signinUsername" type="text" autocomplete="username" placeholder="operator" />
+                    </div>
+                    <div class="row">
+                        <button class="primary" type="submit" id="signinSubmit">
+                            <span>Sign in with security key</span>
+                        </button>
+                        <button class="secondary" type="button" id="signinReset">Clear</button>
+                    </div>
+                </form>
+
+                <div class="note" id="signedInNote">
+                    <strong>Session active.</strong> You are already authenticated. Use the dashboard shortcut below.
+                </div>
+                <div class="row">
+                    <button class="primary" type="button" id="continueBtn">Continue to console</button>
+                    <button class="secondary" type="button" id="registerAnotherBtn">Register another key</button>
+                </div>
+            </section>
+
+            <section class="panel" id="statusPanel">
+                <h2>Access status</h2>
+                <div class="note">
+                    <div>Relying party: <span id="rpId">unknown</span></div>
+                    <div>Origin: <span id="rpOrigin">unknown</span></div>
+                </div>
+                <div class="note">
+                    <div>Operator: <span id="operatorName">not signed in</span></div>
+                    <div>Role: <span id="operatorRole">n/a</span></div>
+                </div>
+                <div class="note" id="backendNote"></div>
+                <div class="alert" id="errorBox"></div>
+                <div class="alert success" id="successBox"></div>
+            </section>
         </div>
 
-        <div class="error-message" id="errorMessage"></div>
-
-        <form id="loginForm">
-            <div class="form-group">
-                <label for="username">Username</label>
-                <input type="text" id="username" name="username" placeholder="Enter username" required>
-            </div>
-
-            <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" id="password" name="password" placeholder="Enter password" required>
-            </div>
-
-            <div class="loading" id="loading">
-                <div class="loader"></div>
-                <p>Authenticating...</p>
-            </div>
-
-            <div class="button-group">
-                <button type="submit" id="loginBtn">Log In</button>
-                <button type="reset" class="button-reset">Clear</button>
-            </div>
-        </form>
-
-        <div class="footer">
-            <p>SPECTRA v1.0.0</p>
-            <p style="margin-top: 5px;">Secure. Classified. National.</p>
-        </div>
-    </div>
+        <footer>YubiKey-first access for containerized SPECTRA deployments</footer>
+    </main>
 
     <script>
-        const form = document.getElementById('loginForm');
-        const loginBtn = document.getElementById('loginBtn');
-        const loading = document.getElementById('loading');
-        const errorMessage = document.getElementById('errorMessage');
+        const authStateRaw = document.getElementById("authState").textContent || "{}";
+        const authState = JSON.parse(authStateRaw);
+        const auth = authState.auth || {};
+        const webauthn = auth.webauthn || {};
 
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
+        const bootstrapPanel = document.getElementById("bootstrapPanel");
+        const signinPanel = document.getElementById("signinPanel");
+        const signedInNote = document.getElementById("signedInNote");
+        const continueBtn = document.getElementById("continueBtn");
+        const registerAnotherBtn = document.getElementById("registerAnotherBtn");
+        const authBackend = document.getElementById("authBackend");
+        const authSummary = document.getElementById("authSummary");
+        const rpId = document.getElementById("rpId");
+        const rpOrigin = document.getElementById("rpOrigin");
+        const operatorName = document.getElementById("operatorName");
+        const operatorRole = document.getElementById("operatorRole");
+        const backendNote = document.getElementById("backendNote");
+        const errorBox = document.getElementById("errorBox");
+        const successBox = document.getElementById("successBox");
 
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
+        const bootstrapForm = document.getElementById("bootstrapForm");
+        const signinForm = document.getElementById("signinForm");
+        const bootstrapReset = document.getElementById("bootstrapReset");
+        const signinReset = document.getElementById("signinReset");
+        const bootstrapSubmit = document.getElementById("bootstrapSubmit");
+        const signinSubmit = document.getElementById("signinSubmit");
 
-            // Hide error message
-            errorMessage.classList.remove('show');
+        function showError(message) {
+            errorBox.textContent = message;
+            errorBox.classList.add("show");
+            successBox.classList.remove("show");
+        }
 
-            // Show loading
-            loginBtn.style.display = 'none';
-            loading.style.display = 'block';
+        function showSuccess(message) {
+            successBox.textContent = message;
+            successBox.classList.add("show");
+            errorBox.classList.remove("show");
+        }
 
-            try {
-                const response = await fetch('/api/auth/login', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ username, password })
-                });
+        function clearAlerts() {
+            errorBox.classList.remove("show");
+            successBox.classList.remove("show");
+        }
 
-                const data = await response.json();
-
-                if (response.ok) {
-                    // Store tokens
-                    localStorage.setItem('access_token', data.access_token);
-                    localStorage.setItem('refresh_token', data.refresh_token);
-                    localStorage.setItem('user', JSON.stringify(data.user));
-
-                    // Redirect to dashboard
-                    window.location.href = '/dashboard';
-                } else {
-                    throw new Error(data.error || 'Login failed');
-                }
-            } catch (error) {
-                errorMessage.textContent = error.message;
-                errorMessage.classList.add('show');
-                loginBtn.style.display = 'block';
-                loading.style.display = 'none';
+        function setLoading(button, isLoading) {
+            if (!button) return;
+            if (isLoading) {
+                button.disabled = true;
+                button.innerHTML = '<span class="spinner"></span> Working';
+            } else {
+                button.disabled = false;
+                button.innerHTML = button.dataset.label || button.textContent;
             }
-        });
+        }
 
-        // Demo: Show default credentials
-        document.addEventListener('DOMContentLoaded', () => {
-            document.getElementById('username').value = 'admin';
-            document.getElementById('password').value = 'admin';
+        function base64urlToBuffer(value) {
+            const padding = "=".repeat((4 - (value.length % 4)) % 4);
+            const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+            const raw = atob(base64);
+            const buffer = new Uint8Array(raw.length);
+            for (let i = 0; i < raw.length; i += 1) {
+                buffer[i] = raw.charCodeAt(i);
+            }
+            return buffer;
+        }
+
+        function bufferToBase64url(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = "";
+            bytes.forEach((b) => { binary += String.fromCharCode(b); });
+            return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+        }
+
+        function normalizeCreateOptions(options) {
+            const publicKey = options.publicKey || options;
+            publicKey.challenge = base64urlToBuffer(publicKey.challenge);
+            publicKey.user.id = base64urlToBuffer(publicKey.user.id);
+            if (publicKey.excludeCredentials) {
+                publicKey.excludeCredentials = publicKey.excludeCredentials.map((cred) => ({
+                    ...cred,
+                    id: base64urlToBuffer(cred.id),
+                }));
+            }
+            return publicKey;
+        }
+
+        function normalizeGetOptions(options) {
+            const publicKey = options.publicKey || options;
+            publicKey.challenge = base64urlToBuffer(publicKey.challenge);
+            if (publicKey.allowCredentials) {
+                publicKey.allowCredentials = publicKey.allowCredentials.map((cred) => ({
+                    ...cred,
+                    id: base64urlToBuffer(cred.id),
+                }));
+            }
+            return publicKey;
+        }
+
+        function credentialToJSON(credential) {
+            const response = credential.response;
+            const clientDataJSON = bufferToBase64url(response.clientDataJSON);
+            const data = {
+                id: credential.id,
+                rawId: bufferToBase64url(credential.rawId),
+                type: credential.type,
+                response: {
+                    clientDataJSON,
+                },
+            };
+
+            if (response.attestationObject) {
+                data.response.attestationObject = bufferToBase64url(response.attestationObject);
+            }
+            if (response.authenticatorData) {
+                data.response.authenticatorData = bufferToBase64url(response.authenticatorData);
+            }
+            if (response.signature) {
+                data.response.signature = bufferToBase64url(response.signature);
+            }
+            if (response.userHandle) {
+                data.response.userHandle = bufferToBase64url(response.userHandle);
+            }
+            return data;
+        }
+
+        async function postJSON(url, payload) {
+            const response = await fetch(url, {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload || {}),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data.success === false) {
+                const message = data.error || `Request failed (${response.status})`;
+                throw new Error(message);
+            }
+            return data;
+        }
+
+        async function handleBootstrapSubmit(event) {
+            event.preventDefault();
+            clearAlerts();
+
+            const bootstrapSecret = document.getElementById("bootstrapSecret").value.trim();
+            const username = document.getElementById("bootstrapUsername").value.trim();
+            const displayName = document.getElementById("bootstrapDisplay").value.trim();
+            const label = document.getElementById("bootstrapLabel").value.trim();
+
+            if (!bootstrapSecret || !username) {
+                showError("Bootstrap secret and username are required.");
+                return;
+            }
+            if (!webauthn.available) {
+                showError(webauthn.reason || "WebAuthn backend is unavailable.");
+                return;
+            }
+
+            setLoading(bootstrapSubmit, true);
+            try {
+                const optionsResponse = await postJSON("/api/auth/webauthn/register/options", {
+                    bootstrap_secret: bootstrapSecret,
+                    username,
+                    display_name: displayName,
+                    label,
+                });
+                const publicKey = normalizeCreateOptions(optionsResponse.options);
+                const credential = await navigator.credentials.create({ publicKey });
+                const verification = await postJSON("/api/auth/webauthn/register/verify", {
+                    ...credentialToJSON(credential),
+                    label,
+                });
+                showSuccess(`Admin key enrolled for ${verification.operator?.display_name || username}.`);
+                window.location.href = authState.next || "/";
+            } catch (error) {
+                showError(error.message || "Enrollment failed.");
+            } finally {
+                setLoading(bootstrapSubmit, false);
+            }
+        }
+
+        async function handleSignin(event) {
+            event.preventDefault();
+            clearAlerts();
+
+            const username = document.getElementById("signinUsername").value.trim();
+            if (!webauthn.available) {
+                showError(webauthn.reason || "WebAuthn backend is unavailable.");
+                return;
+            }
+
+            setLoading(signinSubmit, true);
+            try {
+                const optionsResponse = await postJSON("/api/auth/webauthn/authenticate/options", {
+                    username: username || undefined,
+                });
+                const publicKey = normalizeGetOptions(optionsResponse.options);
+                const assertion = await navigator.credentials.get({ publicKey });
+                const verification = await postJSON("/api/auth/webauthn/authenticate/verify", credentialToJSON(assertion));
+                showSuccess(`Authenticated as ${verification.operator?.display_name || "operator"}.`);
+                window.location.href = authState.next || "/";
+            } catch (error) {
+                showError(error.message || "Authentication failed.");
+            } finally {
+                setLoading(signinSubmit, false);
+            }
+        }
+
+        async function handleRegisterAnother() {
+            clearAlerts();
+            if (!authState.operator || !authState.operator.operator_id) {
+                showError("You must be signed in to register additional keys.");
+                return;
+            }
+            if (!webauthn.available) {
+                showError(webauthn.reason || "WebAuthn backend is unavailable.");
+                return;
+            }
+            const label = prompt("Security key label", "Backup YubiKey");
+            if (!label) {
+                return;
+            }
+            setLoading(registerAnotherBtn, true);
+            try {
+                const optionsResponse = await postJSON("/api/auth/webauthn/register/options", {
+                    operator_id: authState.operator.operator_id,
+                    label,
+                });
+                const publicKey = normalizeCreateOptions(optionsResponse.options);
+                const credential = await navigator.credentials.create({ publicKey });
+                await postJSON("/api/auth/webauthn/register/verify", {
+                    ...credentialToJSON(credential),
+                    label,
+                });
+                showSuccess("Additional security key registered.");
+            } catch (error) {
+                showError(error.message || "Registration failed.");
+            } finally {
+                setLoading(registerAnotherBtn, false);
+            }
+        }
+
+        function renderState() {
+            const bootstrapRequired = auth.bootstrap_required;
+            const authenticated = !!authState.authenticated;
+
+            bootstrapPanel.classList.toggle("hidden", !bootstrapRequired);
+            signinPanel.classList.toggle("hidden", bootstrapRequired);
+
+            signedInNote.classList.toggle("hidden", !authenticated);
+            continueBtn.classList.toggle("hidden", !authenticated);
+            registerAnotherBtn.classList.toggle("hidden", !authenticated);
+
+            rpId.textContent = auth.rp_id || "unknown";
+            rpOrigin.textContent = auth.origin || "unknown";
+            operatorName.textContent = authState.operator?.display_name || "not signed in";
+            operatorRole.textContent = authState.operator?.role || "n/a";
+
+            authBackend.textContent = webauthn.backend ? `${webauthn.backend} WebAuthn` : "WebAuthn";
+            if (!webauthn.available) {
+                authBackend.classList.add("bad");
+                authSummary.textContent = "WebAuthn backend missing";
+                backendNote.textContent = webauthn.reason || "Install the WebAuthn backend inside the container.";
+                backendNote.classList.add("note");
+            } else {
+                authBackend.classList.add(authenticated ? "good" : "warn");
+                authSummary.textContent = authenticated ? "Operator session active" : "Operator session required";
+                backendNote.textContent = bootstrapRequired
+                    ? "Bootstrap secret required for the first admin key."
+                    : "Use your registered security key to sign in.";
+                backendNote.classList.add("note");
+            }
+
+            if (!webauthn.available) {
+                bootstrapSubmit.disabled = true;
+                signinSubmit.disabled = true;
+                registerAnotherBtn.disabled = true;
+            }
+        }
+
+        bootstrapSubmit.dataset.label = bootstrapSubmit.textContent.trim();
+        signinSubmit.dataset.label = signinSubmit.textContent.trim();
+        registerAnotherBtn.dataset.label = registerAnotherBtn.textContent.trim();
+
+        bootstrapForm.addEventListener("submit", handleBootstrapSubmit);
+        signinForm.addEventListener("submit", handleSignin);
+        bootstrapReset.addEventListener("click", () => bootstrapForm.reset());
+        signinReset.addEventListener("click", () => signinForm.reset());
+        continueBtn.addEventListener("click", () => {
+            window.location.href = authState.next || "/";
         });
+        registerAnotherBtn.addEventListener("click", handleRegisterAnother);
+
+        renderState();
     </script>
 </body>
 </html>

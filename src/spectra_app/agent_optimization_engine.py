@@ -106,6 +106,7 @@ class CapabilityRequirement:
 @dataclass
 class AgentPerformanceProfile:
     """Comprehensive agent performance profile"""
+    agent_id: Optional[str]
     agent_name: str
     capabilities: Dict[str, float]  # capability -> proficiency level
     performance_metrics: Dict[str, float]

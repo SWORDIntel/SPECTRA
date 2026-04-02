@@ -40,25 +40,57 @@ class FileTypeSorter:
 
         return ext
 
+    @staticmethod
+    def _looks_like_text(file_path: str) -> bool:
+        try:
+            with open(file_path, "rb") as fh:
+                sample = fh.read(512)
+            if not sample:
+                return True
+            text_bytes = sum(1 for b in sample if b in b"\n\r\t\f\b" or 32 <= b <= 126)
+            return (text_bytes / len(sample)) >= 0.85
+        except Exception:
+            return False
+
     def get_file_category(self, file_path, db):
         """
         Gets the category of a file and updates statistics.
         """
         category = "unknown"
         ext = self._get_true_extension(file_path)
+        text_extensions = {
+            ".txt", ".md", ".rst", ".csv", ".json", ".yaml", ".yml",
+            ".xml", ".html", ".htm", ".js", ".ts", ".css",
+        }
+        source_code_extensions = {
+            ".py", ".sh", ".rb", ".go", ".java", ".c", ".cc", ".cpp",
+        }
 
-        for cat, extensions in self.extension_mapping.items():
-            if ext in extensions:
-                category = cat
-                break
+        if ext.lower() in source_code_extensions:
+            category = "source_code"
+        elif ext.lower() in text_extensions:
+            category = "text"
+
+        if category == "unknown":
+            for cat, extensions in self.extension_mapping.items():
+                if ext in extensions:
+                    category = cat
+                    break
 
         # If the category is still unknown, try to determine it using python-magic
         if category == "unknown":
             try:
                 mime = magic.from_file(file_path, mime=True)
-                category = mime.split('/')[0]
+                category = mime.split('/')[0] if mime else "application"
             except Exception as e:
                 logger.error(f"Error getting MIME type for {file_path}: {e}")
+                category = "application" if os.path.exists(file_path) else "unknown"
+
+        if category == "unknown":
+            if os.path.exists(file_path):
+                category = "text" if self._looks_like_text(file_path) else "application"
+            else:
+                category = "unknown"
 
         # Update statistics in the database
         if db:

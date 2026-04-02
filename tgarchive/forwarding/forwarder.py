@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import tempfile
 from typing import List, Optional, Sequence, Tuple
 
 try:
@@ -53,10 +55,23 @@ except ImportError:  # pragma: no cover - local test environments may not ship T
 
 from tgarchive.utils.attribution import AttributionFormatter
 from tgarchive.core.config_models import Config
+from tgarchive.core.deduplication import (
+    compare_fuzzy_hashes,
+    get_fuzzy_hash,
+    get_perceptual_hash,
+    get_sha256_hash,
+)
 try:
     from tgarchive.db import SpectraDB
 except ImportError:  # pragma: no cover - optional for unit tests that do not touch the DB
     SpectraDB = object
+
+try:
+    import imagehash
+    IMAGEHASH_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency in some environments
+    imagehash = None
+    IMAGEHASH_AVAILABLE = False
 
 from .client import ClientManager
 from .deduplication import Deduplicator
@@ -72,6 +87,7 @@ class AttachmentForwarder:
         self,
         config: Config,
         db: Optional[SpectraDB] = None,
+        deduplicator: Optional[Deduplicator] = None,
         forward_to_all_saved_messages: bool = False,
         destination_topic_id: Optional[int] = None,
         source_topic_id: Optional[int] = None,
@@ -88,7 +104,7 @@ class AttachmentForwarder:
         self.db = db
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.client_manager = ClientManager(config)
-        self.deduplicator = Deduplicator(db, enable_deduplication)
+        self.deduplicator = deduplicator or Deduplicator(db, enable_deduplication)
         self.grouper = MessageGrouper(grouping_strategy, grouping_time_window_seconds)
         self.attribution_formatter = AttributionFormatter(self.config.data)
 
@@ -143,6 +159,80 @@ class AttachmentForwarder:
             return True
         return self.include_text_messages and bool(self._get_message_text(message))
 
+    async def _get_client(self, account_identifier: Optional[str] = None):
+        return await self.client_manager.get_client(account_identifier)
+
+    async def _is_duplicate(self, message_group: List[TLMessage], client: TelegramClient) -> bool:
+        """
+        Check if any file in a message group is a duplicate or near-duplicate.
+        """
+        if not self.deduplicator.enable_deduplication or not message_group:
+            return False
+
+        if await self.deduplicator.is_duplicate(message_group, client):
+            return True
+
+        if not self.config.data.get("deduplication", {}).get("enable_near_duplicates"):
+            return False
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for message in message_group:
+                if not message.file:
+                    continue
+
+                file_path = os.path.join(tmpdir, message.file.name or str(message.file.id))
+                try:
+                    await client.download_media(message.media, file=file_path)
+                except Exception as e:
+                    self.logger.error(f"Failed to download file for hashing (Msg ID: {message.id}): {e}", exc_info=True)
+                    continue
+
+                if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
+                    self.logger.warning(
+                        f"File for hashing (Msg ID: {message.id}) was not downloaded correctly or is empty. "
+                        "Skipping duplicate check for this file."
+                    )
+                    continue
+
+                if self.db and IMAGEHASH_AVAILABLE:
+                    import mimetypes
+
+                    mime_type, _ = mimetypes.guess_type(file_path)
+                    if mime_type and mime_type.startswith("image/"):
+                        perceptual_hash = get_perceptual_hash(file_path)
+                        if perceptual_hash and hasattr(self.db, "get_all_perceptual_hashes"):
+                            distance_threshold = self.config.data.get("deduplication", {}).get("perceptual_hash_distance_threshold", 5)
+                            for file_id, other_phash_str in self.db.get_all_perceptual_hashes():
+                                try:
+                                    other_phash = imagehash.hex_to_hash(other_phash_str)
+                                    distance = imagehash.hex_to_hash(perceptual_hash) - other_phash
+                                    if distance <= distance_threshold:
+                                        self.logger.info(
+                                            f"Near-duplicate image found for Msg ID {message.id} "
+                                            f"(pHash distance: {distance} <= {distance_threshold}, matches file_id: {file_id})."
+                                        )
+                                        return True
+                                except Exception as e:
+                                    self.logger.error(f"Error comparing perceptual hashes: {e}")
+                        continue
+
+                fuzzy_hash = get_fuzzy_hash(file_path)
+                if fuzzy_hash and self.db and hasattr(self.db, "get_all_fuzzy_hashes"):
+                    similarity_threshold = self.config.data.get("deduplication", {}).get("fuzzy_hash_similarity_threshold", 90)
+                    for file_id, other_fhash in self.db.get_all_fuzzy_hashes():
+                        try:
+                            similarity = compare_fuzzy_hashes(fuzzy_hash, other_fhash)
+                            if similarity >= similarity_threshold:
+                                self.logger.info(
+                                    f"Near-duplicate file found for Msg ID {message.id} "
+                                    f"(fuzzy hash similarity: {similarity}% >= {similarity_threshold}%, matches file_id: {file_id})."
+                                )
+                                return True
+                        except Exception as e:
+                            self.logger.error(f"Error comparing fuzzy hashes: {e}")
+
+        return False
+
     def _quote_text(self, text: str) -> str:
         if not text:
             return ""
@@ -193,6 +283,21 @@ class AttachmentForwarder:
             body_parts.append(self._quote_text(message_text) if self.quote_copied_messages else message_text)
 
         return "\n\n".join(part for part in body_parts if part)
+
+    async def repost_messages_in_channel(self, channel_id: int | str, account_identifier: Optional[str] = None):
+        """Repost messages in a channel and delete the originals when allowed."""
+        from telethon.errors.rpcerrorlist import MessageDeleteForbiddenError
+
+        client = await self._get_client(account_identifier)
+        entity = await client.get_entity(channel_id)
+
+        async for message in client.iter_messages(entity):
+            text = self._get_message_text(message)
+            await client.send_message(entity=entity, message=text, file=None)
+            try:
+                await client.delete_messages(entity, [message.id])
+            except MessageDeleteForbiddenError:
+                break
 
     async def forward_messages(
         self,

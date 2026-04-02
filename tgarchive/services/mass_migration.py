@@ -7,7 +7,7 @@ This module contains the MassMigrationManager class for managing mass migrations
 
 import asyncio
 import logging
-from .forwarding import AttachmentForwarder
+from tgarchive.forwarding import AttachmentForwarder
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,14 @@ class MassMigrationManager:
         """
         Performs a one-time migration from a source to a destination.
         """
-        use_parallel = parallel or self.config.get("migration_mode", {}).get("use_parallel", False)
+        use_parallel = parallel or self.config.data.get("migration_mode", {}).get("use_parallel", False)
+
+        progress = self.db.get_migration_progress(source, destination)
+        if progress:
+            migration_id, last_message_id = progress
+        else:
+            migration_id = self.db.add_migration_progress(source, destination, "in_progress")
+            last_message_id = 0
 
         if use_parallel:
             # Parallel migration: split messages into batches and process concurrently
@@ -74,20 +81,19 @@ class MassMigrationManager:
                 else:
                     logger.info("Parallel migration completed successfully")
                 
-                # Update progress
-                self.db.update_migration_progress(migration_id, total_messages, "completed")
+                # Update progress with the furthest successful message ID we observed.
+                completed_message_id = max(
+                    [r for r in results if isinstance(r, int) and r is not None],
+                    default=last_message_id,
+                )
+                self.db.update_migration_progress(migration_id, completed_message_id, "completed")
                 return
             except Exception as e:
                 logger.error(f"Parallel migration failed, falling back to sequential: {e}")
                 # Fall through to sequential migration
 
-        progress = self.db.get_migration_progress(source, destination)
         if progress:
-            migration_id, last_message_id = progress
             print(f"Resuming migration from message ID: {last_message_id}")
-        else:
-            migration_id = self.db.add_migration_progress(source, destination, "in_progress")
-            last_message_id = 0
 
         if dry_run:
             print(f"DRY RUN: Would migrate files from {source} to {destination} starting from message ID {last_message_id}")

@@ -6,9 +6,9 @@ This module contains the FileSortingManager class for orchestrating the file sor
 """
 
 import logging
-from .file_sorter import FileTypeSorter
-from .directory_manager import DirectoryManager
-from .db.spectra_db import SpectraDB
+from tgarchive.utils.file_sorter import FileTypeSorter
+from tgarchive.utils.directory_manager import DirectoryManager
+from tgarchive.db import SpectraDB
 
 logger = logging.getLogger(__name__)
 

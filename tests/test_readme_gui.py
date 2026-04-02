@@ -101,15 +101,27 @@ def test_readme_integration():
     except:
         print("   ❌ Could not check requirements.txt")
 
+    # Test 7: Check login template copy for first-run auth flow
+    total_tests += 1
+    print("7. Checking login template first-run copy...")
+    login_template = Path("templates/login.html")
+    if login_template.exists():
+        content = login_template.read_text()
+        if "Bootstrap admin enrollment" in content and "YubiKey" in content and "passkey" in content:
+            print("   ✅ Login template contains first-run bootstrap copy")
+            tests_passed += 1
+        else:
+            print("   ❌ Login template missing first-run bootstrap copy")
+    else:
+        print("   ❌ Login template file not found")
+
     # Summary
     print(f"\n📊 Test Results: {tests_passed}/{total_tests} tests passed")
 
     if tests_passed == total_tests:
         print("🎉 All tests passed! README integration is ready.")
-        return True
     else:
-        print("⚠️  Some tests failed. Check the issues above.")
-        return False
+        raise AssertionError("Some README integration checks failed")
 
 def create_demo_launcher():
     """Create a simple demo launcher for testing"""
@@ -177,15 +189,14 @@ if __name__ == "__main__":
     print("SPECTRA GUI README Integration Test")
     print("==================================\\n")
 
-    success = test_readme_integration()
-
-    if success:
+    try:
+        test_readme_integration()
         print("\\n🚀 Creating demo launcher...")
         create_demo_launcher()
         print("\\n✅ README integration is ready!")
         print("\\nTo test the GUI:")
         print("1. python3 examples/demo_readme_gui.py")
         print("2. Open http://localhost:5000/readme")
-    else:
+    except Exception:
         print("\\n❌ Please fix the issues above before testing.")
         sys.exit(1)

@@ -15,7 +15,9 @@ import asyncio
 import unittest
 import json
 import sys
+import tempfile
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Dict, List, Any, Optional
 from dataclasses import asdict
 
@@ -37,6 +39,29 @@ from spectra_app.implementation_tools import (
     ImplementationTools, WorkBreakdownItem, QualityGate, RiskItem,
     ResourceAllocation, TaskStatus
 )
+
+
+class _StubWebAuthnBackend:
+    available = True
+    backend_name = "stub"
+    unavailable_reason = ""
+
+    def begin_registration(self, operator, rp_id=None, rp_name=None, origin=None):
+        return ({"challenge": "register-challenge", "rpId": rp_id or "localhost"}, {"operator_id": operator.operator_id})
+
+    def register_complete(self, state, request_data):
+        return {
+            "credential_id": "cred-1",
+            "attested_credential_data": "Y3JlZC1kYXRh",
+            "aaguid": None,
+            "public_key": None,
+        }
+
+    def begin_authentication(self, operators=None, rp_id=None, origin=None):
+        return ({"challenge": "auth-challenge", "rpId": rp_id or "localhost"}, {"operator_id": operators[0].operator_id if operators else None})
+
+    def authenticate_complete(self, state, credentials, request_data):
+        return {"credential_id": "cred-1"}
 
 
 class MockSpectraOrchestrator:
@@ -304,8 +329,75 @@ class TestSpectraGUIComponents(unittest.TestCase):
 
         print("✓ Implementation tools validation successful")
 
-    async def test_async_functionality(self):
+    def test_gui_launcher_auth_surface(self):
+        """Test browser auth flow and bootstrap login copy."""
+        print("\n=== Testing GUI Launcher Auth Surface ===")
+
+        from spectra_app.spectra_gui_launcher import SpectraGUILauncher, create_default_config
+
+        config = create_default_config()
+        config.bootstrap_secret = "bootstrap-admin-key"
+        auth_dir = Path(tempfile.mkdtemp(prefix="spectra-auth-"))
+        config.auth_store_path = str(auth_dir / "operators.json")
+        launcher = SpectraGUILauncher(config)
+        launcher.auth_service.backend = _StubWebAuthnBackend()
+        client = launcher.app.test_client()
+
+        self.assertEqual(config.host, "127.0.0.1")
+        self.assertEqual(config.port, 5000)
+
+        login_response = client.get("/login")
+        login_html = login_response.get_data(as_text=True)
+        self.assertEqual(login_response.status_code, 200)
+        self.assertIn("Bootstrap admin enrollment", login_html)
+        self.assertIn("YubiKey", login_html)
+        self.assertIn("passkey", login_html.lower())
+
+        unauthenticated = client.get("/", follow_redirects=False)
+        self.assertIn(unauthenticated.status_code, (301, 302))
+        self.assertIn("/login", unauthenticated.headers["Location"])
+
+        bootstrap_status = client.get("/api/auth/bootstrap/status")
+        self.assertEqual(bootstrap_status.status_code, 200)
+        self.assertTrue(bootstrap_status.get_json()["auth"]["bootstrap_required"])
+
+        register_response = client.post(
+            "/api/auth/webauthn/register/options",
+            json={"bootstrap_secret": "bootstrap-admin-key", "username": "admin", "display_name": "Admin"},
+        )
+        self.assertEqual(register_response.status_code, 200)
+        self.assertTrue(register_response.get_json()["success"])
+
+        verify_response = client.post(
+            "/api/auth/webauthn/register/verify",
+            json={"id": "cred-1", "type": "public-key", "response": {}},
+        )
+        self.assertEqual(verify_response.status_code, 200)
+        self.assertTrue(verify_response.get_json()["success"])
+
+        with client.session_transaction() as sess:
+            self.assertTrue(sess.get("spectra_operator_id"))
+
+        status_response = client.get("/api/system/status")
+        self.assertEqual(status_response.status_code, 200)
+        status_json = status_response.get_json()
+        self.assertTrue(status_json["auth"]["webauthn_required"])
+        self.assertEqual(status_json["auth"]["browser_login"], "/login")
+
+        logout_response = client.post("/logout")
+        self.assertEqual(logout_response.status_code, 200)
+        self.assertTrue(logout_response.get_json()["success"])
+
+        with client.session_transaction() as sess:
+            self.assertFalse(sess.get("spectra_operator_id"))
+
+        print("✓ GUI launcher auth surface validation successful")
+
+    def test_async_functionality(self):
         """Test asynchronous functionality of components"""
+        asyncio.run(self._test_async_functionality())
+
+    async def _test_async_functionality(self):
         print("\n=== Testing Async Functionality ===")
 
         # Test coordination interface async methods
@@ -449,6 +541,14 @@ def run_comprehensive_tests():
         tests_run += 1
 
     try:
+        test_instance.test_gui_launcher_auth_surface()
+        tests_run += 1
+        tests_passed += 1
+    except Exception as e:
+        print(f"✗ GUI launcher auth surface test failed: {e}")
+        tests_run += 1
+
+    try:
         test_instance.test_data_serialization()
         tests_run += 1
         tests_passed += 1
@@ -491,6 +591,7 @@ def run_comprehensive_tests():
         "Phase Management Dashboard",
         "Coordination Interface",
         "Implementation Tools",
+        "GUI Launcher Auth Surface",
         "Data Serialization",
         "Async Functionality"
     ]

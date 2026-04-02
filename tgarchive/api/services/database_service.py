@@ -9,8 +9,8 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
-from ..db import SpectraDB
-from ..core.config_models import Config
+from ...db import SpectraDB
+from ...core.config_models import Config
 
 logger = logging.getLogger(__name__)
 

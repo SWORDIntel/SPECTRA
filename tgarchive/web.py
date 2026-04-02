@@ -52,17 +52,17 @@ def create_web_app():
 
 def register_web_routes(app):
     """Register web interface routes."""
-    from flask import render_template, send_from_directory
+    from flask import render_template
 
     @app.route('/')
     def index():
         """Serve main dashboard."""
-        return render_template('index.html')
+        return render_template('unified_dashboard.html')
 
     @app.route('/dashboard')
     def dashboard():
         """Serve dashboard."""
-        return render_template('dashboard.html')
+        return render_template('unified_dashboard.html')
 
     @app.route('/login')
     def login_page():

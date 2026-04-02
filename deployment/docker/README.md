@@ -1,6 +1,6 @@
 # SPECTRA Docker Deployment
 
-Production-ready Docker containers for SPECTRA with TEMPEST Class C security controls.
+Production-ready Docker containers for SPECTRA with TEMPEST Class C security controls and YubiKey/WebAuthn browser authentication.
 
 ## Quick Start
 
@@ -23,8 +23,10 @@ nano .env  # Edit with your credentials
 
 Required variables:
 ```env
-TG_API_ID=your_api_id
-TG_API_HASH=your_api_hash_32_chars
+SPECTRA_BOOTSTRAP_SECRET=one-time-bootstrap-secret
+SPECTRA_SESSION_SECRET=change-me-in-production
+SPECTRA_WEBAUTHN_ORIGIN=http://localhost:5000
+SPECTRA_WEBAUTHN_RP_ID=localhost
 ```
 
 ### 3. Build and Start
@@ -49,7 +51,7 @@ curl http://localhost:8080/health
 ## Services
 
 ### spectra
-Main archiver service with full functionality.
+Main SPECTRA web console service with the full operator workflow.
 
 **Resources:**
 - CPU: 0.5-2.0 cores
@@ -66,9 +68,9 @@ Main archiver service with full functionality.
 Health check and monitoring endpoint.
 
 **Endpoints:**
-- `GET /health` - Overall health status
-- `GET /metrics` - Resource metrics (Prometheus format)
-- `GET /status` - Detailed component status
+- `GET /login` - Browser login/bootstrap surface
+- `GET /api/auth/bootstrap/status` - First-run bootstrap state
+- `GET /api/system/status` - Detailed component and auth status
 
 **Resources:**
 - CPU: Up to 0.5 cores
@@ -172,6 +174,15 @@ volumes:
    - Non-root user (UID 1000)
    - Dropped Linux capabilities
    - No privilege escalation
+
+## First-Run Bootstrap
+
+The first browser operator enrolled through `/login` becomes the admin.
+
+1. Set `SPECTRA_BOOTSTRAP_SECRET` before starting the container.
+2. Open `http://localhost:5000/login`.
+3. Enter the bootstrap secret, username, display name, and register a YubiKey or platform passkey.
+4. Use the resulting admin session to enroll additional operators and credentials.
 
 ### Hardening Checklist
 

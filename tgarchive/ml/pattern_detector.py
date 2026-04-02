@@ -6,6 +6,7 @@ Detect patterns in message content and user behavior.
 """
 
 import logging
+from datetime import datetime
 from typing import List, Dict, Any, Optional
 import numpy as np
 

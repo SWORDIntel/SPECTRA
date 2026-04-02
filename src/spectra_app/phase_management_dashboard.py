@@ -164,6 +164,7 @@ class PhaseDefinition:
 class TimelineEvent:
     """Timeline event for visualization"""
     id: str
+    event_id: str
     name: str
     start_date: datetime
     end_date: datetime

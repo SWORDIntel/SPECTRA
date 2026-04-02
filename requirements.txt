@@ -51,6 +51,9 @@ Flask==2.3.3
 Flask-SocketIO==5.3.6
 # Fallback: Flask-SocketIO>=5.0.0,<6.0
 
+# WebAuthn / YubiKey authentication
+fido2>=2.1.1
+
 # JWT for API authentication
 PyJWT>=2.8.0
 
@@ -233,4 +236,3 @@ pytest-asyncio==0.21.1
 #   pip install telethon rich tqdm PyYAML Pillow npyscreen Jinja2 Flask Flask-SocketIO Markdown networkx matplotlib pandas
 #
 # Strategy 4 - Selective (skip problematic packages):
-

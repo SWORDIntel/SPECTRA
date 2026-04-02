@@ -10,9 +10,9 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
-from ..core.config_models import Config
-from ..utils.discovery import SpectraCrawlerManager
-from ..db import SpectraDB
+from ...core.config_models import Config
+from ...utils.discovery import SpectraCrawlerManager
+from ...db import SpectraDB
 from .tasks import TaskManager, TaskStatus
 
 logger = logging.getLogger(__name__)

@@ -24,6 +24,26 @@ from telethon.errors import (
 from tgarchive.core.config_models import Config
 from tgarchive.db.spectra_db import SpectraDB
 
+if not hasattr(functions.channels, "GetForumTopicsRequest"):
+    class GetForumTopicsRequest:  # pragma: no cover - compatibility shim
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+        def to_dict(self):
+            return dict(self.__dict__)
+
+    functions.channels.GetForumTopicsRequest = GetForumTopicsRequest
+
+if not hasattr(functions.channels, "CreateForumTopicRequest"):
+    class CreateForumTopicRequest:  # pragma: no cover - compatibility shim
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+        def to_dict(self):
+            return dict(self.__dict__)
+
+    functions.channels.CreateForumTopicRequest = CreateForumTopicRequest
+
 
 class GroupMirrorManager:
     """
@@ -106,8 +126,14 @@ class GroupMirrorManager:
         self.logger.info(f"Mirroring topics from {source_channel.id} to {dest_channel.id}")
         topic_map = {}
 
+        get_forum_topics_request = getattr(functions.channels, "GetForumTopicsRequest", None)
+        create_forum_topic_request = getattr(functions.channels, "CreateForumTopicRequest", None)
+        if get_forum_topics_request is None or create_forum_topic_request is None:
+            self.logger.warning("Telethon forum topic requests are unavailable; skipping topic mirroring.")
+            return topic_map
+
         # Get existing topics in destination to avoid duplicates
-        existing_dest_topics = await self.dest_client(functions.channels.GetForumTopicsRequest(
+        existing_dest_topics = await self.dest_client(get_forum_topics_request(
             channel=dest_channel,
             offset_date=datetime.now(),
             offset_id=0,
@@ -116,7 +142,7 @@ class GroupMirrorManager:
         ))
         existing_topic_titles = {t.title: t.id for t in existing_dest_topics.topics}
 
-        source_topics = await self.source_client(functions.channels.GetForumTopicsRequest(
+        source_topics = await self.source_client(get_forum_topics_request(
             channel=source_channel,
             offset_date=datetime.now(),
             offset_id=0,
@@ -133,9 +159,9 @@ class GroupMirrorManager:
             self.logger.info(f"Creating topic '{topic.title}' in destination group.")
             try:
                 # Basic random_id generation, can be improved
-                random_id = int.from_bytes(asyncio.get_event_loop().time().hex().encode(), 'big') & (2**63 - 1)
+                random_id = int(datetime.now().timestamp() * 1_000_000) & (2**63 - 1)
 
-                updates = await self.dest_client(functions.channels.CreateForumTopicRequest(
+                updates = await self.dest_client(create_forum_topic_request(
                     channel=dest_channel,
                     title=topic.title,
                     random_id=random_id,

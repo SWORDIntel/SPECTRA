@@ -57,6 +57,7 @@ def list_requirements() -> list[str]:
         "matplotlib>=3.6",
         "pandas>=1.5",
         "python-magic>=0.4.27",
+        "fido2>=2.1.1",
         "pyaes>=1.6.1",
         "pyasn1>=0.6.0",
         # "rsa>=4.9",  # Removed: RSA is phased out per CNSA 2.0. Use ECC-based cryptography if needed.
@@ -81,7 +82,7 @@ setup(
     author="John (SWORD-EPI)",
     author_email="n/a",
     url="https://github.com/SWORDIntel/SPECTRA",
-    packages=find_packages(include=["tgarchive*", "spectra_app*"]),
+    packages=find_packages(include=["tgarchive*", "spectra_app*", "src*"]),
     install_requires=list_requirements(),
     include_package_data=True,
     license="MIT",

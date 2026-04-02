@@ -12,11 +12,11 @@ import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-from ..core.config_models import Config
-from ..db import SpectraDB
-from ..forwarding.enhanced_forwarder import EnhancedAttachmentForwarder
-from ..forwarding.organization_engine import OrganizationConfig, OrganizationMode
-from ..forwarding.topic_manager import TopicCreationStrategy
+from tgarchive.core.config_models import Config
+from tgarchive.db import SpectraDB
+from tgarchive.forwarding.enhanced_forwarder import EnhancedAttachmentForwarder
+from tgarchive.forwarding.organization_engine import OrganizationConfig, OrganizationMode
+from tgarchive.forwarding.topic_manager import TopicCreationStrategy
 from .discovery import enhance_config_with_gen_accounts
 
 
@@ -231,8 +231,8 @@ async def handle_topic_management(args: argparse.Namespace) -> int:
 
 async def handle_list_topics(args: argparse.Namespace, cfg: Config, db: SpectraDB) -> int:
     """Handle listing forum topics."""
-    from .forwarding.topic_manager import TopicManager
-    from .forwarding.client import ClientManager
+    from tgarchive.forwarding.topic_manager import TopicManager
+    from tgarchive.forwarding.client import ClientManager
 
     try:
         client_manager = ClientManager(cfg)
@@ -254,7 +254,7 @@ async def handle_list_topics(args: argparse.Namespace, cfg: Config, db: SpectraD
         logger.info(f"Found {cache_stats['size']} topics in cache for {args.channel}")
 
         # Get topics from database using TopicOperations
-        from .db.topic_operations import TopicOperations
+        from tgarchive.db.topic_operations import TopicOperations
         topic_ops = TopicOperations(str(db.db_path))
         db_topics = topic_ops.get_forum_topics_by_channel(channel_id, active_only=True)
         
@@ -275,8 +275,8 @@ async def handle_list_topics(args: argparse.Namespace, cfg: Config, db: SpectraD
 
 async def handle_create_topic(args: argparse.Namespace, cfg: Config, db: SpectraDB) -> int:
     """Handle creating a new forum topic."""
-    from .forwarding.topic_manager import TopicManager
-    from .forwarding.client import ClientManager
+    from tgarchive.forwarding.topic_manager import TopicManager
+    from tgarchive.forwarding.client import ClientManager
 
     try:
         client_manager = ClientManager(cfg)
@@ -314,7 +314,7 @@ async def handle_create_topic(args: argparse.Namespace, cfg: Config, db: Spectra
             logger.info(f"Created topic '{args.title}' with ID {topic_id}")
 
             # Record in database via TopicOperations
-            from .db.topic_operations import TopicOperations, ForumTopicRecord
+            from tgarchive.db.topic_operations import TopicOperations, ForumTopicRecord
             topic_ops = TopicOperations(str(db.db_path))
             
             # Get topic details from Telegram to store in database
@@ -360,11 +360,11 @@ async def handle_create_topic(args: argparse.Namespace, cfg: Config, db: Spectra
 
 async def handle_organization_report(args: argparse.Namespace, cfg: Config, db: SpectraDB) -> int:
     """Handle generating organization effectiveness report."""
-    from .db.topic_operations import TopicOperations
+    from tgarchive.db.topic_operations import TopicOperations
 
     try:
         # Resolve channel ID
-        from .forwarding.client import ClientManager
+        from tgarchive.forwarding.client import ClientManager
         client_manager = ClientManager(cfg)
         client = await client_manager.get_client()
 
@@ -443,8 +443,8 @@ async def handle_organization_report(args: argparse.Namespace, cfg: Config, db: 
 
 async def handle_topic_config(args: argparse.Namespace, cfg: Config, db: SpectraDB) -> int:
     """Handle topic organization configuration."""
-    from .db.topic_operations import TopicOperations
-    from .forwarding.client import ClientManager
+    from tgarchive.db.topic_operations import TopicOperations
+    from tgarchive.forwarding.client import ClientManager
 
     try:
         # Resolve channel ID
@@ -512,7 +512,7 @@ def create_organization_config_from_args(args: argparse.Namespace) -> Organizati
         config.topic_strategy = TopicCreationStrategy(args.topic_strategy)
 
     if hasattr(args, 'fallback_strategy') and args.fallback_strategy:
-        from .forwarding.organization_engine import FallbackStrategy
+        from tgarchive.forwarding.organization_engine import FallbackStrategy
         config.fallback_strategy = FallbackStrategy(args.fallback_strategy)
 
     if hasattr(args, 'max_topics_per_channel') and args.max_topics_per_channel:

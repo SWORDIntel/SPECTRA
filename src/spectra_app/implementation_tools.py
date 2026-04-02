@@ -284,7 +284,8 @@ class QualityGate:
         self.manual_reviews = list(manual_reviews or [])
         self.approvers = list(approvers or required_approvers or [])
         self.required_approvers = self.approvers
-        self.status = status if isinstance(status, QualityGateStatus) else QualityGateStatus(status)
+        self.status_enum = status if isinstance(status, QualityGateStatus) else QualityGateStatus(status)
+        self.status = self.status_enum.value
         self.submission_date = submission_date
         self.review_start_date = review_start_date
         self.approval_date = approval_date
@@ -1021,7 +1022,8 @@ class ImplementationTools:
             return False
 
         gate = self.quality_gates[gate_id]
-        gate.status = QualityGateStatus.UNDER_REVIEW
+        gate.status_enum = QualityGateStatus.UNDER_REVIEW
+        gate.status = gate.status_enum.value
         gate.submission_date = datetime.now()
         gate.review_start_date = datetime.now()
         gate.artifacts.extend(artifacts)
@@ -1050,7 +1052,8 @@ class ImplementationTools:
         if approver not in gate.approvers:
             return False
 
-        gate.status = QualityGateStatus.APPROVED
+        gate.status_enum = QualityGateStatus.APPROVED
+        gate.status = gate.status_enum.value
         gate.approval_date = datetime.now()
         gate.comments.append(f"{approver}: {comments}")
         gate.exit_criteria_met = True
@@ -1130,7 +1133,7 @@ class ImplementationTools:
         """Calculate quality metrics"""
         return {
             "quality_gates_passed": len([gate for gate in self.quality_gates.values()
-                                       if gate.status == QualityGateStatus.APPROVED]),
+                                       if getattr(gate, "status_enum", QualityGateStatus(gate.status)) == QualityGateStatus.APPROVED]),
             "quality_gates_total": len(self.quality_gates),
             "defect_rate": 0.02,  # Would calculate from actual defects
             "rework_percentage": 0.05,  # Would calculate from actual rework

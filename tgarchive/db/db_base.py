@@ -7,9 +7,10 @@ import logging
 import math
 import sqlite3
 import time
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import AsyncIterator
 
 import pytz  # type: ignore
 
@@ -21,6 +22,40 @@ logger = logging.getLogger(__name__)
 def _page(n: int, multiple: int) -> int:
     """Return page number (1-indexed) for n with page-size multiple."""
     return math.ceil(n / multiple) if n > 0 else 1
+
+
+class _AsyncCursor:
+    """Minimal async wrapper around a sqlite3 cursor."""
+
+    def __init__(self, cursor: sqlite3.Cursor) -> None:
+        self._cursor = cursor
+
+    async def fetchone(self):
+        return self._cursor.fetchone()
+
+    async def fetchall(self):
+        return self._cursor.fetchall()
+
+    async def fetchmany(self, size: int | None = None):
+        if size is None:
+            return self._cursor.fetchmany()
+        return self._cursor.fetchmany(size)
+
+
+class _AsyncConnection:
+    """Minimal async wrapper around the shared sqlite3 connection."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    async def execute(self, sql: str, params: tuple = ()) -> _AsyncCursor:
+        return _AsyncCursor(self._conn.execute(sql, params))
+
+    async def commit(self) -> None:
+        self._conn.commit()
+
+    async def rollback(self) -> None:
+        self._conn.rollback()
 
 
 class BaseDB(AbstractContextManager):
@@ -66,6 +101,17 @@ class BaseDB(AbstractContextManager):
         self.conn.close()
         logger.info("Connection closed")
         return False
+
+    @asynccontextmanager
+    async def connect(self) -> AsyncIterator[_AsyncConnection]:
+        """Provide an async-compatible view over the live SQLite connection."""
+        wrapper = _AsyncConnection(self.conn)
+        try:
+            yield wrapper
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
 
     def _exec_retry(self, sql: str, params: tuple = ()) -> None:
         """Execute SQL with exponential backoff on lock errors."""

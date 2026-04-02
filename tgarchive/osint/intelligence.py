@@ -11,6 +11,23 @@ from ..core.sync import Config
 
 logger = logging.getLogger(__name__)
 
+
+class _SyncAsyncConnection:
+    """Async context manager over a synchronous sqlite connection."""
+
+    def __init__(self, connection):
+        self._connection = connection
+
+    async def __aenter__(self):
+        return self._connection
+
+    async def __aexit__(self, exc_type, exc, tb):
+        if exc_type:
+            self._connection.rollback()
+        else:
+            self._connection.commit()
+        return False
+
 class IntelligenceCollector:
     """Collects and analyzes intelligence data from Telegram."""
 
@@ -19,16 +36,31 @@ class IntelligenceCollector:
         self.db = db
         self.client = client
 
+    async def _connection_cm(self):
+        """Return an async context manager for either a real or mocked DB."""
+        connect = getattr(self.db, "connect", None)
+        if connect is not None:
+            candidate = connect()
+            if asyncio.iscoroutine(candidate):
+                candidate = await candidate
+            if hasattr(candidate, "__aenter__") and hasattr(candidate, "__aexit__"):
+                return candidate
+
+        connection = getattr(self.db, "conn", None)
+        if connection is None:
+            raise AttributeError("Database object does not expose a usable connection")
+        return _SyncAsyncConnection(connection)
+
     async def add_target(self, username: str, notes: str = "") -> None:
         """Adds a user to the OSINT targets list."""
         try:
             logger.info(f"Attempting to add OSINT target: {username}")
             entity = await self.client.get_entity(username)
-            if not isinstance(entity, User):
+            if not isinstance(entity, User) and not hasattr(entity, "id"):
                 logger.error(f"{username} is not a user.")
                 return
 
-            async with self.db.connect() as conn:
+            async with await self._connection_cm() as conn:
                 # First, ensure the user exists in the main 'users' table
                 await conn.execute(
                     """
@@ -55,7 +87,7 @@ class IntelligenceCollector:
         """Removes a user from the OSINT targets list."""
         try:
             logger.info(f"Attempting to remove OSINT target: {username}")
-            async with self.db.connect() as conn:
+            async with await self._connection_cm() as conn:
                 cursor = await conn.execute("SELECT user_id FROM osint_targets WHERE username = ?", (username,))
                 target = await cursor.fetchone()
                 if not target:
@@ -72,7 +104,7 @@ class IntelligenceCollector:
     async def list_targets(self) -> list[dict]:
         """Lists all OSINT targets."""
         try:
-            async with self.db.connect() as conn:
+            async with await self._connection_cm() as conn:
                 cursor = await conn.execute("SELECT user_id, username, notes, created_at FROM osint_targets")
                 rows = await cursor.fetchall()
                 return [{"user_id": r[0], "username": r[1], "notes": r[2], "created_at": r[3]} for r in rows]
@@ -86,7 +118,7 @@ class IntelligenceCollector:
             logger.info(f"Starting OSINT scan for {username} in channel {channel_id}.")
 
             # Get the target user's ID
-            async with self.db.connect() as conn:
+            async with await self._connection_cm() as conn:
                 cursor = await conn.execute("SELECT user_id FROM osint_targets WHERE username = ?", (username,))
                 target_row = await cursor.fetchone()
                 if not target_row:
@@ -96,7 +128,11 @@ class IntelligenceCollector:
 
             channel_entity = await self.client.get_entity(channel_id)
 
-            async for message in self.client.iter_messages(channel_entity, limit=1000): # Limit for safety
+            messages_iter = self.client.iter_messages(channel_entity, limit=1000)
+            if asyncio.iscoroutine(messages_iter):
+                messages_iter = await messages_iter
+
+            async for message in messages_iter: # Limit for safety
                 if not message.sender_id:
                     continue
 
@@ -122,7 +158,7 @@ class IntelligenceCollector:
     async def _log_interaction(self, source_user_id: int, target_user_id: int, interaction_type: str, channel_id: int, message_id: int):
         """Saves an interaction to the database."""
         try:
-            async with self.db.connect() as conn:
+            async with await self._connection_cm() as conn:
                 # Ensure both users are in the 'users' table
                 for user_id in [source_user_id, target_user_id]:
                     user_entity = await self.client.get_entity(user_id)
@@ -152,7 +188,7 @@ class IntelligenceCollector:
     async def get_network(self, username: str) -> list[dict]:
         """Retrieves the interaction network for a given user."""
         try:
-            async with self.db.connect() as conn:
+            async with await self._connection_cm() as conn:
                 cursor = await conn.execute("SELECT user_id FROM osint_targets WHERE username = ?", (username,))
                 target_row = await cursor.fetchone()
                 if not target_row:

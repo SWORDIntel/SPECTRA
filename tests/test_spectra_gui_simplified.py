@@ -13,6 +13,8 @@ Date: September 18, 2025
 import asyncio
 import json
 import sys
+import tempfile
+from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 
@@ -26,44 +28,42 @@ def test_imports():
         print("✓ SpectraCoordinationGUI imported successfully")
     except ImportError as e:
         print(f"✗ SpectraCoordinationGUI import failed: {e}")
-        return False
+        raise
 
     try:
         from spectra_app.agent_optimization_engine import AgentOptimizationEngine, AgentPerformanceProfile
         print("✓ Agent optimization components imported successfully")
     except ImportError as e:
         print(f"✗ Agent optimization import failed: {e}")
-        return False
+        raise
 
     try:
         from spectra_app.phase_management_dashboard import PhaseManagementDashboard, TimelineEvent, MilestoneStatus
         print("✓ Phase management components imported successfully")
     except ImportError as e:
         print(f"✗ Phase management import failed: {e}")
-        return False
+        raise
 
     try:
         from spectra_app.coordination_interface import CoordinationInterface, AgentHealthMetrics
         print("✓ Coordination interface components imported successfully")
     except ImportError as e:
         print(f"✗ Coordination interface import failed: {e}")
-        return False
+        raise
 
     try:
         from spectra_app.implementation_tools import ImplementationTools, WorkBreakdownItem
         print("✓ Implementation tools components imported successfully")
     except ImportError as e:
         print(f"✗ Implementation tools import failed: {e}")
-        return False
+        raise
 
     try:
         from spectra_app.spectra_gui_launcher import SpectraGUILauncher
         print("✓ GUI launcher imported successfully")
     except ImportError as e:
         print(f"✗ GUI launcher import failed: {e}")
-        return False
-
-    return True
+        raise
 
 
 def test_data_structures():
@@ -95,7 +95,7 @@ def test_data_structures():
 
     except Exception as e:
         print(f"✗ AgentPerformanceProfile creation failed: {e}")
-        return False
+        raise
 
     try:
         from spectra_app.phase_management_dashboard import TimelineEvent, MilestoneStatus
@@ -121,7 +121,7 @@ def test_data_structures():
 
     except Exception as e:
         print(f"✗ TimelineEvent creation failed: {e}")
-        return False
+        raise
 
     try:
         from spectra_app.coordination_interface import AgentHealthMetrics
@@ -145,9 +145,7 @@ def test_data_structures():
 
     except Exception as e:
         print(f"✗ AgentHealthMetrics creation failed: {e}")
-        return False
-
-    return True
+        raise
 
 
 def test_orchestrator_integration():
@@ -184,7 +182,7 @@ def test_orchestrator_integration():
 
     except Exception as e:
         print(f"✗ PhaseManagementDashboard integration failed: {e}")
-        return False
+        raise
 
     try:
         from spectra_app.coordination_interface import CoordinationInterface
@@ -198,12 +196,10 @@ def test_orchestrator_integration():
 
     except Exception as e:
         print(f"✗ CoordinationInterface integration failed: {e}")
-        return False
-
-    return True
+        raise
 
 
-async def test_async_functionality():
+async def _test_async_functionality():
     """Test asynchronous functionality"""
     print("\n=== Testing Async Functionality ===")
 
@@ -222,11 +218,16 @@ async def test_async_functionality():
         assert isinstance(agents, dict)
         assert "agent_001" in agents
         print("✓ Async functionality working")
-        return True
+        return None
 
     except Exception as e:
         print(f"✗ Async functionality failed: {e}")
-        return False
+        raise
+
+
+def test_async_functionality():
+    """Pytest-visible wrapper for async functionality."""
+    asyncio.run(_test_async_functionality())
 
 
 def test_json_serialization():
@@ -251,11 +252,11 @@ def test_json_serialization():
         assert restored_data["agent_id"] == "agent_001"
         assert restored_data["capabilities"]["security"] == 0.9
         print("✓ JSON serialization working")
-        return True
+        return None
 
     except Exception as e:
         print(f"✗ JSON serialization failed: {e}")
-        return False
+        raise
 
 
 def test_gui_launcher_basic():
@@ -278,11 +279,52 @@ def test_gui_launcher_basic():
         assert config.port == 5001
         assert config.mode == "demo"
         print("✓ SystemConfiguration creation successful")
-        return True
+        return None
 
     except Exception as e:
         print(f"✗ GUI launcher basic test failed: {e}")
-        return False
+        raise
+
+
+def test_gui_launcher_auth_surface():
+    """Test login page copy and auth metadata for the browser UI."""
+    print("\n=== Testing GUI Launcher Auth Surface ===")
+
+    try:
+        from spectra_app.spectra_gui_launcher import SpectraGUILauncher, SystemConfiguration
+
+        auth_dir = Path(tempfile.mkdtemp(prefix="spectra-auth-"))
+        config = SystemConfiguration(
+            host="127.0.0.1",
+            port=5001,
+            mode="demo",
+            debug=True,
+            home_page="console",
+            auth_store_path=str(auth_dir / "operators.json"),
+        )
+        config.bootstrap_secret = "bootstrap-admin-key"
+
+        launcher = SpectraGUILauncher(config)
+        client = launcher.app.test_client()
+
+        assert launcher.config.host == "127.0.0.1"
+        assert launcher.config.port == 5001
+
+        login_page = client.get("/login")
+        login_html = login_page.get_data(as_text=True)
+        assert login_page.status_code == 200
+        assert "Bootstrap admin enrollment" in login_html
+        assert "YubiKey" in login_html
+        assert "passkey" in login_html.lower()
+
+        status = launcher.get_system_status()
+        assert status["auth"]["webauthn_required"] is True
+        assert status["auth"]["browser_login"] == "/login"
+        print("✓ GUI launcher auth surface verified")
+        return None
+    except Exception as e:
+        print(f"✗ GUI launcher auth surface test failed: {e}")
+        raise
 
 
 def run_all_tests():
@@ -297,6 +339,7 @@ def run_all_tests():
         ("Orchestrator Integration", test_orchestrator_integration),
         ("JSON Serialization", test_json_serialization),
         ("GUI Launcher Basic", test_gui_launcher_basic),
+        ("GUI Launcher Auth Surface", test_gui_launcher_auth_surface),
     ]
 
     # Run sync tests
@@ -304,8 +347,8 @@ def run_all_tests():
     for test_name, test_func in tests:
         print(f"\n🔄 Running {test_name} test...")
         try:
-            result = test_func()
-            results.append((test_name, result))
+            test_func()
+            results.append((test_name, True))
         except Exception as e:
             print(f"✗ {test_name} test crashed: {e}")
             results.append((test_name, False))
@@ -313,8 +356,8 @@ def run_all_tests():
     # Run async test
     print(f"\n🔄 Running Async Functionality test...")
     try:
-        async_result = asyncio.run(test_async_functionality())
-        results.append(("Async Functionality", async_result))
+        test_async_functionality()
+        results.append(("Async Functionality", True))
     except Exception as e:
         print(f"✗ Async Functionality test crashed: {e}")
         results.append(("Async Functionality", False))

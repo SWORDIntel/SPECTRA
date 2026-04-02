@@ -49,7 +49,7 @@ except ImportError:
 
 # GUI Framework Integration
 try:
-    from flask import Flask, render_template, jsonify, redirect, url_for, request, session
+    from flask import Flask, render_template, jsonify, redirect, url_for, request, session, has_request_context
     FLASK_AVAILABLE = True
 except ImportError:
     FLASK_AVAILABLE = False
@@ -89,6 +89,7 @@ from .coordination_interface import CoordinationInterface
 from .implementation_tools import ImplementationTools
 from .agent_optimization_engine import AgentOptimizationEngine
 from .programmatic_api import SpectraProgrammaticAPI
+from .webauthn_auth import JsonOperatorStore, WebAuthnAuthService
 
 
 def check_port_available(host: str, port: int, timeout: float = 3.0) -> bool:
@@ -213,6 +214,12 @@ class SystemConfiguration:
     monitoring_interval: float
     api_key: Optional[str]
     home_page: str
+    session_secret: Optional[str]
+    bootstrap_secret: Optional[str]
+    auth_store_path: Optional[str]
+    webauthn_rp_id: Optional[str]
+    webauthn_rp_name: str
+    webauthn_origin: Optional[str]
 
     def __init__(
         self,
@@ -230,6 +237,12 @@ class SystemConfiguration:
         config_file: Optional[str] = None,
         api_key: Optional[str] = None,
         home_page: str = "console",
+        session_secret: Optional[str] = None,
+        bootstrap_secret: Optional[str] = None,
+        auth_store_path: Optional[str] = None,
+        webauthn_rp_id: Optional[str] = None,
+        webauthn_rp_name: str = "SPECTRA",
+        webauthn_origin: Optional[str] = None,
     ):
         self.mode = mode if isinstance(mode, SystemMode) else SystemMode(str(mode))
         self.host = host
@@ -254,8 +267,15 @@ class SystemConfiguration:
         self.security_enabled = security_enabled
         self.monitoring_interval = monitoring_interval
         self.config_file = config_file
-        self.api_key = api_key
+        # Deprecated: API-key browser auth is no longer supported.
+        self.api_key = None
         self.home_page = home_page
+        self.session_secret = session_secret
+        self.bootstrap_secret = bootstrap_secret
+        self.auth_store_path = auth_store_path
+        self.webauthn_rp_id = webauthn_rp_id
+        self.webauthn_rp_name = webauthn_rp_name
+        self.webauthn_origin = webauthn_origin
 
 
 class SpectraGUILauncher:
@@ -276,7 +296,14 @@ class SpectraGUILauncher:
         # Security configuration
         self.local_only = config.host in ["127.0.0.1", "localhost"]
         self.available_port = None
-        self.api_key_enabled = bool(config.api_key)
+        self.operator_store = JsonOperatorStore(self._resolve_auth_store_path())
+        self.auth_service = WebAuthnAuthService(
+            store=self.operator_store,
+            bootstrap_secret=config.bootstrap_secret or os.environ.get("SPECTRA_BOOTSTRAP_SECRET"),
+            rp_id=config.webauthn_rp_id or self._default_rp_id(),
+            rp_name=config.webauthn_rp_name,
+            origin=config.webauthn_origin or os.environ.get("SPECTRA_WEBAUTHN_ORIGIN"),
+        )
 
         # Core components
         self.orchestrator: Optional[SpectraOrchestrator] = None
@@ -289,8 +316,19 @@ class SpectraGUILauncher:
 
         # Flask application for unified interface
         if FLASK_AVAILABLE:
-            self.app = Flask(__name__, static_folder='static', static_url_path='/static')
-            self.app.config['SECRET_KEY'] = 'spectra_gui_system'
+            project_root = Path(__file__).resolve().parents[2]
+            self.app = Flask(
+                __name__,
+                static_folder=str(project_root / "static"),
+                static_url_path="/static",
+                template_folder=str(project_root / "templates"),
+            )
+            self.app.config['SECRET_KEY'] = self._resolve_session_secret()
+            self.app.config['SESSION_COOKIE_HTTPONLY'] = True
+            self.app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+            self.app.config['SESSION_COOKIE_SECURE'] = (
+                self.config.mode == SystemMode.PRODUCTION and not self.config.debug
+            )
             self.socketio = SocketIO(self.app, cors_allowed_origins="*")
             self.programmatic_api = SpectraProgrammaticAPI(self)
             self._setup_auth_middleware()
@@ -312,6 +350,112 @@ class SpectraGUILauncher:
         # Background monitoring
         self.monitoring_task = None
         self.health_check_interval = config.monitoring_interval
+
+    def _resolve_auth_store_path(self) -> Path:
+        if self.config.auth_store_path:
+            return Path(self.config.auth_store_path)
+        db_path = Path(self.config.database_path)
+        if db_path.suffix:
+            return db_path.with_name(f"{db_path.stem}_operators.json")
+        return db_path / "operators.json"
+
+    def _default_rp_id(self) -> str:
+        if self.config.host not in {"0.0.0.0", "::", "*"}:
+            return self.config.host
+        return os.environ.get("SPECTRA_WEBAUTHN_RP_ID", "localhost")
+
+    def _resolve_session_secret(self) -> str:
+        return (
+            self.config.session_secret
+            or os.environ.get("SPECTRA_SESSION_SECRET")
+            or os.environ.get("SPECTRA_JWT_SECRET")
+            or secrets.token_urlsafe(32)
+        )
+
+    def _clear_auth_session(self) -> None:
+        for key in (
+            "spectra_operator_id",
+            "spectra_registration_state",
+            "spectra_authentication_state",
+            "spectra_post_login_redirect",
+        ):
+            session.pop(key, None)
+
+    def _current_operator(self):
+        if not has_request_context():
+            return None
+        operator_id = session.get("spectra_operator_id")
+        if not operator_id:
+            return None
+        operator = self.operator_store.get_operator(operator_id)
+        if operator is None or not operator.active:
+            self._clear_auth_session()
+            return None
+        return operator
+
+    def _serialize_operator(self, operator) -> Optional[Dict[str, Any]]:
+        if operator is None:
+            return None
+        return {
+            "operator_id": operator.operator_id,
+            "username": operator.username,
+            "display_name": operator.display_name,
+            "role": operator.role,
+            "active": operator.active,
+            "credential_count": len(operator.credentials),
+            "created_at": operator.created_at,
+            "last_login_at": operator.last_login_at,
+        }
+
+    def _build_login_state(self) -> Dict[str, Any]:
+        operator = self._current_operator()
+        return {
+            "auth": self.auth_service.public_auth_state(current_operator=operator),
+            "authenticated": operator is not None,
+            "operator": self._serialize_operator(operator),
+            "next": request.args.get("next") or session.get("spectra_post_login_redirect") or "/",
+        }
+
+    def _mark_authenticated(self, operator) -> None:
+        session["spectra_operator_id"] = operator.operator_id
+
+    def _start_registration(self, operator) -> Dict[str, Any]:
+        options, state = self.auth_service.backend.begin_registration(
+            operator=operator,
+            rp_id=self.auth_service.rp_id,
+            rp_name=self.auth_service.rp_name,
+            origin=self.auth_service.origin,
+        )
+        state["operator_id"] = operator.operator_id
+        session["spectra_registration_state"] = state
+        return {"publicKey": options}
+
+    def _complete_registration(self, payload: Dict[str, Any], state: Dict[str, Any]):
+        self.auth_service.finish_registration(
+            operator_id=state["operator_id"],
+            state=state,
+            request_data=payload,
+            label=payload.get("label"),
+        )
+        operator = self.operator_store.get_operator(state["operator_id"])
+        if operator is None:
+            raise ValueError("Operator not found")
+        return operator
+
+    def _start_authentication(self, operator=None) -> Dict[str, Any]:
+        operators = [operator] if operator is not None else self.auth_service.store.list_operators()
+        options, state = self.auth_service.backend.begin_authentication(
+            operators=[item for item in operators if item.active],
+            rp_id=self.auth_service.rp_id,
+            origin=self.auth_service.origin,
+        )
+        session["spectra_authentication_state"] = state
+        return {"publicKey": options}
+
+    def _complete_authentication(self, payload: Dict[str, Any], state: Dict[str, Any]):
+        operator = self.auth_service.finish_authentication(state=state, request_data=payload)
+        self._mark_authenticated(operator)
+        return operator
 
     def _check_port_availability(self, port: int) -> bool:
         """Check if a port is available for use"""
@@ -398,26 +542,152 @@ class SpectraGUILauncher:
     def _setup_unified_routes(self):
         """Setup unified Flask routes for the complete system"""
 
-        @self.app.route('/login', methods=['GET', 'POST'])
+        @self.app.route('/login', methods=['GET'])
         def login():
-            """Simple API-key login flow for browser access."""
-            if request.method == 'POST':
-                submitted_key = request.form.get("api_key") or request.json.get("api_key") if request.is_json else None
-                if self._is_valid_api_key(submitted_key):
-                    session["spectra_api_key_authenticated"] = True
-                    next_url = request.args.get("next") or url_for("index")
-                    if request.is_json:
-                        return jsonify({"success": True, "redirect_to": next_url})
-                    return redirect(next_url)
-                if request.is_json:
-                    return jsonify({"success": False, "error": "Invalid API key"}), 401
-                return self._render_api_key_login(error_message="Invalid API key"), 401
-            return self._render_api_key_login()
+            """Bootstrap and sign-in page for browser operators."""
+            next_target = request.args.get("next")
+            if next_target:
+                session["spectra_post_login_redirect"] = next_target
+            return render_template(
+                'login.html',
+                auth_state_json=json.dumps(self._build_login_state()),
+            )
 
         @self.app.route('/logout', methods=['POST'])
         def logout():
-            session.pop("spectra_api_key_authenticated", None)
+            self._clear_auth_session()
             return jsonify({"success": True})
+
+        @self.app.route('/api/auth/bootstrap/status')
+        def api_bootstrap_status():
+            return jsonify(self._build_login_state())
+
+        @self.app.route('/api/auth/session')
+        def api_auth_session():
+            operator = self._current_operator()
+            return jsonify(
+                {
+                    "authenticated": operator is not None,
+                    "operator": self._serialize_operator(operator) if operator else None,
+                    "auth_state": self.auth_service.public_auth_state(current_operator=operator),
+                }
+            )
+
+        @self.app.route('/api/auth/webauthn/register/options', methods=['POST'])
+        def api_webauthn_register_options():
+            payload = request.get_json(silent=True) or {}
+            bootstrap_required = self.auth_service.bootstrap_required()
+            if bootstrap_required:
+                if not self.auth_service.validate_bootstrap_secret(payload.get("bootstrap_secret")):
+                    return jsonify({"success": False, "error": "Invalid bootstrap secret"}), 403
+                username = (payload.get("username") or "").strip()
+                display_name = (payload.get("display_name") or "").strip()
+                if not username:
+                    return jsonify({"success": False, "error": "Username is required"}), 400
+                try:
+                    operator = self.auth_service.ensure_admin_bootstrap(
+                        username=username,
+                        display_name=display_name or username,
+                        submitted_secret=payload.get("bootstrap_secret") or "",
+                    )
+                except ValueError as exc:
+                    return jsonify({"success": False, "error": str(exc)}), 400
+            else:
+                operator = self._current_operator()
+                if operator is None or operator.role != "admin":
+                    return jsonify({"success": False, "error": "Admin session required"}), 403
+                target_operator_id = payload.get("operator_id") or operator.operator_id
+                operator = self.operator_store.get_operator(target_operator_id)
+                if operator is None:
+                    return jsonify({"success": False, "error": "Operator not found"}), 404
+
+            try:
+                options = self._start_registration(operator)
+            except Exception as exc:
+                return jsonify({"success": False, "error": str(exc)}), 503
+            return jsonify({"success": True, "options": options, "operator": self._serialize_operator(operator)})
+
+        @self.app.route('/api/auth/webauthn/register/verify', methods=['POST'])
+        def api_webauthn_register_verify():
+            payload = request.get_json(silent=True) or {}
+            state = session.get("spectra_registration_state")
+            if not state:
+                return jsonify({"success": False, "error": "No registration in progress"}), 400
+            try:
+                operator = self._complete_registration(payload, state)
+            except RuntimeError as exc:
+                return jsonify({"success": False, "error": str(exc)}), 503
+            except ValueError as exc:
+                return jsonify({"success": False, "error": str(exc)}), 400
+
+            session.pop("spectra_registration_state", None)
+            self._mark_authenticated(operator)
+            return jsonify({"success": True, "operator": self._serialize_operator(operator)})
+
+        @self.app.route('/api/auth/webauthn/authenticate/options', methods=['POST'])
+        def api_webauthn_authenticate_options():
+            payload = request.get_json(silent=True) or {}
+            username = (payload.get("username") or "").strip()
+            operator = None
+            if username:
+                operator = self.operator_store.get_operator_by_username(username)
+                if operator is None:
+                    return jsonify({"success": False, "error": "Unknown operator"}), 404
+            try:
+                options = self._start_authentication(operator)
+            except Exception as exc:
+                return jsonify({"success": False, "error": str(exc)}), 400
+            return jsonify({"success": True, "options": options})
+
+        @self.app.route('/api/auth/webauthn/authenticate/verify', methods=['POST'])
+        def api_webauthn_authenticate_verify():
+            payload = request.get_json(silent=True) or {}
+            state = session.get("spectra_authentication_state")
+            if not state:
+                return jsonify({"success": False, "error": "No authentication in progress"}), 400
+            try:
+                operator = self._complete_authentication(payload, state)
+            except RuntimeError as exc:
+                return jsonify({"success": False, "error": str(exc)}), 503
+            except ValueError as exc:
+                return jsonify({"success": False, "error": str(exc)}), 400
+
+            session.pop("spectra_authentication_state", None)
+            self._mark_authenticated(operator)
+            return jsonify({"success": True, "operator": self._serialize_operator(operator)})
+
+        @self.app.route('/api/auth/operators', methods=['GET', 'POST'])
+        def api_auth_operators():
+            current = self._current_operator()
+            if current is None or current.role != "admin":
+                return jsonify({"success": False, "error": "Admin session required"}), 403
+            if request.method == 'GET':
+                return jsonify({"success": True, "operators": self.auth_service.list_operator_summaries()})
+
+            payload = request.get_json(silent=True) or {}
+            username = (payload.get("username") or "").strip()
+            display_name = (payload.get("display_name") or username).strip()
+            role = (payload.get("role") or "operator").strip().lower()
+            if not username:
+                return jsonify({"success": False, "error": "Username is required"}), 400
+            try:
+                operator = self.auth_service.create_operator(username=username, display_name=display_name, role=role)
+            except ValueError as exc:
+                return jsonify({"success": False, "error": str(exc)}), 409
+            return jsonify({"success": True, "operator": self._serialize_operator(operator)}), 201
+
+        @self.app.route('/api/auth/operators/<operator_id>', methods=['PATCH'])
+        def api_update_operator(operator_id):
+            current = self._current_operator()
+            if current is None or current.role != "admin":
+                return jsonify({"success": False, "error": "Admin session required"}), 403
+            payload = request.get_json(silent=True) or {}
+            if "active" not in payload:
+                return jsonify({"success": False, "error": "Only the active flag can be updated"}), 400
+            operator = self.operator_store.set_operator_active(operator_id, payload.get("active"))
+            if operator is None:
+                return jsonify({"success": False, "error": "Operator not found"}), 404
+            return jsonify({"success": True, "operator": self._serialize_operator(operator)})
 
         @self.app.route('/')
         def index():
@@ -703,118 +973,38 @@ class SpectraGUILauncher:
         """
 
     def _setup_auth_middleware(self):
-        """Protect the interface and APIs with an optional API key."""
+        """Protect the interface and APIs with authenticated browser sessions."""
 
         @self.app.before_request
-        def require_api_key():
-            if not self.api_key_enabled:
-                return None
-
-            public_paths = {
+        def require_operator_session():
+            public_prefixes = (
                 "/login",
-                "/static",
-            }
-            if request.path == "/favicon.ico" or any(request.path.startswith(path) for path in public_paths):
+                "/logout",
+                "/static/",
+                "/api/auth/",
+            )
+            public_exact = {"/favicon.ico", "/health"}
+            if request.path in public_exact or any(request.path.startswith(path) for path in public_prefixes):
                 return None
 
             if self._request_is_authenticated():
                 return None
 
-            if request.path.startswith("/api/"):
-                return jsonify({
-                    "success": False,
-                    "error": "API key required",
-                    "auth": {
-                        "header": "X-API-Key",
-                        "query_param": "api_key",
+            if request.path.startswith("/api/") or request.path.startswith("/openapi"):
+                return jsonify(
+                    {
+                        "success": False,
+                        "error": "Authentication required",
+                        "auth": self.auth_service.public_auth_state(current_operator=None),
                         "login_path": "/login",
-                    },
-                }), 401
+                    }
+                ), 401
 
             return redirect(url_for("login", next=request.full_path if request.query_string else request.path))
 
     def _request_is_authenticated(self) -> bool:
-        """Allow either browser session auth or direct API-key auth."""
-        if session.get("spectra_api_key_authenticated"):
-            return True
-        submitted_key = request.headers.get("X-API-Key") or request.args.get("api_key")
-        return self._is_valid_api_key(submitted_key)
-
-    def _is_valid_api_key(self, submitted_key: Optional[str]) -> bool:
-        """Constant-time API key comparison."""
-        if not self.api_key_enabled or not self.config.api_key:
-            return True
-        if not submitted_key:
-            return False
-        return secrets.compare_digest(str(submitted_key), str(self.config.api_key))
-
-    def _render_api_key_login(self, error_message: Optional[str] = None) -> str:
-        """Render a compact API-key login form for browser use."""
-        error_html = f'<p style="color:#b91c1c;margin:0 0 1rem 0;">{error_message}</p>' if error_message else ""
-        return f"""
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>SPECTRA Login</title>
-            <style>
-                body {{
-                    font-family: monospace;
-                    background: #0f172a;
-                    color: #e2e8f0;
-                    min-height: 100vh;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    margin: 0;
-                }}
-                .card {{
-                    width: min(420px, 92vw);
-                    background: #111827;
-                    border: 1px solid #334155;
-                    border-radius: 12px;
-                    padding: 24px;
-                    box-shadow: 0 20px 40px rgba(0,0,0,0.35);
-                }}
-                input {{
-                    width: 100%;
-                    padding: 12px;
-                    border-radius: 8px;
-                    border: 1px solid #475569;
-                    background: #020617;
-                    color: #e2e8f0;
-                    box-sizing: border-box;
-                    margin-bottom: 12px;
-                }}
-                button {{
-                    width: 100%;
-                    padding: 12px;
-                    border: 0;
-                    border-radius: 8px;
-                    background: #2563eb;
-                    color: white;
-                    cursor: pointer;
-                }}
-                code {{
-                    color: #93c5fd;
-                }}
-            </style>
-        </head>
-        <body>
-            <form class="card" method="post">
-                <h2 style="margin-top:0;">SPECTRA Access</h2>
-                <p>Enter the configured API key to open the interface.</p>
-                {error_html}
-                <input type="password" name="api_key" placeholder="API key" autofocus />
-                <button type="submit">Open Interface</button>
-                <p style="margin-bottom:0;margin-top:12px;font-size:12px;color:#94a3b8;">
-                    Programmatic clients can also send <code>X-API-Key</code> or <code>?api_key=...</code>.
-                </p>
-            </form>
-        </body>
-        </html>
-        """
+        """Allow access only when a browser session has a valid operator."""
+        return self._current_operator() is not None
 
     def _get_readme_content(self) -> str:
         """Read and process README.md content"""
@@ -1867,6 +2057,7 @@ class SpectraGUILauncher:
 
     def get_system_status(self) -> Dict[str, Any]:
         """Get comprehensive system status"""
+        operator = self._current_operator()
         return {
             "system_running": self.system_running,
             "mode": self.config.mode.value,
@@ -1876,10 +2067,13 @@ class SpectraGUILauncher:
                                 if hasattr(a, 'status') and a.status.value == 'running']) if self.orchestrator else 0,
             "components_enabled": self.config.enable_components,
             "auth": {
-                "api_key_required": self.api_key_enabled,
-                "browser_login": "/login" if self.api_key_enabled else None,
-                "header": "X-API-Key" if self.api_key_enabled else None,
-                "query_param": "api_key" if self.api_key_enabled else None,
+                "webauthn_required": True,
+                "bootstrap_required": self.auth_service.bootstrap_required(),
+                "bootstrap_configured": bool(self.auth_service.bootstrap_secret),
+                "browser_login": "/login",
+                "authenticated": operator is not None,
+                "operator": self._serialize_operator(operator) if operator else None,
+                "webauthn": self.auth_service.public_auth_state(current_operator=operator).get("webauthn", {}),
             },
             "api_endpoints": {
                 "status": "/api/system/status",
@@ -1889,6 +2083,9 @@ class SpectraGUILauncher:
                 "docs": "/docs",
                 "standard_context": "/api/v1/context",
                 "standard_readme": "/api/v1/readme",
+                "auth_session": "/api/auth/session",
+                "auth_register_options": "/api/auth/webauthn/register/options",
+                "auth_authenticate_options": "/api/auth/webauthn/authenticate/options",
             },
             "timestamp": datetime.now().isoformat()
         }
@@ -1920,8 +2117,13 @@ def create_default_config() -> SystemConfiguration:
         },
         security_enabled=True,  # SECURITY: Enable security by default
         monitoring_interval=5.0,
-        api_key=None,
         home_page="console",
+        session_secret=os.environ.get("SPECTRA_SESSION_SECRET"),
+        bootstrap_secret=os.environ.get("SPECTRA_BOOTSTRAP_SECRET"),
+        auth_store_path=os.environ.get("SPECTRA_AUTH_STORE_PATH"),
+        webauthn_rp_id=os.environ.get("SPECTRA_WEBAUTHN_RP_ID"),
+        webauthn_rp_name=os.environ.get("SPECTRA_WEBAUTHN_RP_NAME", "SPECTRA"),
+        webauthn_origin=os.environ.get("SPECTRA_WEBAUTHN_ORIGIN"),
     )
 
 
@@ -1936,11 +2138,32 @@ async def main():
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"],
                        default="INFO", help="Log level")
-    parser.add_argument("--api-key", help="Require this API key for browser and API access")
     parser.add_argument(
-        "--api-key-env",
-        default="SPECTRA_GUI_API_KEY",
-        help="Environment variable to read the API key from if --api-key is unset",
+        "--session-secret-env",
+        default="SPECTRA_SESSION_SECRET",
+        help="Environment variable to read the Flask session secret from",
+    )
+    parser.add_argument(
+        "--bootstrap-secret-env",
+        default="SPECTRA_BOOTSTRAP_SECRET",
+        help="Environment variable to read the one-time admin bootstrap secret from",
+    )
+    parser.add_argument(
+        "--auth-store-path",
+        help="Path to the JSON operator store",
+    )
+    parser.add_argument(
+        "--webauthn-rp-id",
+        help="WebAuthn relying party ID",
+    )
+    parser.add_argument(
+        "--webauthn-rp-name",
+        default=os.environ.get("SPECTRA_WEBAUTHN_RP_NAME", "SPECTRA"),
+        help="WebAuthn relying party display name",
+    )
+    parser.add_argument(
+        "--webauthn-origin",
+        help="Expected browser origin for WebAuthn ceremonies",
     )
     parser.add_argument(
         "--home-page",
@@ -1958,8 +2181,13 @@ async def main():
     config.mode = SystemMode(args.mode)
     config.debug = args.debug
     config.log_level = args.log_level
-    config.api_key = args.api_key or os.environ.get(args.api_key_env)
     config.home_page = args.home_page
+    config.session_secret = os.environ.get(args.session_secret_env)
+    config.bootstrap_secret = os.environ.get(args.bootstrap_secret_env)
+    config.auth_store_path = args.auth_store_path or os.environ.get("SPECTRA_AUTH_STORE_PATH")
+    config.webauthn_rp_id = args.webauthn_rp_id or os.environ.get("SPECTRA_WEBAUTHN_RP_ID")
+    config.webauthn_rp_name = args.webauthn_rp_name
+    config.webauthn_origin = args.webauthn_origin or os.environ.get("SPECTRA_WEBAUTHN_ORIGIN")
 
     # Initialize and start system
     launcher = SpectraGUILauncher(config)

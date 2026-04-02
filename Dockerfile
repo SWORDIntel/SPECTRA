@@ -30,7 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
-RUN groupadd -r spectra && useradd -r -g spectra spectra
+RUN groupadd -r spectra && useradd -r -g spectra -d /home/spectra -m spectra
 
 # Set working directory
 WORKDIR /app
@@ -42,7 +42,7 @@ COPY --from=builder /root/.local /home/spectra/.local
 COPY --chown=spectra:spectra . .
 
 # Create necessary directories
-RUN mkdir -p /app/data /app/logs /app/config && \
+RUN mkdir -p /app/data /app/logs /app/config /app/media /app/checkpoints && \
     chown -R spectra:spectra /app
 
 # Set environment variables
@@ -52,17 +52,22 @@ ENV PATH="/home/spectra/.local/bin:$PATH" \
     SPECTRA_TESTING=false \
     SPECTRA_PORT=5000 \
     SPECTRA_HOST=0.0.0.0 \
-    SPECTRA_JWT_SECRET=change-me-in-production
+    SPECTRA_BOOTSTRAP_SECRET= \
+    SPECTRA_SESSION_SECRET=change-me-in-production \
+    SPECTRA_JWT_SECRET=change-me-in-production \
+    SPECTRA_WEBAUTHN_ORIGIN= \
+    SPECTRA_WEBAUTHN_RP_ID=
 
 # Set user
 USER spectra
 
-# Health check
+# Health check targets the public login surface so it still works when
+# the rest of the UI is auth-gated.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:5000/health || exit 1
+    CMD curl -fsS http://localhost:5000/login || exit 1
 
 # Expose port
 EXPOSE 5000
 
-# Default entrypoint: Web server
-CMD ["python", "-m", "tgarchive.web", "--host", "0.0.0.0", "--port", "5000"]
+# Default entrypoint: unified SPECTRA web UI
+CMD ["sh", "-c", "python -m spectra_app.spectra_gui_launcher --host ${SPECTRA_HOST:-0.0.0.0} --port ${SPECTRA_PORT:-5000} --log-level ${SPECTRA_LOG_LEVEL:-INFO}"]

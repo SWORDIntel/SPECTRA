@@ -215,8 +215,20 @@ class CoordinationAlert:
         self.id = id or alert_id or ""
         self.alert_id = self.id
         self.timestamp = timestamp or datetime.now()
-        self.level = level if severity is None else AlertLevel(severity)
-        self.severity = self.level.value
+        if severity is None:
+            self.level = level
+        else:
+            severity_map = {
+                "medium": AlertLevel.WARNING,
+                "high": AlertLevel.ERROR,
+                "critical": AlertLevel.CRITICAL,
+                "info": AlertLevel.INFO,
+                "warning": AlertLevel.WARNING,
+                "error": AlertLevel.ERROR,
+            }
+            severity_key = str(severity).lower()
+            self.level = severity_map[severity_key] if severity_key in severity_map else AlertLevel(severity)
+        self.severity = severity if severity is not None else self.level.value
         self.category = category or alert_type or ""
         self.alert_type = self.category
         self.message = message

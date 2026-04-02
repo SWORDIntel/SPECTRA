@@ -10,7 +10,7 @@ from typing import Dict, Any, Optional
 import base64
 
 try:
-    from ..crypto.pqc import CNSA20CryptoManager, CNSAKeyPair
+    from ...crypto.pqc import CNSA20CryptoManager, CNSAKeyPair
     CRYPTO_AVAILABLE = True
 except ImportError:
     CRYPTO_AVAILABLE = False
@@ -263,7 +263,7 @@ class CryptoService:
             return {"error": "Crypto manager not available"}
         
         try:
-            from ..crypto.pqc import EncryptedPackage
+            from ...crypto.pqc import EncryptedPackage
             
             encrypted = EncryptedPackage(
                 kem_ciphertext=base64.b64decode(encrypted_package["kem_ciphertext"]),

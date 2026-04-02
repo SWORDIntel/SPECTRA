@@ -4,7 +4,8 @@ SPECTRA-004 Main Database Handler
 Main SpectraDB class combining all operation modules.
 """
 from pathlib import Path
-from typing import Optional, Dict, Any
+from datetime import datetime
+from typing import Optional, Dict, Any, List, Tuple
 
 from .core_operations import CoreOperations
 from .db_base import BaseDB
@@ -168,6 +169,48 @@ class SpectraDB(BaseDB):
 
     def get_mirror_progress(self, *args, **kwargs):
         return self.mirror.get_mirror_progress(*args, **kwargs)
+
+    def find_messages_by_timestamp_range(
+        self,
+        start_time: int,
+        end_time: int,
+        channel_id: Optional[int] = None,
+        cache_manager=None,
+    ) -> List[int]:
+        """Compatibility search helper used by integration tests."""
+        query = "SELECT id, date FROM messages"
+        params: tuple = ()
+        if channel_id is not None:
+            query += " WHERE channel_id = ?"
+            params = (channel_id,)
+        query += " ORDER BY date"
+
+        rows = self.cur.execute(query, params).fetchall()
+        results: List[int] = []
+        for message_id, date_value in rows:
+            if isinstance(date_value, str):
+                dt = datetime.fromisoformat(date_value.replace("Z", "+00:00"))
+            else:
+                dt = date_value
+            ts = int(dt.timestamp())
+            if start_time <= ts <= end_time:
+                results.append(message_id)
+        return results
+
+    def find_message_by_id_fast(self, message_id: int, channel_id: Optional[int] = None) -> Optional[dict]:
+        """Compatibility fast lookup helper used by integration tests."""
+        query = "SELECT * FROM messages WHERE id = ?"
+        params: tuple = (message_id,)
+        if channel_id is not None:
+            query += " AND channel_id = ?"
+            params = (message_id, channel_id)
+
+        row = self.cur.execute(query, params).fetchone()
+        if not row:
+            return None
+
+        columns = [desc[0] for desc in self.cur.description]
+        return dict(zip(columns, row))
 
 
 __all__ = ["SpectraDB"]

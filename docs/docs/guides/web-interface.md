@@ -21,11 +21,14 @@ tags: ['web', 'api', 'interface', 'guides']
 pip install -r requirements.txt
 
 # Set configuration
-export SPECTRA_JWT_SECRET="your-secret-key-here"
+export SPECTRA_SESSION_SECRET="your-secret-key-here"
+export SPECTRA_BOOTSTRAP_SECRET="one-time-bootstrap-secret"
+export SPECTRA_WEBAUTHN_ORIGIN="http://localhost:5000"
+export SPECTRA_WEBAUTHN_RP_ID="localhost"
 export SPECTRA_DEBUG=false
 
 # Run web server
-python -m tgarchive.web --host 0.0.0.0 --port 5000
+python -m spectra_app.spectra_gui_launcher --host 0.0.0.0 --port 5000
 ```
 
 #### Option 2: Docker (Recommended)
@@ -36,7 +39,10 @@ docker build -t spectra:latest .
 # Run container
 docker run -d \
   -p 5000:5000 \
-  -e SPECTRA_JWT_SECRET="your-secret-key" \
+  -e SPECTRA_SESSION_SECRET="your-secret-key" \
+  -e SPECTRA_BOOTSTRAP_SECRET="one-time-bootstrap-secret" \
+  -e SPECTRA_WEBAUTHN_ORIGIN="http://localhost:5000" \
+  -e SPECTRA_WEBAUTHN_RP_ID="localhost" \
   -v spectra-data:/app/data \
   spectra:latest
 ```
@@ -56,8 +62,8 @@ docker-compose down
 ### Access the Dashboard
 - **URL**: http://localhost:5000
 - **Login**:
-  - Username: `admin`
-  - Password: `admin`
+  - First run: use the one-time bootstrap secret to enroll the first admin
+  - Later logins: sign in with a registered YubiKey or platform passkey
 
 ---
 
@@ -65,43 +71,24 @@ docker-compose down
 
 ### Authentication
 
-All API endpoints (except `/health`) require JWT authentication.
+All operator-facing API endpoints require a browser session established through WebAuthn.
 
-#### Login
+#### Bootstrap enrollment
 ```bash
-curl -X POST http://localhost:5000/api/auth/login \
+curl -X POST http://localhost:5000/api/auth/webauthn/register/options \
   -H "Content-Type: application/json" \
   -d '{
+    "bootstrap_secret": "one-time-bootstrap-secret",
     "username": "admin",
-    "password": "admin"
+    "display_name": "Administrator"
   }'
 ```
 
-**Response**:
-```json
-{
-  "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
-  "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
-  "user": {
-    "user_id": "user_001",
-    "username": "admin",
-    "roles": ["admin"],
-    "created_at": "2024-01-01T00:00:00Z"
-  }
-}
-```
-
-#### Using Access Token
+#### WebAuthn sign-in
 ```bash
-curl http://localhost:5000/api/channels \
-  -H "Authorization: Bearer <access_token>"
-```
-
-#### Refresh Token
-```bash
-curl -X POST http://localhost:5000/api/auth/refresh \
+curl -X POST http://localhost:5000/api/auth/webauthn/authenticate/options \
   -H "Content-Type: application/json" \
-  -d '{"refresh_token": "<refresh_token>"}'
+  -d '{"username":"admin"}'
 ```
 
 ---
@@ -109,11 +96,14 @@ curl -X POST http://localhost:5000/api/auth/refresh \
 ## API Endpoints
 
 ### Authentication
-- `POST /api/auth/login` - Login
-- `POST /api/auth/refresh` - Refresh token
-- `POST /api/auth/logout` - Logout
-- `GET /api/auth/profile` - Get user profile
-- `PUT /api/auth/profile` - Update user profile
+- `GET /login` - Render the browser login and bootstrap page
+- `POST /logout` - Clear the authenticated browser session
+- `GET /api/auth/bootstrap/status` - Return first-run bootstrap state
+- `GET /api/auth/session` - Return current session state
+- `POST /api/auth/webauthn/register/options` - Start WebAuthn enrollment
+- `POST /api/auth/webauthn/register/verify` - Complete WebAuthn enrollment
+- `POST /api/auth/webauthn/authenticate/options` - Start WebAuthn sign-in
+- `POST /api/auth/webauthn/authenticate/verify` - Complete WebAuthn sign-in
 
 ### Channels
 - `GET /api/channels` - List all channels
@@ -289,7 +279,8 @@ curl http://localhost:5000/api/export/exp_001 \
 
 ### Rate Limits by Endpoint
 ```
-/api/auth/login:           5 requests / 15 minutes (per IP)
+/api/auth/webauthn/register/options: 5 requests / 15 minutes (per IP)
+/api/auth/webauthn/authenticate/options: 5 requests / 15 minutes (per IP)
 /api/channels:             50 requests / minute (per user)
 /api/search:               30 requests / minute (per user)
 /api/search/correlation:   20 requests / minute (per user)
@@ -350,17 +341,20 @@ python -m tgarchive.web --ssl --cert cert.pem --key key.pem
 ### Python Client Library
 ```python
 import requests
-from requests.auth import HTTPBearerAuth
 
-# Login
+# Bootstrap admin enrollment
 response = requests.post(
-    'http://localhost:5000/api/auth/login',
-    json={'username': 'admin', 'password': 'admin'}
+    'http://localhost:5000/api/auth/webauthn/register/options',
+    json={
+        'bootstrap_secret': 'one-time-bootstrap-secret',
+        'username': 'admin',
+        'display_name': 'Administrator'
+    }
 )
-token = response.json()['access_token']
+payload = response.json()
 
-# Search messages
-headers = {'Authorization': f'Bearer {token}'}
+# Search messages after browser-session authentication
+headers = {'Content-Type': 'application/json'}
 response = requests.post(
     'http://localhost:5000/api/search',
     headers=headers,
@@ -375,21 +369,22 @@ results = response.json()
 
 ### JavaScript/Node.js Client
 ```javascript
-// Login
-const loginResp = await fetch('/api/auth/login', {
+// Bootstrap enrollment
+const loginResp = await fetch('/api/auth/webauthn/register/options', {
   method: 'POST',
   headers: {'Content-Type': 'application/json'},
-  body: JSON.stringify({username: 'admin', password: 'admin'})
+  body: JSON.stringify({
+    bootstrap_secret: 'one-time-bootstrap-secret',
+    username: 'admin',
+    display_name: 'Administrator'
+  })
 });
-const {access_token} = await loginResp.json();
+const {options} = await loginResp.json();
 
 // Search
 const searchResp = await fetch('/api/search', {
   method: 'POST',
-  headers: {
-    'Authorization': `Bearer ${access_token}`,
-    'Content-Type': 'application/json'
-  },
+  headers: {'Content-Type': 'application/json'},
   body: JSON.stringify({query: 'target', limit: 20})
 });
 const results = await searchResp.json();
@@ -405,9 +400,9 @@ See API section above for detailed examples.
 ### Common Issues
 
 #### "Invalid authorization header"
-- Check token format: `Bearer <token>`
-- Ensure token is not expired
-- Regenerate using /api/auth/refresh
+- Use the browser-authenticated session flow instead of bearer tokens
+- Verify `/login` completed the bootstrap or sign-in ceremony
+- Confirm the session cookie is present for the current browser origin
 
 #### "Rate limit exceeded"
 - Wait for reset time shown in header
@@ -459,7 +454,8 @@ SQLALCHEMY_ENGINE_OPTIONS = {
 
 ## Production Deployment Checklist
 
-- [ ] Change JWT secret to random value (32+ chars)
+- [ ] Set `SPECTRA_SESSION_SECRET` to a random value (32+ chars)
+- [ ] Set `SPECTRA_BOOTSTRAP_SECRET` before first launch
 - [ ] Enable HTTPS with valid certificate
 - [ ] Configure correct CORS origins
 - [ ] Set DEBUG=false
@@ -473,7 +469,7 @@ SQLALCHEMY_ENGINE_OPTIONS = {
 - [ ] Enable WAF rules
 - [ ] Test disaster recovery
 - [ ] Create admin user account
-- [ ] Set strong admin password
+- [ ] Register at least one YubiKey or passkey per admin
 - [ ] Enable audit logging
 
 ---

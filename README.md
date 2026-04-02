@@ -10,7 +10,7 @@ SPECTRA is an advanced framework for Telegram data collection, network discovery
 
 ## Features
 
-- 🔄 **Multi-account & API key rotation** with smart, persistent selection and failure detection
+- 🔄 **Multi-account orchestration** with smart, persistent selection and failure detection
 - 🕵️ **Proxy rotation** for OPSEC and anti-detection
 - 🔎 **Network discovery** of connected groups and channels (with SQL audit trail)
 - 📊 **Graph/network analysis** to identify high-value targets
@@ -20,7 +20,8 @@ SPECTRA is an advanced framework for Telegram data collection, network discovery
 - ⚡ **Parallel processing** leveraging multiple accounts and proxies simultaneously
 - 🖥️ **Modern TUI** (npyscreen) and CLI, both using the same modular backend
 - ⚙️ **Streamlined Account Management** - Full CRUD operations directly in the TUI with keyboard shortcuts
-- ☁️ **Forwarding Mode:** Traverse a series of channels, discover related channels, and download text/archive files with specific rules, using a single API key.
+- ☁️ **Forwarding Mode:** Traverse a series of channels, discover related channels, and download text/archive files with specific rules.
+- 🔐 **Dockerized web console** with first-run bootstrap admin enrollment and YubiKey/passkey WebAuthn sign-in
 - 🛡️ **Red team/OPSEC features**: account/proxy rotation, SQL audit trail, sidecar metadata, persistent state
 
 ## ⚡ Quick Start
@@ -49,11 +50,14 @@ The repository also includes a local web launcher for orchestration, status, and
 ./spectra
 ```
 
-Optional API key protection:
+Docker-friendly browser authentication:
 
 ```bash
-export SPECTRA_GUI_API_KEY="change-me"
-./spectra --api-key "$SPECTRA_GUI_API_KEY"
+export SPECTRA_BOOTSTRAP_SECRET="one-time-bootstrap-secret"
+export SPECTRA_SESSION_SECRET="change-me-in-production"
+export SPECTRA_WEBAUTHN_ORIGIN="http://localhost:5000"
+export SPECTRA_WEBAUTHN_RP_ID="localhost"
+./spectra
 ```
 
 Standard machine-readable API surfaces:
@@ -144,7 +148,7 @@ npm run build        # Build static HTML to docs/html/
 #### Getting Started
 - **[Installation Guide](docs/docs/getting-started/installation.md)** - Complete installation instructions
 - **[Quick Start Guide](docs/docs/getting-started/quick-start.md)** - Get running in 30 seconds
-- **[Configuration Guide](docs/docs/getting-started/configuration.md)** - Setting up API keys and accounts
+- **[Configuration Guide](docs/docs/getting-started/configuration.md)** - Setting up accounts, sessions, and browser auth
 
 #### User Guides
 - **[TUI Usage Guide](docs/docs/guides/tui-usage.md)** - Complete guide to using the Terminal User Interface

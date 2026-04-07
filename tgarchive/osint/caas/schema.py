@@ -62,6 +62,8 @@ CREATE TABLE IF NOT EXISTS actor_entity (
     canonical_handle TEXT NOT NULL,
     entity_type TEXT NOT NULL,
     bot_likelihood REAL NOT NULL DEFAULT 0.0,
+    caas_severity REAL NOT NULL DEFAULT 0.0,
+    aggregated_intel_json TEXT,
     first_seen TEXT NOT NULL,
     last_seen TEXT NOT NULL,
     UNIQUE(platform, canonical_handle)

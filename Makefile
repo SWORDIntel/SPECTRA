@@ -34,6 +34,10 @@ help: ## Show this help message
 	@echo "  $(YELLOW)make clean$(NC)           Clean build artifacts and cache"
 	@echo "  $(YELLOW)make docs$(NC)            Generate documentation (if available)"
 	@echo ""
+	@echo "$(GREEN)Semantic Intelligence:$(NC)"
+	@echo "  $(YELLOW)make semantic-tui$(NC)    Launch the semantic-intelligence TUI"
+	@echo "  $(YELLOW)make process-queue$(NC)   Process the semantic intelligence queue"
+	@echo ""
 	@echo "$(GREEN)Utilities:$(NC)"
 	@echo "  $(YELLOW)make help$(NC)            Show this message"
 	@echo "  $(YELLOW)make version$(NC)         Show SPECTRA version"
@@ -63,6 +67,14 @@ test: ## Run test suite
 	@echo "$(BLUE)▶$(NC) Running tests..."
 	@python3 -m pytest tgarchive/tests/ -v 2>/dev/null || \
 		echo "$(YELLOW)⚠$(NC) pytest not installed. Install with: pip install pytest"
+
+semantic-tui: ## Launch the semantic-intelligence TUI
+	@echo "$(BLUE)▶$(NC) Launching SPECTRA semantic TUI..."
+	@python3 -m tgarchive.ui.tui_caas
+
+process-queue: ## Process the semantic intelligence queue
+	@echo "$(BLUE)▶$(NC) Processing semantic intelligence queue..."
+	@python3 -m tgarchive.osint.caas.cli process-queue --loop
 
 clean: ## Clean build artifacts and cache
 	@echo "$(BLUE)▶$(NC) Cleaning build artifacts..."

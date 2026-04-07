@@ -115,6 +115,7 @@
                     <div style="margin-top: 20px; display: flex; gap: 10px;">
                         <div class="status-pill">AGENTS: {{ system_status.total_agents }}</div>
                         <div class="status-pill">HOST: {{ access_host }}</div>
+                        <div class="status-pill" id="memshadow-pill" style="display:none; border-color: var(--accent); color: var(--accent);">MEMSHADOW: ACTIVE</div>
                     </div>
                 </section>
 
@@ -235,8 +236,27 @@
             }
         }
 
+        async function checkMemshadow() {
+            try {
+                const res = await fetch('/api/sidecar/memshadow/status');
+                const data = await res.json();
+                const pill = document.getElementById('memshadow-pill');
+                if (data.active) {
+                    pill.style.display = 'block';
+                    pill.onclick = () => window.location.href = data.url;
+                    pill.style.cursor = 'pointer';
+                } else {
+                    pill.style.display = 'none';
+                }
+            } catch (e) {
+                console.error("Memshadow check failed:", e);
+            }
+        }
+
         setInterval(updateFleetStatus, 5000);
+        setInterval(checkMemshadow, 10000);
         updateFleetStatus();
+        checkMemshadow();
 
         async function runProcessQueue() {
             showToast("PROCESSING QUEUE...");

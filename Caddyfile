@@ -14,6 +14,16 @@
         header_up X-Forwarded-Proto {scheme}
     }
 
+    # Reverse proxy to MEMSHADOW sidecar
+    handle_path /memshadow* {
+        reverse_proxy memshadow:18080 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
     # Logging
     log {
         output file /var/log/caddy/access.log

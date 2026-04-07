@@ -1,8 +1,3 @@
-Here’s the edited drop-in version with the same styling and image block retained.
-
-````markdown
-# SPECTRA
-
 **Spectrally-Processing Extraction, Crawling, & Tele-Reconnaissance Archive**
 
 SPECTRA is an advanced framework for Telegram data collection, network discovery, forensic-grade archiving, and semantic intelligence with multi-account support, graph-based targeting, queue-backed enrichment, and robust OPSEC features.

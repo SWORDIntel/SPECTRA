@@ -80,15 +80,29 @@ services:
     networks:
       - spectra-network
 
-    # Security options
-    security_opt:
-      - no-new-privileges:true
-
-    # Read-only root filesystem (optional, for production)
-    # read_only: true
-    # tmpfs:
-    #   - /tmp
-    #   - /run
+  # Caddy Reverse Proxy for Automated SSL & Secure Access
+  caddy:
+    image: caddy:latest
+    container_name: spectra-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: "${SITE_ADDRESS:-localhost}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy-data:/data
+      - caddy-config:/config
+      - spectra-logs:/var/log/caddy
+    depends_on:
+      - spectra
+    networks:
+      - spectra-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   # Qdrant Vector Database for Semantic Search (Enabled by default)
   qdrant:
@@ -168,6 +182,10 @@ volumes:
   spectra-config:
     driver: local
   spectra-qdrant:
+    driver: local
+  caddy-data:
+    driver: local
+  caddy-config:
     driver: local
   # spectra-redis:
   #   driver: local

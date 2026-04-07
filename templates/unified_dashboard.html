@@ -120,6 +120,17 @@
 
                 <div class="control-grid">
                     <div class="control-card">
+                        <h3>Autonomous Intelligence Fleet</h3>
+                        <p style="font-size: 12px; color: var(--muted); margin-bottom: 20px;">Orchestrate the self-bot crawl lifecycle (Discovery -> Archive -> Profile -> Analyze).</p>
+                        <div id="fleet-status" style="margin-bottom: 15px; font-family: var(--font-mono); font-size: 11px;">
+                            STATUS: <span id="fleet-active-state">INACTIVE</span><br>
+                            CYCLES: <span id="fleet-cycles">0</span><br>
+                            LAST_CRAWL: <span id="fleet-last-crawl">NEVER</span>
+                        </div>
+                        <button class="btn" id="fleet-toggle" onclick="toggleFleet()">Initialize Fleet</button>
+                    </div>
+
+                    <div class="control-card">
                         <h3>Semantic Discovery</h3>
                         <p style="font-size: 12px; color: var(--muted); margin-bottom: 20px;">Pivot from a known seed channel to discover the surrounding criminal network.</p>
                         <div class="input-group">
@@ -173,6 +184,59 @@
             t.style.display = 'block';
             setTimeout(() => t.style.display = 'none', 3000);
         }
+
+        async function toggleFleet() {
+            const btn = document.getElementById('fleet-toggle');
+            const res = await fetch('/api/caas/autonomous/toggle', { method: 'POST' });
+            const data = await res.json();
+            showToast(data.message);
+            updateFleetStatus();
+        }
+
+        async function updateFleetStatus() {
+            const res = await fetch('/api/caas/autonomous/status');
+            const data = await res.json();
+            const state = document.getElementById('fleet-active-state');
+            const cycles = document.getElementById('fleet-cycles');
+            const last = document.getElementById('fleet-last-crawl');
+            const btn = document.getElementById('fleet-toggle');
+
+            if (data.is_running) {
+                state.textContent = "ACTIVE";
+                state.style.color = "var(--accent)";
+                btn.textContent = "Deactivate Fleet";
+                btn.classList.add('btn-danger');
+            } else {
+                state.textContent = "INACTIVE";
+                state.style.color = "var(--muted)";
+                btn.textContent = "Initialize Fleet";
+                btn.classList.remove('btn-danger');
+            }
+            cycles.textContent = data.stats.total_cycles;
+            last.textContent = data.stats.last_discovery || "NEVER";
+            
+            // Add live signals to feed if any active tasks
+            const feed = document.getElementById('signal-feed');
+            if (data.stats.active_tasks.length > 0) {
+                data.stats.active_tasks.forEach(task => {
+                    if (!document.getElementById(`task-${task}`)) {
+                        const item = document.createElement('div');
+                        item.className = 'feed-item';
+                        item.id = `task-${task}`;
+                        item.innerHTML = `
+                            <div class="ts">${new Date().toLocaleTimeString()}</div>
+                            <div class="tag">FLEET.OPS</div>
+                            <div class="msg">Executing: ${task}</div>
+                        `;
+                        feed.insertBefore(item, feed.firstChild);
+                        if (feed.children.length > 10) feed.removeChild(feed.lastChild);
+                    }
+                });
+            }
+        }
+
+        setInterval(updateFleetStatus, 5000);
+        updateFleetStatus();
 
         async function runProcessQueue() {
             showToast("PROCESSING QUEUE...");

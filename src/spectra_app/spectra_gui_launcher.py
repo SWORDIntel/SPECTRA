@@ -510,6 +510,19 @@ class SpectraGUILauncher:
                 "stats": self.coordinator_engine.stats
             })
 
+        @self.app.route('/api/sidecar/memshadow/status')
+        def api_memshadow_status():
+            """Check the health and status of the MEMSHADOW sidecar."""
+            import requests
+            mem_url = os.getenv("SPECTRA_MEMSHADOW_URL", "http://memshadow:18080")
+            try:
+                res = requests.get(f"{mem_url}/health", timeout=2)
+                if res.status_code == 200:
+                    return jsonify({"active": True, "status": "Healthy", "url": "/memshadow"})
+                return jsonify({"active": False, "status": "Degraded", "error": f"HTTP {res.status_code}"})
+            except Exception as e:
+                return jsonify({"active": False, "status": "Unavailable", "error": str(e)})
+
         @self.app.route('/api/caas/process-queue', methods=['POST'])
         def api_caas_process_queue():
             """Trigger the CaaS profile queue processor in the background."""

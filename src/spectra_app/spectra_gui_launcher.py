@@ -477,6 +477,39 @@ class SpectraGUILauncher:
                 return self.phase_dashboard.generate_timeline_html()
             return self._render_component_unavailable("Phase Management")
 
+        from tgarchive.osint.caas.coordinator import AutonomousIntelligenceCoordinator
+        self.coordinator_engine = AutonomousIntelligenceCoordinator(
+            Path(self.config.orchestrator_config), 
+            Path(self.config.database_path)
+        )
+
+        @self.app.route('/api/caas/autonomous/toggle', methods=['POST'])
+        def api_caas_autonomous_toggle():
+            """Toggle the autonomous intelligence coordinator."""
+            try:
+                data = request.get_json() or {}
+                enable = data.get("enable", not self.coordinator_engine.is_running)
+                
+                if enable and not self.coordinator_engine.is_running:
+                    def _run():
+                        asyncio.run(self.coordinator_engine.start(interval_minutes=60))
+                    
+                    threading.Thread(target=_run, daemon=True).start()
+                    return jsonify({"success": True, "active": True, "message": "Autonomous Intelligence Coordinator activated."})
+                else:
+                    self.coordinator_engine.stop()
+                    return jsonify({"success": True, "active": False, "message": "Autonomous Intelligence Coordinator deactivated."})
+            except Exception as e:
+                return jsonify({"success": False, "error": str(e)}), 500
+
+        @self.app.route('/api/caas/autonomous/status')
+        def api_caas_autonomous_status():
+            """Get status and stats from the autonomous coordinator."""
+            return jsonify({
+                "is_running": self.coordinator_engine.is_running,
+                "stats": self.coordinator_engine.stats
+            })
+
         @self.app.route('/api/caas/process-queue', methods=['POST'])
         def api_caas_process_queue():
             """Trigger the CaaS profile queue processor in the background."""

@@ -15,7 +15,8 @@ SPECTRA is a forensic-grade intelligence framework for Telegram network discover
 - 📑 **Narrative Synthesis**: Automated LLM-driven intelligence briefings that classify actor archetypes and strategic threat status.
 - 💳 **Wallet-Watch (DIRECTEYE Ready)**: Forensic extraction of BTC, XMR, and TRX/ETH addresses with built-in hooks for [DIRECTEYE](https://github.com/SWORDIntel/DIRECTEYE) blockchain attribution.
 - 🚀 **One-Command Deployment**: Production-ready Docker orchestration with automated SSL via **Caddy**.
-- 🕵️ **OPSEC Core**: Multi-account/API rotation and proxy support for anti-detection and persistent collection.
+- 🛡️ **OPSEC Core**: Multi-account/API rotation and proxy support for anti-detection and persistent collection.
+- 🧠 **MEMSHADOW Sidecar**: Advanced 4096-dimensional semantic memory persistence and cross-LLM context preservation for deep threat analysis.
 
 ## ⚡ Quick Start (Docker)
 

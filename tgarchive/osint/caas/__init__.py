@@ -10,5 +10,6 @@ from .discovery_fingerprint import ChannelFingerprintEngine
 from .profiler import CAASProfiler
 from .aggregator import ActorDossierAggregator
 from .market_intel import MarketIntelligenceEngine
+from .memshadow_client import MemshadowClient
 
-__all__ = ["ChannelFingerprintEngine", "CAASProfiler", "ActorDossierAggregator", "MarketIntelligenceEngine"]
+__all__ = ["ChannelFingerprintEngine", "CAASProfiler", "ActorDossierAggregator", "MarketIntelligenceEngine", "MemshadowClient"]

@@ -64,5 +64,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # Expose port
 EXPOSE 5000
 
-# Default entrypoint: Web server
-CMD ["python", "-m", "tgarchive.web", "--host", "0.0.0.0", "--port", "5000"]
+# Default entrypoint: Unified Web Console
+CMD ["python", "-m", "spectra_app.spectra_gui_launcher", "--host", "0.0.0.0", "--port", "5000"]

@@ -181,6 +181,8 @@ services:
       ENABLE_SECURITY_MIDDLEWARE: "true"
       WEB_ADMIN_PASSWORD: ${MEMSHADOW_ADMIN_PASSWORD:-1786}
       EMBEDDING_DIMENSION: "4096"
+      # Safety: Explicitly disable blackbox mode
+      MEMSHADOW_BLACKBOX_MODE: "false"
     networks:
       - spectra-network
 

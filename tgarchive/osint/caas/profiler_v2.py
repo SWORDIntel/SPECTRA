@@ -6,6 +6,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
+from tgarchive.threat.indicators import ThreatIndicatorDetector
+
 HANDLE_RE = re.compile(r"@([A-Za-z0-9_]{4,32})")
 PRICE_PATTERNS = [
     re.compile(r"(?P<currency>\$|£|€)\s?(?P<amount>\d+(?:[\.,]\d{1,2})?)", re.I),
@@ -69,6 +71,7 @@ class MessageProfile:
     payment_methods: list[str] = field(default_factory=list)
     delivery_model: Optional[str] = None
     prices: list[PriceObservation] = field(default_factory=list)
+    threat_indicators: list[dict[str, Any]] = field(default_factory=list)
 
     def to_json(self) -> str:
         return json.dumps(
@@ -80,12 +83,16 @@ class MessageProfile:
                 "payment_methods": self.payment_methods,
                 "delivery_model": self.delivery_model,
                 "prices": [asdict(p) for p in self.prices],
+                "threat_indicators": self.threat_indicators,
             },
             ensure_ascii=False,
         )
 
 
 class CAASProfilerV2:
+    def __init__(self):
+        self.threat_detector = ThreatIndicatorDetector()
+
     def _find_labels(self, text: str, mapping: dict[str, list[str]]) -> list[str]:
         out: list[str] = []
         for label, patterns in mapping.items():
@@ -123,6 +130,12 @@ class CAASProfilerV2:
             aliases = sorted(set(aliases + [sender_username]))
         prices = self._extract_prices(normalized)
 
+        # Enhanced threat detection integration
+        threat_indicators = []
+        indicators = self.threat_detector.detect_indicators(content or "")
+        for ind in indicators:
+            threat_indicators.append(ind.to_dict())
+
         confidence = 0.10
         if service_categories:
             confidence += 0.45
@@ -134,6 +147,12 @@ class CAASProfilerV2:
             confidence += 0.10
         if aliases:
             confidence += 0.05
+        
+        # Threat indicator impact on confidence
+        if threat_indicators:
+            high_threats = [t for t in threat_indicators if t["severity"] >= 3.0]
+            if high_threats:
+                confidence += 0.15
 
         if re.search(r"\b(per month|monthly|/month|weekly|/week)\b", normalized, re.I):
             delivery_model = "subscription"
@@ -152,6 +171,7 @@ class CAASProfilerV2:
             payment_methods=payment_methods,
             delivery_model=delivery_model,
             prices=prices,
+            threat_indicators=threat_indicators,
         )
 
     def save_profile(self, db: Any, channel_id: int, message_id: int, profile: MessageProfile) -> None:
@@ -184,6 +204,26 @@ class CAASProfilerV2:
                 profile.to_json(),
             ),
         )
+
+        # Generate alerts for high-severity threat indicators
+        for ind in profile.threat_indicators:
+            if ind["severity"] >= 4.0:
+                db.conn.execute(
+                    """
+                    INSERT INTO caas_alert (created_at, severity, channel_id, alert_type, score, summary, evidence_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        now,
+                        ind["level"],
+                        channel_id,
+                        f"threat_{ind['type']}",
+                        ind["severity"],
+                        f"Critical threat indicator: {ind['value']}",
+                        json.dumps(ind),
+                    ),
+                )
+
         for alias in profile.seller_aliases:
             db.conn.execute(
                 """

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sqlite3
 import threading
 import time
@@ -76,6 +77,16 @@ class CAASBaseForm(npyscreen.Form):
     def app(self) -> "SpectraCAASApp":
         return self.parentApp  # type: ignore[return-value]
 
+    def get_severity_bar(self, score: float, width: int = 10) -> str:
+        filled = int(max(0.0, min(1.0, score)) * width)
+        return "[" + "#" * filled + "-" * (width - filled) + "]"
+
+    def get_color_for_severity(self, score: float) -> str:
+        if score >= 0.8: return "DANGER"
+        if score >= 0.5: return "CAUTION"
+        if score >= 0.3: return "IMPORTANT"
+        return "SAFE"
+
 
 class CAASDashboardForm(CAASBaseForm):
     def create(self):
@@ -91,27 +102,39 @@ class CAASDashboardForm(CAASBaseForm):
         self.failed_queue = self.add(npyscreen.TitleFixedText, name="Queue Failed:", value="0")
         self.message_profiles = self.add(npyscreen.TitleFixedText, name="Message Profiles:", value="0")
         self.actor_entities = self.add(npyscreen.TitleFixedText, name="Actor Entities:", value="0")
-        self.alerts = self.add(npyscreen.TitleFixedText, name="Alerts:", value="0")
+        self.alerts = self.add(npyscreen.TitleFixedText, name="Active Alerts:", value="0")
         self.add(npyscreen.FixedText, value="")
 
-        self.top_channels = self.add(npyscreen.Pager, name="High-Signal Channels", height=8)
+        self.top_channels = self.add(npyscreen.Pager, name="High-Signal Channels (CaaS Triage)", height=8)
         self.add(npyscreen.FixedText, value="")
-        self.add(npyscreen.ButtonPress, name="Refresh Dashboard", when_pressed_function=self.refresh_stats)
-        self.add(npyscreen.ButtonPress, name="Back to Main Menu", when_pressed_function=lambda: self.app.switchForm("MAIN"))
+        self.add(npyscreen.ButtonPress, name="Update Metrics", when_pressed_function=self.refresh_stats)
+        self.add(npyscreen.ButtonPress, name="Return to Command Center", when_pressed_function=lambda: self.app.switchForm("MAIN"))
         self.refresh_stats()
 
     def refresh_stats(self):
         try:
             db = self.app.get_db()
             ensure_schema(db)
+            
+            pending = self._scalar(db, "SELECT COUNT(*) FROM caas_profile_queue WHERE status = 'pending'")
+            failed = self._scalar(db, "SELECT COUNT(*) FROM caas_profile_queue WHERE status = 'failed'")
+            alert_count = self._scalar(db, "SELECT COUNT(*) FROM caas_alert")
+            
             self.channel_profiles.value = str(self._scalar(db, "SELECT COUNT(*) FROM caas_channel_profile"))
-            self.pending_queue.value = str(self._scalar(db, "SELECT COUNT(*) FROM caas_profile_queue WHERE status = 'pending'"))
+            self.pending_queue.value = str(pending)
+            self.pending_queue.label_color = "CAUTION" if pending > 0 else "SAFE"
+            
             self.processing_queue.value = str(self._scalar(db, "SELECT COUNT(*) FROM caas_profile_queue WHERE status = 'processing'"))
             self.completed_queue.value = str(self._scalar(db, "SELECT COUNT(*) FROM caas_profile_queue WHERE status = 'completed'"))
-            self.failed_queue.value = str(self._scalar(db, "SELECT COUNT(*) FROM caas_profile_queue WHERE status = 'failed'"))
+            
+            self.failed_queue.value = str(failed)
+            self.failed_queue.label_color = "DANGER" if failed > 0 else "SAFE"
+            
             self.message_profiles.value = str(self._scalar(db, "SELECT COUNT(*) FROM caas_message_profile"))
             self.actor_entities.value = str(self._scalar(db, "SELECT COUNT(*) FROM actor_entity"))
-            self.alerts.value = str(self._scalar(db, "SELECT COUNT(*) FROM caas_alert"))
+            
+            self.alerts.value = str(alert_count)
+            self.alerts.label_color = self.get_color_for_severity(0.9 if alert_count > 10 else 0.4 if alert_count > 0 else 0.0)
             rows = db.conn.execute(
                 """
                 SELECT COALESCE(title, channel_link, CAST(channel_id AS TEXT)),
@@ -148,7 +171,7 @@ class CAASDiscoveryForm(CAASBaseForm):
         self.add(npyscreen.ButtonPress, name="Run CAAS Discovery", when_pressed_function=self.start_discovery)
         self.results = self.add(npyscreen.Pager, name="Discovery Results", height=12)
         self.status = self.add(StatusMessages, name="Status", max_height=6)
-        self.add(npyscreen.ButtonPress, name="Back to Main Menu", when_pressed_function=lambda: self.app.switchForm("MAIN"))
+        self.add(npyscreen.ButtonPress, name="Return to Command Center", when_pressed_function=lambda: self.app.switchForm("MAIN"))
         self.status.add_message("Enter a seed channel and start semantic discovery.")
 
     def start_discovery(self):
@@ -210,7 +233,7 @@ class CAASArchiveForm(CAASBaseForm):
         self.archive_topics = self.add(npyscreen.Checkbox, name="Archive Topics", value=True)
         self.add(npyscreen.ButtonPress, name="Start Canonical Archive", when_pressed_function=self.start_archive)
         self.status = self.add(StatusMessages, name="Status", max_height=8)
-        self.add(npyscreen.ButtonPress, name="Back to Main Menu", when_pressed_function=lambda: self.app.switchForm("MAIN"))
+        self.add(npyscreen.ButtonPress, name="Return to Command Center", when_pressed_function=lambda: self.app.switchForm("MAIN"))
         self.status.add_message("Canonical archive will enqueue CAAS profiling candidates automatically.")
 
     def start_archive(self):
@@ -249,7 +272,7 @@ class CAASQueueForm(CAASBaseForm):
         self.queue_status = self.add(npyscreen.Pager, name="Queue Status", height=10)
         self.status = self.add(StatusMessages, name="Status", max_height=6)
         self.add(npyscreen.ButtonPress, name="Refresh Queue Status", when_pressed_function=self.refresh_status)
-        self.add(npyscreen.ButtonPress, name="Back to Main Menu", when_pressed_function=lambda: self.app.switchForm("MAIN"))
+        self.add(npyscreen.ButtonPress, name="Return to Command Center", when_pressed_function=lambda: self.app.switchForm("MAIN"))
         self.refresh_status()
 
     def refresh_status(self):
@@ -289,12 +312,22 @@ class CAASQueueForm(CAASBaseForm):
 
 class CAASSignalsForm(CAASBaseForm):
     def create(self):
-        self.name = "Signals & Actors"
+        self.name = "Signals & Intelligence"
         self.add(npyscreen.FixedText, value=TITLE)
-        self.view = self.add(npyscreen.TitleSelectOne, name="View:", values=["Channels", "Actors", "Alerts", "Queue Failures"], max_height=5, value=[0])
-        self.refresh_button = self.add(npyscreen.ButtonPress, name="Refresh View", when_pressed_function=self.refresh_view)
-        self.output = self.add(npyscreen.Pager, name="Signal View", height=18)
-        self.add(npyscreen.ButtonPress, name="Back to Main Menu", when_pressed_function=lambda: self.app.switchForm("MAIN"))
+        
+        self.actor_search = self.add(npyscreen.TitleText, name="Actor Search Filter:", value="")
+        self.view = self.add(npyscreen.TitleSelectOne, name="Intelligence View:", 
+                             values=["1. High-Signal Channels", 
+                                     "2. Known Actors", 
+                                     "3. Actor Dossiers (In-Depth)", 
+                                     "4. Global Market Intelligence", 
+                                     "5. Active Alerts", 
+                                     "6. Processing Failures"], 
+                             max_height=7, value=[0])
+        
+        self.refresh_button = self.add(npyscreen.ButtonPress, name="Run Analysis / Refresh", when_pressed_function=self.refresh_view)
+        self.output = self.add(npyscreen.Pager, name="Intelligence Output", height=14)
+        self.add(npyscreen.ButtonPress, name="Return to Command Center", when_pressed_function=lambda: self.app.switchForm("MAIN"))
         self.refresh_view()
 
     def refresh_view(self):
@@ -302,6 +335,8 @@ class CAASSignalsForm(CAASBaseForm):
             db = self.app.get_db()
             ensure_schema(db)
             choice = self.view.value[0] if self.view.value else 0
+            search = self.actor_search.value.strip()
+            
             if choice == 0:
                 rows = db.conn.execute(
                     """
@@ -318,18 +353,83 @@ class CAASSignalsForm(CAASBaseForm):
                     f"{name} | CAAS={caas:.2f} | BOT={bot:.2f} | ALERT={alert:.2f}" for name, caas, bot, alert in rows
                 ] or ["No channel profiles"]
             elif choice == 1:
-                rows = db.conn.execute(
-                    "SELECT canonical_handle, entity_type, bot_likelihood, last_seen FROM actor_entity ORDER BY last_seen DESC LIMIT 25"
-                ).fetchall()
+                if search:
+                    rows = db.conn.execute(
+                        "SELECT canonical_handle, entity_type, bot_likelihood, last_seen FROM actor_entity WHERE canonical_handle LIKE ? ORDER BY last_seen DESC LIMIT 25",
+                        (f"%{search}%",)
+                    ).fetchall()
+                else:
+                    rows = db.conn.execute(
+                        "SELECT canonical_handle, entity_type, bot_likelihood, last_seen FROM actor_entity ORDER BY last_seen DESC LIMIT 25"
+                    ).fetchall()
                 self.output.values = [
                     f"{handle} | {etype} | bot={bot:.2f} | last_seen={last_seen}" for handle, etype, bot, last_seen in rows
-                ] or ["No actors"]
+                ] or ["No actors matching search criteria"]
             elif choice == 2:
+                from tgarchive.osint.caas.aggregator import ActorDossierAggregator
+                aggregator = ActorDossierAggregator(db)
+                dossiers = aggregator.get_top_actors(limit=50 if search else 15)
+                if search:
+                    dossiers = [d for d in dossiers if search.lower() in d["actor_handle"].lower()]
+                
+                lines = []
+                for d in dossiers:
+                    services_str = ", ".join(f"{k}({v})" for k, v in d["top_services"][:3])
+                    prices_str = f"{len(d['price_history'])} prices found"
+                    sev_bar = self.get_severity_bar(d["caas_severity"])
+                    lines.append(f"@{d['actor_handle']} {sev_bar} Sev: {d['caas_severity']:.2f}")
+                    lines.append(f"  Services: {services_str or 'None'}")
+                    lines.append(f"  Pricing: {prices_str}")
+                    lines.append("")
+                self.output.values = lines or ["No actor dossiers available matching criteria."]
+            elif choice == 3:
+                from tgarchive.osint.caas.market_intel import MarketIntelligenceEngine
+                engine = MarketIntelligenceEngine(db)
+                snapshot = engine.get_market_snapshot()
+                shifts = engine.detect_market_shifts()
+                
+                # PRICE HEATMAP (Distribution across low/mid/high buckets)
+                cursor = db.conn.execute("SELECT raw_json FROM caas_message_profile")
+                all_prices = []
+                for (raw_json_str,) in cursor:
+                    try:
+                        raw_data = json.loads(raw_json_str or "{}")
+                        for p in raw_data.get("prices", []):
+                            amount = p.get("amount_min") or p.get("amount_max")
+                            if amount:
+                                all_prices.append(float(amount))
+                    except: continue
+                
+                lines = [f"GLOBAL MARKET SNAPSHOT (Total Profiles: {snapshot['total_profiles']})", ""]
+                
+                if all_prices:
+                    low = [p for p in all_prices if p < 100]
+                    mid = [p for p in all_prices if 100 <= p <= 1000]
+                    high = [p for p in all_prices if p > 1000]
+                    total = len(all_prices)
+                    heatmap = f"PRICE HEATMAP: Low (<$100): {len(low)/total*100:.1f}% | Mid ($100-$1k): {len(mid)/total*100:.1f}% | High (>$1k): {len(high)/total*100:.1f}%"
+                    lines.append(heatmap)
+                    lines.append("")
+
+                lines.append(f"SUMMARY: {snapshot['summary']}")
+                lines.append("-" * 40)
+                lines.append(f"{'CATEGORY':<20} | {'AVG PRICE':<10} | {'GMV PROXY':<10} | {'VOLUME'}")
+                for s in snapshot["service_rankings"][:10]:
+                    lines.append(f"{s['category']:<20} | {s['avg_price']:<10} | {s['estimated_market_value']:<10} | {s['mentions']}")
+                
+                if shifts:
+                    lines.append("")
+                    lines.append("MARKET SHIFT ALERTS:")
+                    for shift in shifts:
+                        lines.append(f"!! [{shift['severity'].upper()}] {shift['description']}")
+                
+                self.output.values = lines or ["Insufficient data for market intelligence analysis."]
+            elif choice == 4:
                 rows = db.conn.execute(
                     "SELECT severity, alert_type, score, summary, created_at FROM caas_alert ORDER BY created_at DESC LIMIT 25"
                 ).fetchall()
                 self.output.values = [
-                    f"[{severity}] {alert_type} | score={score:.2f} | {summary} | {created_at}" for severity, alert_type, score, summary, created_at in rows
+                    f"[{severity.upper()}] {alert_type} | score={score:.2f} | {summary} | {created_at}" for severity, alert_type, score, summary, created_at in rows
                 ] or ["No alerts"]
             else:
                 rows = db.conn.execute(

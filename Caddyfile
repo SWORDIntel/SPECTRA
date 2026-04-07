@@ -1,0 +1,31 @@
+{
+    # Global options
+    admin off
+    persist_config off
+}
+
+# The site address (change this via environment variable if needed)
+{$SITE_ADDRESS:localhost} {
+    # Reverse proxy to the SPECTRA web service
+    reverse_proxy spectra:5000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # Logging
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+
+    # Compression
+    encode zstd gzip
+
+    # Custom Error Pages (optional)
+    handle_errors {
+        rewrite * /{err.status_code}.html
+        file_server
+    }
+}

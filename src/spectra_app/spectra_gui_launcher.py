@@ -477,6 +477,110 @@ class SpectraGUILauncher:
                 return self.phase_dashboard.generate_timeline_html()
             return self._render_component_unavailable("Phase Management")
 
+        @self.app.route('/api/caas/process-queue', methods=['POST'])
+        def api_caas_process_queue():
+            """Trigger the CaaS profile queue processor in the background."""
+            try:
+                from tgarchive.osint.caas.queue_worker import process_queue
+                def _run():
+                    with self.app.app_context():
+                        process_queue(db_path=self.config.database_path, batch_size=250, once=True)
+                
+                threading.Thread(target=_run, daemon=True).start()
+                return jsonify({"success": True, "message": "CaaS Queue processing initiated in background."})
+            except Exception as e:
+                return jsonify({"success": False, "error": str(e)}), 500
+
+        @self.app.route('/api/caas/discover', methods=['POST'])
+        def api_caas_discover():
+            """Trigger a semantic discovery crawl from the web console."""
+            try:
+                data = request.get_json() or {}
+                seed = data.get("seed")
+                if not seed:
+                    return jsonify({"success": False, "error": "Seed entity required"}), 400
+                
+                from tgarchive.osint.caas.discovery_ops import discover_with_caas
+                def _run():
+                    asyncio.run(discover_with_caas(
+                        config_path=self.config.orchestrator_config,
+                        db_path=self.config.database_path,
+                        data_dir="spectra_data",
+                        seed=seed,
+                        depth=1,
+                        max_messages=500
+                    ))
+                
+                threading.Thread(target=_run, daemon=True).start()
+                return jsonify({"success": True, "message": f"Discovery initiated for {seed}"})
+            except Exception as e:
+                return jsonify({"success": False, "error": str(e)}), 500
+
+        @self.app.route('/api/v1/actor/brief/<handle>')
+        def api_actor_brief(handle):
+            """Get full forensic briefing for a threat actor."""
+            db_path = self.config.database_path
+            try:
+                from tgarchive.db import SpectraDB
+                from tgarchive.osint.caas.aggregator import ActorDossierAggregator
+                from tgarchive.osint.caas.wallet_watch import WalletWatcher
+                from tgarchive.osint.caas.nexus_graph import InfrastructureNexus
+                from tgarchive.osint.caas.llm_intel import NarrativeSynthesisEngine
+                
+                db = SpectraDB(Path(db_path))
+                aggregator = ActorDossierAggregator(db)
+                watcher = WalletWatcher(db)
+                nexus_engine = InfrastructureNexus(db)
+                narrative = NarrativeSynthesisEngine()
+                
+                dossier = aggregator.generate_dossier(handle)
+                wallets = watcher.get_actor_wallets(handle)
+                artifacts = nexus_engine.extract_artifacts("") # Get all shared artifacts logic would go here
+                
+                # Simple nexus linkage logic
+                shared_nexus = [n for n in nexus_engine.map_shared_nexus() if handle in n["actors"]]
+                nexus_ids = [n["artifact"] for n in shared_nexus]
+                
+                brief = narrative.synthesize_actor_brief(dossier, wallets, nexus_ids)
+                
+                return jsonify({
+                    "handle": handle,
+                    "brief": brief,
+                    "wallets": wallets,
+                    "nexus_links": shared_nexus,
+                    "dossier": dossier
+                })
+            except Exception as e:
+                return jsonify({"error": str(e)}), 500
+
+        @self.app.route('/caas-intelligence')
+        def caas_intelligence():
+            """CaaS and Threat Actor Intelligence dashboard"""
+            db_path = self.config.database_path
+            try:
+                from tgarchive.db import SpectraDB
+                from tgarchive.osint.caas.aggregator import ActorDossierAggregator
+                from tgarchive.osint.caas.market_intel import MarketIntelligenceEngine
+                
+                db = SpectraDB(Path(db_path))
+                aggregator = ActorDossierAggregator(db)
+                engine = MarketIntelligenceEngine(db)
+                
+                snapshot = engine.get_market_snapshot()
+                dossiers = aggregator.get_top_actors(limit=10)
+                
+                return render_template(
+                    'caas_intelligence.html',
+                    system_status=self.get_system_status(),
+                    market_snapshot=snapshot,
+                    top_dossiers=dossiers,
+                    access_host=self.config.host,
+                    access_port=self.available_port or self.config.port,
+                )
+            except Exception as e:
+                self.logger.error(f"Error loading CaaS Intelligence: {e}")
+                return self._render_component_unavailable(f"CaaS Intelligence (Error: {e})")
+
         @self.app.route('/coordination')
         def coordination():
             """Real-time coordination interface"""

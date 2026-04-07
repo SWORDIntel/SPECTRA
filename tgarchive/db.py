@@ -268,6 +268,41 @@ CREATE INDEX IF NOT EXISTS idx_channel_file_inventory_channel_id ON channel_file
 CREATE INDEX IF NOT EXISTS idx_channel_file_inventory_file_id ON channel_file_inventory(file_id);
 CREATE INDEX IF NOT EXISTS idx_topic_file_mapping_topic_id ON topic_file_mapping(topic_id);
 CREATE INDEX IF NOT EXISTS idx_topic_file_mapping_file_id ON topic_file_mapping(file_id);
+
+-- OSINT and Actor Classification Tables
+CREATE TABLE IF NOT EXISTS osint_targets (
+    user_id       INTEGER PRIMARY KEY,
+    username      TEXT,
+    notes         TEXT,
+    created_at    TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_osint_targets_username ON osint_targets(username);
+
+CREATE TABLE IF NOT EXISTS osint_interactions (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_user_id      INTEGER NOT NULL,
+    target_user_id      INTEGER NOT NULL,
+    interaction_type    TEXT NOT NULL,
+    channel_id          INTEGER NOT NULL,
+    message_id          INTEGER NOT NULL,
+    timestamp           TEXT NOT NULL,
+    FOREIGN KEY (source_user_id) REFERENCES users(id),
+    FOREIGN KEY (target_user_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_osint_interactions_source_user ON osint_interactions(source_user_id);
+CREATE INDEX IF NOT EXISTS idx_osint_interactions_target_user ON osint_interactions(target_user_id);
+
+CREATE TABLE IF NOT EXISTS actor_classification (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id             INTEGER UNIQUE NOT NULL,
+    category            TEXT NOT NULL, -- e.g., 'scammer', 'vendor', 'broker', 'target'
+    confidence          REAL DEFAULT 0.0,
+    activity_profile    TEXT, -- JSON string of activity stats
+    last_classified_at  TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_actor_class_category ON actor_classification(category);
 """
 
 # ── Helper SQL functions ────────────────────────────────────────────────

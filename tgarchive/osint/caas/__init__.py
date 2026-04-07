@@ -8,5 +8,7 @@ This package contains:
 
 from .discovery_fingerprint import ChannelFingerprintEngine
 from .profiler import CAASProfiler
+from .aggregator import ActorDossierAggregator
+from .market_intel import MarketIntelligenceEngine
 
-__all__ = ["ChannelFingerprintEngine", "CAASProfiler"]
+__all__ = ["ChannelFingerprintEngine", "CAASProfiler", "ActorDossierAggregator", "MarketIntelligenceEngine"]

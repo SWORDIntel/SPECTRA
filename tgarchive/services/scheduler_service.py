@@ -12,11 +12,13 @@ import asyncio
 from croniter import croniter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from pathlib import Path
 import pytz
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from .forwarding import AttachmentForwarder
-from .db import SpectraDB
-from .notifications import NotificationManager
+from tgarchive.core.config_models import Config
+from ..forwarding import AttachmentForwarder
+from ..db import SpectraDB
+from ..utils.notifications import NotificationManager
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -31,14 +33,14 @@ class SchedulerDaemon:
     def __init__(self, config_path, state_path):
         self.config_path = config_path
         self.state_path = state_path
-        self.config = self.load_config()
-        self.timezone = pytz.timezone(self.config.get('scheduler', {}).get('timezone', 'UTC'))
+        self.config = Config(Path(config_path))
+        self.timezone = pytz.timezone(self.config.data.get('scheduler', {}).get('timezone', 'UTC'))
         self.jobs = self.load_jobs()
         self._stop_event = threading.Event()
         self.thread = threading.Thread(target=self.run, daemon=True)
         self.health_check_server = None
-        self.notification_manager = NotificationManager(self.config.get("notifications", {}))
-        max_workers = self.config.get("scheduler", {}).get("max_concurrent_forwards", 4)
+        self.notification_manager = NotificationManager(self.config.data.get("notifications", {}))
+        max_workers = self.config.data.get("scheduler", {}).get("max_concurrent_forwards", 4)
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
 
     def load_config(self):
@@ -74,7 +76,7 @@ class SchedulerDaemon:
         The main loop for the scheduler daemon.
         """
         self.start_health_check()
-        db = SpectraDB(self.config.get("db", {}).get("path", "spectra.db"))
+        db = SpectraDB(self.config.data.get("db", {}).get("path", "spectra.db"))
 
         while not self._stop_event.is_set():
             now = datetime.now(self.timezone)
@@ -94,7 +96,7 @@ class SchedulerDaemon:
                 if iter.get_prev(datetime) == now.replace(second=0, microsecond=0):
                     self.notification_manager.send(f"Starting channel forward for channel {channel_id}")
                     print(f"Executing channel forward for channel {channel_id}")
-                    for attempt in range(self.config.get("scheduler", {}).get("error_retry_attempts", 3)):
+                    for attempt in range(self.config.data.get("scheduler", {}).get("error_retry_attempts", 3)):
                         try:
                             self.executor.submit(
                                 asyncio.run,
@@ -108,7 +110,7 @@ class SchedulerDaemon:
                             )
                             break
                         except Exception as e:
-                            if attempt < self.config.get("scheduler", {}).get("error_retry_attempts", 3) - 1:
+                            if attempt < self.config.data.get("scheduler", {}).get("error_retry_attempts", 3) - 1:
                                 time.sleep(2 ** attempt)
                             else:
                                 print(f"Error executing channel forward for channel {channel_id}: {e}")
@@ -121,7 +123,7 @@ class SchedulerDaemon:
                 if iter.get_prev(datetime) == now.replace(second=0, microsecond=0):
                     self.notification_manager.send(f"Starting file forward for source {source}")
                     print(f"Executing file forward for source {source}")
-                    for attempt in range(self.config.get("scheduler", {}).get("error_retry_attempts", 3)):
+                    for attempt in range(self.config.data.get("scheduler", {}).get("error_retry_attempts", 3)):
                         try:
                             self.executor.submit(
                                 asyncio.run,
@@ -138,7 +140,7 @@ class SchedulerDaemon:
                             )
                             break
                         except Exception as e:
-                            if attempt < self.config.get("scheduler", {}).get("error_retry_attempts", 3) - 1:
+                            if attempt < self.config.data.get("scheduler", {}).get("error_retry_attempts", 3) - 1:
                                 time.sleep(2 ** attempt)
                             else:
                                 print(f"Error executing file forward for source {source}: {e}")
@@ -147,7 +149,7 @@ class SchedulerDaemon:
             # Process file forwarding queue
             self.process_file_forward_queue()
 
-            interval = self.config.get("scheduler", {}).get("schedule_check_interval_seconds", 60)
+            interval = self.config.data.get("scheduler", {}).get("schedule_check_interval_seconds", 60)
             time.sleep(interval)
         self.stop_health_check()
 
@@ -155,7 +157,7 @@ class SchedulerDaemon:
         """
         Processes the file forwarding queue.
         """
-        db = SpectraDB(self.config.get("db", {}).get("path", "spectra.db"))
+        db = SpectraDB(self.config.data.get("db", {}).get("path", "spectra.db"))
         forwarder = AttachmentForwarder(config=self.config, db=db)
         try:
             asyncio.run(forwarder.process_file_forward_queue())
@@ -168,8 +170,8 @@ class SchedulerDaemon:
         """
         Starts the health check server in a new thread.
         """
-        host = self.config.get('scheduler', {}).get('health_check_host', 'localhost')
-        port = self.config.get('scheduler', {}).get('health_check_port', 8080)
+        host = self.config.data.get('scheduler', {}).get('health_check_host', 'localhost')
+        port = self.config.data.get('scheduler', {}).get('health_check_port', 8080)
         self.health_check_server = HTTPServer((host, port), HealthCheckHandler)
         self.health_check_thread = threading.Thread(target=self.health_check_server.serve_forever)
         self.health_check_thread.daemon = True

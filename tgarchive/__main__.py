@@ -1167,22 +1167,38 @@ async def handle_migrate(args: argparse.Namespace) -> int:
     """Handle migrate command"""
     cfg = Config(Path(args.config))
     db = SpectraDB(cfg.data.get("db", {}).get("path", "spectra.db"))
-    # Placeholder for a proper client factory
     from telethon import TelegramClient
-    client = TelegramClient('anon', 12345, 'hash') # Replace with actual session logic
-    manager = MassMigrationManager(cfg, db, client)
-    await manager.one_time_migration(args.source, args.destination, args.dry_run, args.parallel)
-    return 0
+    account = cfg.auto_select_account()
+    if not account:
+        logger.error("No account available for this operation.")
+        return 1
+
+    client = TelegramClient(account['session_name'], account['api_id'], account['api_hash'])
+    await client.connect()
+    try:
+        manager = MassMigrationManager(cfg, db, client)
+        await manager.one_time_migration(args.source, args.destination, args.dry_run, args.parallel)
+        return 0
+    finally:
+        await client.disconnect()
 
 async def handle_rollback(args: argparse.Namespace) -> int:
     """Handle rollback command"""
     cfg = Config(Path(args.config))
     db = SpectraDB(cfg.data.get("db", {}).get("path", "spectra.db"))
     from telethon import TelegramClient
-    client = TelegramClient('anon', 12345, 'hash')
-    manager = MassMigrationManager(cfg, db, client)
-    manager.rollback_migration(args.migration_id)
-    return 0
+    account = cfg.auto_select_account()
+    if not account:
+        logger.error("No account available for this operation.")
+        return 1
+
+    client = TelegramClient(account['session_name'], account['api_id'], account['api_hash'])
+    await client.connect()
+    try:
+        manager = MassMigrationManager(cfg, db, client)
+        return 0 if manager.rollback_migration(args.migration_id) else 1
+    finally:
+        await client.disconnect()
 
 async def handle_migrate_report(args: argparse.Namespace) -> int:
     """Handle migrate-report command"""
@@ -1200,7 +1216,7 @@ async def handle_download_users(args: argparse.Namespace) -> int:
     cfg = Config(Path(args.config))
     if args.import_accounts:
         cfg = enhance_config_with_gen_accounts(cfg)
-    from .user_operations import get_server_users
+    from .utils.user_operations import get_server_users
     from telethon import TelegramClient
     account = cfg.auto_select_account()
     if not account:

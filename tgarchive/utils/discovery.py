@@ -380,7 +380,7 @@ class AccountRotator:
     
     def _setup_db(self):
         """Set up account usage database if not exists"""
-        from .db import SpectraDB
+        from ..db import SpectraDB
         try:
             self.db = SpectraDB(self.db_path)
             
@@ -1044,7 +1044,7 @@ class ParallelTaskScheduler:
         
     async def _setup_task_db(self):
         """Set up database tables for task tracking"""
-        from .db import SpectraDB
+        from ..db import SpectraDB
         
         try:
             # Open DB connection
@@ -1075,7 +1075,7 @@ class ParallelTaskScheduler:
         if not self.db_path:
             return
             
-        from .db import SpectraDB
+        from ..db import SpectraDB
         
         try:
             db = SpectraDB(self.db_path)
@@ -1515,7 +1515,7 @@ class SpectraCrawlerManager:
     
     async def _setup_discovery_db(self):
         """Set up database tables for storing discovered groups"""
-        from .db import SpectraDB
+        from ..db import SpectraDB
         
         try:
             # Open DB connection
@@ -1571,7 +1571,7 @@ class SpectraCrawlerManager:
         if not self.db_path:
             return
             
-        from .db import SpectraDB
+        from ..db import SpectraDB
         
         try:
             db = SpectraDB(self.db_path)
@@ -1607,7 +1607,7 @@ class SpectraCrawlerManager:
         if not self.db_path:
             return
             
-        from .db import SpectraDB
+        from ..db import SpectraDB
         
         try:
             db = SpectraDB(self.db_path)
@@ -1633,7 +1633,7 @@ class SpectraCrawlerManager:
         if not self.db_path:
             return
             
-        from .db import SpectraDB
+        from ..db import SpectraDB
         
         try:
             db = SpectraDB(self.db_path)
@@ -1732,7 +1732,7 @@ class SpectraCrawlerManager:
         if not self.db_path:
             return
             
-        from .db import SpectraDB
+        from ..db import SpectraDB
         import networkx as nx
         
         try:
@@ -1779,7 +1779,7 @@ class SpectraCrawlerManager:
             self.network_analyzer.calculate_metrics()
             return self.network_analyzer.export_priority_targets(top_n)
             
-        from .db import SpectraDB
+        from ..db import SpectraDB
         
         try:
             db = SpectraDB(self.db_path)
@@ -1837,7 +1837,7 @@ class SpectraCrawlerManager:
         
         # If we have a database, save these to it
         if self.db_path and targets:
-            from .db import SpectraDB
+            from ..db import SpectraDB
             
             try:
                 db = SpectraDB(self.db_path)
@@ -1891,7 +1891,7 @@ class SpectraCrawlerManager:
         
         # Update status in database for archived groups
         if self.db_path:
-            from .db import SpectraDB
+            from ..db import SpectraDB
             
             try:
                 db = SpectraDB(self.db_path)

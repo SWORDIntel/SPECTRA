@@ -9,9 +9,9 @@ import logging
 from typing import Dict, Any, Optional, List
 
 try:
-    from ..analytics.forecasting import ForecastingEngine
-    from ..analytics.time_series_analyzer import TimeSeriesAnalyzer
-    from ..analytics.predictive_engine import PredictiveEngine
+    from ...analytics.forecasting import ForecastingEngine
+    from ...analytics.time_series_analyzer import TimeSeriesAnalyzer
+    from ...analytics.predictive_engine import PredictiveEngine
     ANALYTICS_AVAILABLE = True
 except ImportError:
     ANALYTICS_AVAILABLE = False

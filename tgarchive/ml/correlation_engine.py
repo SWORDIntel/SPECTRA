@@ -6,6 +6,7 @@ Discover correlations between entities and patterns.
 """
 
 import logging
+from datetime import datetime
 from typing import List, Dict, Any, Optional
 import numpy as np
 

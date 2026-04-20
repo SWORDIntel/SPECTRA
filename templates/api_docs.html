@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPECTRA API Docs</title>
+    <style>
+        :root {
+            --bg: #081018;
+            --panel: #121b24;
+            --line: rgba(111, 138, 163, 0.22);
+            --ink: #edf4fb;
+            --muted: #95a8ba;
+            --accent: #4cd6c0;
+            --shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            color: var(--ink);
+            font-family: "Trebuchet MS", Verdana, sans-serif;
+            background:
+                radial-gradient(circle at top right, rgba(76, 214, 192, 0.1), transparent 22%),
+                linear-gradient(180deg, #091018 0%, #0c131b 100%);
+        }
+        .shell {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 28px 18px 40px;
+        }
+        .hero {
+            background: linear-gradient(135deg, rgba(10, 16, 24, 0.96), rgba(18, 28, 38, 0.96));
+            border: 1px solid var(--line);
+            border-radius: 28px;
+            box-shadow: var(--shadow);
+            padding: 28px;
+        }
+        .eyebrow {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.18em;
+            color: var(--accent);
+            margin-bottom: 8px;
+        }
+        h1 {
+            margin: 0 0 14px 0;
+            font-size: 42px;
+            line-height: 1;
+        }
+        p, li {
+            color: #c5d3df;
+            line-height: 1.7;
+        }
+        .panel {
+            margin-top: 18px;
+            background: rgba(18, 27, 36, 0.9);
+            border: 1px solid var(--line);
+            border-radius: 22px;
+            padding: 20px;
+        }
+        a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        a:hover { text-decoration: underline; }
+        code {
+            background: rgba(76, 214, 192, 0.08);
+            border: 1px solid rgba(76, 214, 192, 0.12);
+            border-radius: 6px;
+            padding: 0.1rem 0.35rem;
+        }
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 18px;
+        }
+        .btn {
+            display: inline-block;
+            padding: 10px 14px;
+            border-radius: 13px;
+            border: 1px solid var(--line);
+            background: #1d2934;
+            color: var(--ink);
+            font-weight: 700;
+        }
+        .btn-primary {
+            border: 0;
+            background: linear-gradient(135deg, var(--accent), #2bd0c7);
+            color: #061017;
+        }
+    </style>
+</head>
+<body>
+    <main class="shell">
+        <section class="hero">
+            <div class="eyebrow">SPECTRA API Documentation</div>
+            <h1>API Docs</h1>
+            <p>
+                This page is the lightweight landing surface for the web API.
+                It keeps the route alive in environments where the richer OpenAPI
+                or Swagger UI assets are not bundled.
+            </p>
+
+            <div class="panel">
+                <p><strong>Available entry points:</strong></p>
+                <ul>
+                    <li><a href="/">Dashboard</a></li>
+                    <li><a href="/dashboard">Unified dashboard</a></li>
+                    <li><a href="/login">Login</a></li>
+                </ul>
+                <p>
+                    If you are wiring a full API UI, mount it behind this route or
+                    replace this page with the generated spec viewer.
+                </p>
+            </div>
+
+            <div class="actions">
+                <a class="btn btn-primary" href="/">Back to dashboard</a>
+                <a class="btn" href="/login">Open login page</a>
+            </div>
+        </section>
+    </main>
+</body>
+</html>

@@ -36,13 +36,18 @@ def create_app(config=None):
     app = Flask(__name__, template_folder='../../templates', static_folder='../../static')
 
     # Configuration
-    if config:
+    config_obj = config
+    if isinstance(config, dict):
         app.config.from_mapping(config)
-    else:
-        # Load from environment
-        app.config['JWT_SECRET'] = app.config.get('SPECTRA_JWT_SECRET', 'dev-secret-key')
-        app.config['DEBUG'] = app.config.get('SPECTRA_DEBUG', False)
-        app.config['TESTING'] = app.config.get('SPECTRA_TESTING', False)
+        config_obj = Config(Path('spectra_config.json'))
+        config_obj.data.update(config)
+    elif config:
+        app.config.from_mapping(getattr(config, "data", config))
+
+    # Load defaults from environment or safe fallbacks.
+    app.config.setdefault('JWT_SECRET', app.config.get('SPECTRA_JWT_SECRET', 'dev-secret-key'))
+    app.config.setdefault('DEBUG', app.config.get('SPECTRA_DEBUG', False))
+    app.config.setdefault('TESTING', app.config.get('SPECTRA_TESTING', False))
 
     # Initialize security
     SecurityHeaders.init_app(app)
@@ -70,12 +75,12 @@ def create_app(config=None):
     task_manager = TaskManager()
     
     # Load config if not provided
-    if not config:
+    if config_obj is None:
         config_path = Path('spectra_config.json')
         if config_path.exists():
-            config = Config(config_path)
+            config_obj = Config(config_path)
         else:
-            config = Config(config_path)  # Will use defaults
+            config_obj = Config(config_path)  # Will use defaults
     
     # Register blueprints
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
@@ -83,20 +88,20 @@ def create_app(config=None):
     # Initialize and register route modules
     try:
         from .routes import core, accounts, forwarding, threat, analytics, ml, crypto, database, osint, services, channels, messages
-        
+
         # Initialize routes with dependencies
-        core.init_core_routes(app, config, task_manager)
-        accounts.init_accounts_routes(app, config)
-        forwarding.init_forwarding_routes(app, config, task_manager)
+        core.init_core_routes(app, config_obj, task_manager)
+        accounts.init_accounts_routes(app, config_obj)
+        forwarding.init_forwarding_routes(app, config_obj, task_manager)
         threat.init_threat_routes(app)
         analytics.init_analytics_routes(app)
         ml.init_ml_routes(app)
         crypto.init_crypto_routes(app)
-        database.init_database_routes(app, config)
-        osint.init_osint_routes(app, config)
-        services.init_services_routes(app, config)
-        channels.init_channels_routes(app, config)
-        messages.init_messages_routes(app, config)
+        database.init_database_routes(app, config_obj)
+        osint.init_osint_routes(app, config_obj)
+        services.init_services_routes(app, config_obj)
+        channels.init_channels_routes(app, config_obj)
+        messages.init_messages_routes(app, config_obj)
     except Exception as e:
         logger.warning(f"Some route modules failed to initialize: {e}")
     

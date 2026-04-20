@@ -8,12 +8,12 @@ Service layer for threat intelligence operations.
 import logging
 from typing import Dict, Any, Optional, List
 
-from ..threat.attribution import AttributionEngine
-from ..threat.temporal import TemporalAnalyzer
-from ..threat.network import ThreatNetworkAnalyzer
-from ..threat.scoring import ThreatScorer
-from ..threat.indicators import ThreatIndicatorExtractor
-from ..threat.visualization import ThreatVisualizer
+from ...threat.attribution import AttributionEngine
+from ...threat.temporal import TemporalAnalyzer
+from ...threat.network import ThreatNetworkTracker
+from ...threat.scoring import ThreatScorer
+from ...threat.indicators import ThreatIndicatorDetector, ThreatIndicator
+from ...threat.visualization import MermaidGenerator, ThreatReportGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +24,11 @@ class ThreatService:
     def __init__(self):
         self.attribution_engine = AttributionEngine()
         self.temporal_analyzer = TemporalAnalyzer()
-        self.network_analyzer = ThreatNetworkAnalyzer()
+        self.network_tracker = ThreatNetworkTracker()
         self.threat_scorer = ThreatScorer()
-        self.indicator_extractor = ThreatIndicatorExtractor()
-        self.visualizer = ThreatVisualizer()
+        self.indicator_detector = ThreatIndicatorDetector()
+        self.visualizer = MermaidGenerator()
+        self.report_generator = ThreatReportGenerator()
     
     async def analyze_attribution(
         self,
@@ -107,17 +108,19 @@ class ThreatService:
             Temporal analysis results
         """
         try:
-            analysis = self.temporal_analyzer.analyze_activity_patterns(
+            analysis = self.temporal_analyzer.analyze_activity_patterns(messages)
+            prediction = self.temporal_analyzer.predict_next_activity(
                 messages,
-                time_window_days=options.get("time_window_days", 30) if options else 30
+                forecast_hours=options.get("prediction_window_hours", 24) if options else 24,
             )
             
             return {
-                "timezone_inference": analysis.get("timezone_inference"),
+                "timezone_inference": analysis.get("inferred_timezone"),
                 "peak_hours": analysis.get("peak_hours"),
-                "activity_bursts": analysis.get("activity_bursts"),
+                "activity_bursts": analysis.get("burst_periods"),
                 "regularity_score": analysis.get("regularity_score"),
-                "entropy": analysis.get("entropy")
+                "entropy": analysis.get("hour_distribution"),
+                "prediction": prediction,
             }
         except Exception as e:
             logger.error(f"Temporal analysis failed: {e}", exc_info=True)
@@ -169,12 +172,32 @@ class ThreatService:
             Network analysis results
         """
         try:
-            # This would use ThreatNetworkAnalyzer
+            if not entities:
+                return {
+                    "nodes": [],
+                    "edges": [],
+                    "centrality_metrics": {},
+                    "communities": [],
+                }
+
+            for entity in entities:
+                source_id = int(entity.get("source_id", entity.get("user_id", 0)))
+                target_id = int(entity.get("target_id", entity.get("related_user_id", 0)))
+                if source_id and target_id and source_id != target_id:
+                    self.network_tracker.add_interaction(
+                        source_id=source_id,
+                        target_id=target_id,
+                        interaction_type=entity.get("interaction_type", "same_channel"),
+                        timestamp=entity.get("timestamp"),
+                        message_id=entity.get("message_id"),
+                        channel_id=entity.get("channel_id"),
+                    )
+
             return {
-                "nodes": [],
-                "edges": [],
+                "nodes": [i.to_dict() for i in self.network_tracker.interactions],
+                "edges": [r.to_dict() for r in self.network_tracker.relationships.values()],
                 "centrality_metrics": {},
-                "communities": []
+                "communities": self.network_tracker.detect_communities(),
             }
         except Exception as e:
             logger.error(f"Threat network analysis failed: {e}", exc_info=True)
@@ -196,15 +219,25 @@ class ThreatService:
             Threat score and details
         """
         try:
-            # This would use ThreatScorer
-            score = self.threat_scorer.calculate_score(entity_id, indicators or [])
+            total_severity = 0.0
+            normalized_indicators: List[ThreatIndicator] = []
+
+            for indicator in indicators or []:
+                if isinstance(indicator, ThreatIndicator):
+                    normalized_indicators.append(indicator)
+                    total_severity += float(indicator.severity)
+                elif isinstance(indicator, dict):
+                    severity = float(indicator.get("severity", 0.0))
+                    total_severity += severity
+
+            score = min(10.0, total_severity)
             
             return {
                 "entity_id": entity_id,
-                "score": score.get("score", 0.0),
-                "severity": score.get("severity", "low"),
-                "indicators": score.get("indicators", []),
-                "reasoning": score.get("reasoning", "")
+                "score": score,
+                "severity": "high" if score >= 7 else "medium" if score >= 4 else "low",
+                "indicators": [i.to_dict() for i in normalized_indicators] if normalized_indicators else indicators or [],
+                "reasoning": "Derived from indicator severities",
             }
         except Exception as e:
             logger.error(f"Threat scoring failed: {e}", exc_info=True)
@@ -224,9 +257,15 @@ class ThreatService:
             Threat indicators
         """
         try:
-            # This would use ThreatIndicatorExtractor
+            if entity_id is None:
+                return {
+                    "indicators": [],
+                    "entity_id": entity_id
+                }
+
+            indicators = self.indicator_detector.detect_indicators(entity_id)
             return {
-                "indicators": [],
+                "indicators": [indicator.to_dict() for indicator in indicators],
                 "entity_id": entity_id
             }
         except Exception as e:
@@ -249,10 +288,14 @@ class ThreatService:
             Visualization data
         """
         try:
-            # This would use ThreatVisualizer
+            if visualization_type == "report":
+                data = self.report_generator.generate_executive_report([], self.network_tracker)
+            else:
+                data = self.visualizer.generate_network_graph([], self.network_tracker)
+
             return {
                 "type": visualization_type,
-                "data": {},
+                "data": data,
                 "entity_id": entity_id
             }
         except Exception as e:

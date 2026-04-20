@@ -3,501 +3,305 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SPECTRA Web Console</title>
+    <title>SPECTRA - [NSO CIPHER COMMAND]</title>
     <style>
         :root {
-            --bg: #0a0e14;
-            --bg-2: #121922;
-            --panel: #151f2a;
-            --panel-2: #1b2633;
-            --line: rgba(111, 138, 163, 0.22);
-            --ink: #edf4fb;
-            --muted: #98aabf;
-            --accent: #4cd6c0;
-            --accent-strong: #2bd0c7;
-            --accent-dim: rgba(76, 214, 192, 0.12);
-            --warn: #f3b64b;
-            --shadow: 0 24px 60px rgba(0, 0, 0, 0.32);
+            --bg: #000000;
+            --panel: #0a0a0a;
+            --panel-2: #111111;
+            --line: #1a1a1a;
+            --accent: #00ffcc;
+            --accent-dim: rgba(0, 255, 204, 0.08);
+            --danger: #ff0055;
+            --danger-dim: rgba(255, 0, 85, 0.12);
+            --ink: #e0e0e0;
+            --muted: #666666;
+            --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
         }
         * { box-sizing: border-box; }
-        html { background: var(--bg); }
         body {
-            margin: 0;
-            color: var(--ink);
-            font-family: "Trebuchet MS", Verdana, sans-serif;
-            background:
-                radial-gradient(circle at top right, rgba(76, 214, 192, 0.11), transparent 22%),
-                radial-gradient(circle at top left, rgba(17, 116, 129, 0.26), transparent 20%),
-                linear-gradient(180deg, #091018 0%, #0c131b 100%);
+            margin: 0; background: var(--bg); color: var(--ink);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            overflow-x: hidden;
         }
-        a { color: inherit; }
-        .shell {
-            max-width: 1320px;
-            margin: 0 auto;
-            padding: 22px 18px 40px;
+        .shell { padding: 30px; max-width: 1400px; margin: 0 auto; }
+        .top-bar {
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 2px solid var(--line); padding-bottom: 15px; margin-bottom: 30px;
         }
-        .layout {
-            display: grid;
-            grid-template-columns: 260px minmax(0, 1fr);
-            gap: 18px;
-            align-items: start;
-        }
-        .sidebar {
-            position: sticky;
-            top: 18px;
-            background: linear-gradient(180deg, rgba(17, 25, 34, 0.98), rgba(12, 18, 25, 0.96));
-            border: 1px solid var(--line);
-            border-radius: 24px;
-            padding: 22px 18px;
-            box-shadow: var(--shadow);
-            backdrop-filter: blur(16px);
-        }
-        .brand-kicker {
-            font-size: 11px;
-            letter-spacing: 0.18em;
+        .logo { font-family: var(--font-mono); font-weight: 900; font-size: 24px; color: var(--accent); letter-spacing: 0.2em; }
+        .status-pill {
+            background: var(--accent-dim); border: 1px solid var(--accent); color: var(--accent);
+            padding: 4px 12px; border-radius: 4px; font-family: var(--font-mono); font-size: 11px;
             text-transform: uppercase;
-            color: var(--accent);
-            margin-bottom: 10px;
         }
-        .brand-mark {
-            font-size: 28px;
-            font-weight: 700;
-            letter-spacing: 0.04em;
-            margin-bottom: 6px;
-        }
-        .brand-copy {
-            color: var(--muted);
-            font-size: 13px;
-            line-height: 1.55;
-            margin: 0 0 18px 0;
-        }
-        .nav-group {
-            margin-top: 18px;
-        }
-        .nav-title {
-            margin: 0 0 8px 0;
-            color: #b5c8dc;
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.12em;
-        }
+        
+        .layout { display: grid; grid-template-columns: 280px 1fr; gap: 30px; }
+        .sidebar { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 20px; }
+        .nav-title { font-family: var(--font-mono); font-size: 10px; color: var(--muted); text-transform: uppercase; margin-bottom: 12px; letter-spacing: 0.1em; }
         .nav-link {
-            display: block;
-            text-decoration: none;
-            padding: 12px 14px;
-            border-radius: 14px;
-            background: transparent;
-            color: var(--ink);
-            border: 1px solid transparent;
-            margin-bottom: 8px;
-            transition: 160ms ease;
+            display: block; color: var(--ink); text-decoration: none; padding: 10px; border-radius: 4px;
+            margin-bottom: 6px; font-size: 13px; border: 1px solid transparent; transition: 0.2s;
         }
-        .nav-link:hover {
-            background: var(--accent-dim);
-            border-color: rgba(76, 214, 192, 0.2);
-            transform: translateX(3px);
-        }
-        .nav-link small {
-            display: block;
-            color: var(--muted);
-            margin-top: 3px;
-            font-size: 12px;
-        }
-        .rail-meta {
-            margin-top: 20px;
-            padding: 14px;
-            border-radius: 16px;
-            background: rgba(76, 214, 192, 0.07);
-            border: 1px solid rgba(76, 214, 192, 0.12);
-            color: #d9fbf7;
-            font-size: 13px;
-            line-height: 1.6;
-        }
-        .content {
-            display: grid;
-            gap: 18px;
-        }
-        .hero {
-            background:
-                linear-gradient(135deg, rgba(9, 14, 20, 0.98), rgba(18, 30, 41, 0.96)),
-                linear-gradient(135deg, #121a22, #101820);
-            border: 1px solid var(--line);
-            border-radius: 28px;
-            padding: 28px;
-            box-shadow: var(--shadow);
-            position: relative;
-            overflow: hidden;
-        }
-        .hero::after {
-            content: "";
-            position: absolute;
-            inset: 0;
-            background:
-                linear-gradient(120deg, transparent 0 58%, rgba(76, 214, 192, 0.08) 58% 70%, transparent 70%),
-                radial-gradient(circle at top right, rgba(76, 214, 192, 0.15), transparent 26%);
-            pointer-events: none;
-        }
-        .hero-grid {
-            position: relative;
-            z-index: 1;
-            display: grid;
-            grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.8fr);
-            gap: 18px;
-        }
-        .hero-kicker {
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 0.18em;
-            color: var(--accent);
-            margin-bottom: 10px;
-        }
-        .hero h1 {
-            margin: 0;
-            font-size: 46px;
-            line-height: 0.98;
-            letter-spacing: -0.03em;
-        }
-        .hero p {
-            max-width: 760px;
-            color: #c6d4e1;
-            font-size: 16px;
-            line-height: 1.7;
-            margin-top: 16px;
-            margin-bottom: 0;
-        }
-        .hero-panel {
-            background: rgba(76, 214, 192, 0.06);
-            border: 1px solid rgba(76, 214, 192, 0.12);
-            border-radius: 20px;
-            padding: 18px;
-            backdrop-filter: blur(10px);
-        }
-        .hero-panel h2 {
-            margin: 0 0 12px 0;
-            font-size: 16px;
-            color: var(--accent);
-            text-transform: uppercase;
-            letter-spacing: 0.09em;
-        }
-        .hero-panel div {
-            margin-bottom: 7px;
-            color: #d8e7f2;
-        }
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-            gap: 12px;
-            margin-top: 20px;
-            position: relative;
-            z-index: 1;
-        }
-        .stat {
-            background: linear-gradient(180deg, rgba(22, 31, 42, 0.92), rgba(15, 23, 31, 0.88));
-            border: 1px solid var(--line);
-            border-radius: 18px;
-            padding: 16px;
-        }
-        .stat-value {
-            font-size: 30px;
-            font-weight: 700;
-            color: var(--accent);
-            margin-bottom: 3px;
-        }
-        .section {
-            background: rgba(12, 18, 25, 0.55);
-            border: 1px solid var(--line);
-            border-radius: 24px;
-            padding: 22px;
-            box-shadow: 0 18px 34px rgba(0, 0, 0, 0.16);
-        }
-        .section-head {
-            display: flex;
-            justify-content: space-between;
-            align-items: baseline;
-            gap: 14px;
-            margin-bottom: 14px;
-        }
-        .section-head h2 {
-            margin: 0;
-            font-size: 24px;
-        }
-        .section-head p {
-            margin: 0;
-            color: var(--muted);
-        }
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 14px;
-        }
-        .card {
-            background: linear-gradient(180deg, rgba(23, 33, 44, 0.95), rgba(18, 27, 36, 0.92));
-            border: 1px solid var(--line);
-            border-radius: 20px;
-            padding: 18px;
-        }
-        .card h3 {
-            margin: 0 0 8px 0;
-            font-size: 20px;
-        }
-        .card p {
-            margin: 0 0 14px 0;
-            color: var(--muted);
-            line-height: 1.6;
-        }
-        .badge {
-            display: inline-block;
-            padding: 6px 10px;
-            border-radius: 999px;
-            font-size: 11px;
-            letter-spacing: 0.1em;
-            text-transform: uppercase;
-            font-weight: 700;
-            margin-bottom: 12px;
-            border: 1px solid transparent;
-        }
-        .badge.accent {
-            color: var(--accent);
-            background: rgba(76, 214, 192, 0.1);
-            border-color: rgba(76, 214, 192, 0.18);
-        }
-        .badge.warn {
-            color: var(--warn);
-            background: rgba(243, 182, 75, 0.08);
-            border-color: rgba(243, 182, 75, 0.16);
-        }
-        .actions {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin-top: 10px;
-        }
+        .nav-link:hover { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+        .nav-link.active { background: var(--accent); color: #000; font-weight: bold; }
+
+        .hero { background: var(--panel); border: 1px solid var(--line); padding: 40px; border-radius: 8px; margin-bottom: 30px; position: relative; overflow: hidden; }
+        .hero::before { content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 2px; background: linear-gradient(90deg, var(--accent), transparent); }
+        .hero h1 { font-family: var(--font-mono); font-size: 40px; margin: 0; letter-spacing: -0.02em; }
+        .hero p { color: var(--muted); max-width: 600px; margin-top: 15px; font-size: 15px; line-height: 1.6; }
+
+        .control-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        .control-card { background: var(--panel); border: 1px solid var(--line); padding: 25px; border-radius: 8px; }
+        .control-card h3 { font-family: var(--font-mono); font-size: 16px; margin-top: 0; color: var(--accent); text-transform: uppercase; margin-bottom: 15px; }
         .btn {
-            appearance: none;
-            border: 0;
-            border-radius: 13px;
-            padding: 11px 14px;
-            text-decoration: none;
-            font-weight: 700;
-            font-size: 14px;
-            cursor: pointer;
-            transition: 140ms ease;
+            background: #000; border: 1px solid var(--accent); color: var(--accent);
+            padding: 10px 20px; border-radius: 4px; font-family: var(--font-mono); font-size: 12px;
+            cursor: pointer; text-transform: uppercase; transition: 0.3s; width: 100%; text-align: center; text-decoration: none; display: inline-block;
         }
-        .btn-primary {
-            background: linear-gradient(135deg, var(--accent), var(--accent-strong));
-            color: #071117;
+        .btn:hover { background: var(--accent); color: #000; box-shadow: 0 0 15px var(--accent); }
+        .btn-danger { border-color: var(--danger); color: var(--danger); }
+        .btn-danger:hover { background: var(--danger); color: #000; box-shadow: 0 0 15px var(--danger); }
+
+        .input-group { margin-bottom: 15px; }
+        input {
+            width: 100%; background: #000; border: 1px solid var(--line); color: var(--accent);
+            padding: 12px; border-radius: 4px; font-family: var(--font-mono); outline: none;
         }
-        .btn-primary:hover { filter: brightness(1.06); }
-        .btn-secondary {
-            background: #202d3b;
-            color: #dbe6f1;
-            border: 1px solid var(--line);
-        }
-        .btn-secondary:hover { background: #263545; }
-        .meta {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 14px;
-        }
-        .meta .card p:last-child {
-            margin-bottom: 0;
-            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-            color: #dff8f4;
-        }
-        @media (max-width: 980px) {
-            .layout { grid-template-columns: 1fr; }
-            .sidebar { position: static; }
-            .hero-grid { grid-template-columns: 1fr; }
-        }
-        @media (max-width: 720px) {
-            .hero h1 { font-size: 34px; }
-            .shell { padding: 14px 12px 26px; }
+        input:focus { border-color: var(--accent); }
+
+        .feed-container { margin-top: 30px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+        .feed-header { padding: 15px 20px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; }
+        .feed-item { padding: 12px 20px; border-bottom: 1px solid var(--line); font-family: var(--font-mono); font-size: 11px; color: #888; display: flex; gap: 15px; }
+        .feed-item:hover { background: #0c0c0c; }
+        .feed-item .ts { color: var(--muted); min-width: 70px; }
+        .feed-item .tag { color: var(--accent); min-width: 120px; }
+        .feed-item .msg { color: #ccc; }
+
+        #toast {
+            position: fixed; bottom: 20px; right: 20px; background: var(--accent); color: #000;
+            padding: 15px 25px; border-radius: 4px; font-family: var(--font-mono); font-weight: bold;
+            display: none; z-index: 1000;
         }
     </style>
 </head>
 <body>
-    <main class="shell">
+    <div id="toast">ACTION INITIATED</div>
+    <div class="shell">
+        <div class="top-bar">
+            <div class="logo">SPECTRA // CIPHER-OPS</div>
+            <div style="display: flex; gap: 15px;">
+                <div class="status-pill">MODE: {{ system_status.mode }}</div>
+                <div class="status-pill" id="uptime">UPTIME: 00:00:00</div>
+            </div>
+        </div>
+
         <div class="layout">
             <aside class="sidebar">
-                <div class="brand-kicker">Operator Console</div>
-                <div class="brand-mark">SPECTRA</div>
-                <p class="brand-copy">Single-entry web control surface for orchestration, coordination, implementation, docs, and the local control API.</p>
-
-                <div class="nav-group">
-                    <div class="nav-title">Interface</div>
-                    <a class="nav-link" href="/">
-                        Console Home
-                        <small>Root launch surface</small>
-                    </a>
-                    <a class="nav-link" href="/coordination">
-                        Coordination Hub
-                        <small>Primary live workspace</small>
-                    </a>
-                    <a class="nav-link" href="/phase-management">
-                        Phase Dashboard
-                        <small>Planning and timeline</small>
-                    </a>
-                    <a class="nav-link" href="/implementation">
-                        Implementation Tools
-                        <small>Operational controls</small>
-                    </a>
-                    <a class="nav-link" href="/agent-selection">
-                        Agent Selection
-                        <small>Team composition UI</small>
-                    </a>
-                </div>
-
-                <div class="nav-group">
-                    <div class="nav-title">Reference</div>
-                    <a class="nav-link" href="/readme">
-                        Project Docs
-                        <small>Human-readable documentation</small>
-                    </a>
-                    <a class="nav-link" href="/docs">
-                        API Docs
-                        <small>Swagger UI and OpenAPI</small>
-                    </a>
-                </div>
-
-                <div class="rail-meta">
-                    <div><strong>{% if local_only %}Local Only{% else %}Network Accessible{% endif %}</strong></div>
-                    <div>Host: {{ access_host }}</div>
-                    <div>Port: {{ access_port }}</div>
-                    <div>Mode: {{ system_status.mode }}</div>
-                    {% if system_status.auth.api_key_required %}
-                    <div>Access: API key required</div>
-                    {% endif %}
-                </div>
+                <div class="nav-title">Intelligence Control</div>
+                <a href="/" class="nav-link active">Operational Deck</a>
+                <a href="/caas-intelligence" class="nav-link">Market Economics</a>
+                <a href="/coordination" class="nav-link">Signal Hub</a>
+                
+                <div class="nav-title" style="margin-top: 20px;">System Reference</div>
+                <a href="/readme" class="nav-link">Operations Manual</a>
+                <a href="/docs" class="nav-link">Control Plane API</a>
             </aside>
 
-            <section class="content">
+            <main class="content">
                 <section class="hero">
-                    <div class="hero-grid">
-                        <div>
-                            <div class="hero-kicker">Root Web Entry Point</div>
-                            <h1>Web-First Control Surface</h1>
-                            <p>The root console now acts as the primary entry into every GUI surface. Coordination is separated into its own workspace, while docs and the OpenAPI control plane stay reachable from the same root shell.</p>
-                        </div>
-                        <aside class="hero-panel">
-                            <h2>Access Posture</h2>
-                            <div>Runtime: {{ 'Live' if system_status.system_running else 'Idle' }}</div>
-                            <div>Agents: {{ system_status.total_agents }}</div>
-                            <div>Components: {{ components|length }}</div>
-                            <div>Auth: {{ 'Keyed' if system_status.auth.api_key_required else 'Open' }}</div>
-                        </aside>
-                    </div>
-
-                    <div class="stats">
-                        <div class="stat">
-                            <div class="stat-value">{{ system_status.total_agents }}</div>
-                            <div>Available Agents</div>
-                        </div>
-                        <div class="stat">
-                            <div class="stat-value">{{ components|length }}</div>
-                            <div>Tracked Components</div>
-                        </div>
-                        <div class="stat">
-                            <div class="stat-value">{{ 'Live' if system_status.system_running else 'Idle' }}</div>
-                            <div>Runtime State</div>
-                        </div>
-                        <div class="stat">
-                            <div class="stat-value">{{ 'Keyed' if system_status.auth.api_key_required else 'Open' }}</div>
-                            <div>Access Mode</div>
-                        </div>
+                    <h1>CIPHER COMMAND OVERVIEW</h1>
+                    <p>Total system control over the CaaS indexing pipeline. Initiate discovery, process semantic queues, and extract target intelligence from the SPECTRA repository.</p>
+                    <div style="margin-top: 20px; display: flex; gap: 10px;">
+                        <div class="status-pill">AGENTS: {{ system_status.total_agents }}</div>
+                        <div class="status-pill">HOST: {{ access_host }}</div>
+                        <div class="status-pill" id="memshadow-pill" style="display:none; border-color: var(--accent); color: var(--accent);">MEMSHADOW: ACTIVE</div>
                     </div>
                 </section>
 
-                <section class="section">
-                    <div class="section-head">
-                        <h2>Primary Workspaces</h2>
-                        <p>Every GUI surface is reachable from the root console.</p>
+                <div class="control-grid">
+                    <div class="control-card">
+                        <h3>Autonomous Intelligence Fleet</h3>
+                        <p style="font-size: 12px; color: var(--muted); margin-bottom: 20px;">Orchestrate the self-bot crawl lifecycle (Discovery -> Archive -> Profile -> Analyze).</p>
+                        <div id="fleet-status" style="margin-bottom: 15px; font-family: var(--font-mono); font-size: 11px;">
+                            STATUS: <span id="fleet-active-state">INACTIVE</span><br>
+                            CYCLES: <span id="fleet-cycles">0</span><br>
+                            LAST_CRAWL: <span id="fleet-last-crawl">NEVER</span>
+                        </div>
+                        <button class="btn" id="fleet-toggle" onclick="toggleFleet()">Initialize Fleet</button>
                     </div>
-                    <div class="grid">
-                        <article class="card">
-                            <span class="badge accent">Primary</span>
-                            <h3>Coordination Hub</h3>
-                            <p>Dedicated coordination page with the live monitor embedded into a real workspace shell.</p>
-                            <div class="actions">
-                                <a class="btn btn-primary" href="/coordination">Open Coordination</a>
-                            </div>
-                        </article>
-                        <article class="card">
-                            <span class="badge accent">Planning</span>
-                            <h3>Phase Dashboard</h3>
-                            <p>Timeline, milestones, and project-phase visibility with web-first access from the same console.</p>
-                            <div class="actions">
-                                <a class="btn btn-primary" href="/phase-management">Open Phase View</a>
-                            </div>
-                        </article>
-                        <article class="card">
-                            <span class="badge warn">Operations</span>
-                            <h3>Implementation Tools</h3>
-                            <p>Project-control and implementation-facing views for planning and operational management.</p>
-                            <div class="actions">
-                                <a class="btn btn-primary" href="/implementation">Open Tools</a>
-                            </div>
-                        </article>
-                        <article class="card">
-                            <span class="badge accent">Selection</span>
-                            <h3>Agent Selection</h3>
-                            <p>Agent/team selection UI for orchestration and composition work.</p>
-                            <div class="actions">
-                                <a class="btn btn-primary" href="/agent-selection">Open Agent UI</a>
-                            </div>
-                        </article>
-                    </div>
-                </section>
 
-                <section class="section">
-                    <div class="section-head">
-                        <h2>Documentation And Control Plane</h2>
-                        <p>Human docs and machine docs from the same shell.</p>
+                    <div class="control-card">
+                        <h3>Semantic Discovery</h3>
+                        <p style="font-size: 12px; color: var(--muted); margin-bottom: 20px;">Pivot from a known seed channel to discover the surrounding criminal network.</p>
+                        <div class="input-group">
+                            <input type="text" id="discover-seed" placeholder="t.me/seed_channel">
+                        </div>
+                        <button class="btn" onclick="runDiscover()">Initiate Scan</button>
                     </div>
-                    <div class="grid">
-                        <article class="card">
-                            <h3>Project Documentation</h3>
-                            <p>README, help, and operational reference material for the local system.</p>
-                            <div class="actions">
-                                <a class="btn btn-primary" href="/readme">Open Docs</a>
-                                <a class="btn btn-secondary" href="/documentation">Alias</a>
-                            </div>
-                        </article>
-                        <article class="card">
-                            <h3>API Reference</h3>
-                            <p>Interactive Swagger UI for the local OpenAPI control surface.</p>
-                            <div class="actions">
-                                <a class="btn btn-primary" href="/docs">Open API Docs</a>
-                                <a class="btn btn-secondary" href="/openapi.json">OpenAPI JSON</a>
-                            </div>
-                        </article>
-                    </div>
-                </section>
 
-                <section class="section">
-                    <div class="section-head">
-                        <h2>Runtime Endpoints</h2>
-                        <p>Key machine-readable surfaces exposed by the launcher.</p>
+                    <div class="control-card">
+                        <h3>Intelligence Processing</h3>
+                        <p style="font-size: 12px; color: var(--muted); margin-bottom: 20px;">Process the pending semantic queue to extract pricing and services from canonical archives.</p>
+                        <button class="btn" onclick="runProcessQueue()">Drain Intelligence Queue</button>
                     </div>
-                    <div class="meta">
-                        <article class="card">
-                            <h3>Status</h3>
-                            <p>Runtime status and top-level health.</p>
-                            <p>/api/system/status</p>
-                        </article>
-                        <article class="card">
-                            <h3>Context</h3>
-                            <p>Structured snapshot for clients and operators.</p>
-                            <p>/api/v1/context</p>
-                        </article>
-                        <article class="card">
-                            <h3>Security</h3>
-                            <p>Access posture, warnings, and local-access details.</p>
-                            <p>/api/security/warnings</p>
-                        </article>
+
+                    <div class="control-card">
+                        <h3>Dossier Search</h3>
+                        <p style="font-size: 12px; color: var(--muted); margin-bottom: 20px;">Extract full forensic intelligence for a specific threat actor alias.</p>
+                        <div class="input-group">
+                            <input type="text" id="actor-search" placeholder="@username">
+                        </div>
+                        <button class="btn" onclick="searchActor()">Extract Dossier</button>
                     </div>
-                </section>
-            </section>
+                </div>
+
+                <div class="feed-container">
+                    <div class="feed-header">
+                        <div style="font-family: var(--font-mono); font-size: 12px; color: var(--accent);">LIVE SIGNAL STREAM</div>
+                        <div style="font-size: 11px; color: var(--muted);">REAL-TIME ARCHIVE MONITORING</div>
+                    </div>
+                    <div id="signal-feed">
+                        <div class="feed-item">
+                            <div class="ts">14:02:11</div>
+                            <div class="tag">SYSTEM.INIT</div>
+                            <div class="msg">Awaiting operational directives...</div>
+                        </div>
+                        <div class="feed-item">
+                            <div class="ts">14:02:15</div>
+                            <div class="tag">DB.INTEGRITY</div>
+                            <div class="msg">Connected to spectra.db // All tables active.</div>
+                        </div>
+                    </div>
+                </div>
+            </main>
         </div>
-    </main>
+    </div>
+
+    <script>
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.style.display = 'block';
+            setTimeout(() => t.style.display = 'none', 3000);
+        }
+
+        async function toggleFleet() {
+            const btn = document.getElementById('fleet-toggle');
+            const res = await fetch('/api/caas/autonomous/toggle', { method: 'POST' });
+            const data = await res.json();
+            showToast(data.message);
+            updateFleetStatus();
+        }
+
+        async function updateFleetStatus() {
+            const res = await fetch('/api/caas/autonomous/status');
+            const data = await res.json();
+            const state = document.getElementById('fleet-active-state');
+            const cycles = document.getElementById('fleet-cycles');
+            const last = document.getElementById('fleet-last-crawl');
+            const btn = document.getElementById('fleet-toggle');
+
+            if (data.is_running) {
+                state.textContent = "ACTIVE";
+                state.style.color = "var(--accent)";
+                btn.textContent = "Deactivate Fleet";
+                btn.classList.add('btn-danger');
+            } else {
+                state.textContent = "INACTIVE";
+                state.style.color = "var(--muted)";
+                btn.textContent = "Initialize Fleet";
+                btn.classList.remove('btn-danger');
+            }
+            cycles.textContent = data.stats.total_cycles;
+            last.textContent = data.stats.last_discovery || "NEVER";
+            
+            // Add live signals to feed if any active tasks
+            const feed = document.getElementById('signal-feed');
+            if (data.stats.active_tasks.length > 0) {
+                data.stats.active_tasks.forEach(task => {
+                    if (!document.getElementById(`task-${task}`)) {
+                        const item = document.createElement('div');
+                        item.className = 'feed-item';
+                        item.id = `task-${task}`;
+                        item.innerHTML = `
+                            <div class="ts">${new Date().toLocaleTimeString()}</div>
+                            <div class="tag">FLEET.OPS</div>
+                            <div class="msg">Executing: ${task}</div>
+                        `;
+                        feed.insertBefore(item, feed.firstChild);
+                        if (feed.children.length > 10) feed.removeChild(feed.lastChild);
+                    }
+                });
+            }
+        }
+
+        async function checkMemshadow() {
+            try {
+                const res = await fetch('/api/sidecar/memshadow/status');
+                const data = await res.json();
+                const pill = document.getElementById('memshadow-pill');
+                if (data.active) {
+                    pill.style.display = 'block';
+                    pill.onclick = () => window.location.href = data.url;
+                    pill.style.cursor = 'pointer';
+                } else {
+                    pill.style.display = 'none';
+                }
+            } catch (e) {
+                console.error("Memshadow check failed:", e);
+            }
+        }
+
+        setInterval(updateFleetStatus, 5000);
+        setInterval(checkMemshadow, 10000);
+        updateFleetStatus();
+        checkMemshadow();
+
+        async function runProcessQueue() {
+            showToast("PROCESSING QUEUE...");
+            try {
+                const res = await fetch('/api/caas/process-queue', { method: 'POST' });
+                const data = await res.json();
+                showToast(data.message || "QUEUE COMPLETED");
+            } catch (e) {
+                showToast("ERROR: " + e);
+            }
+        }
+
+        async function runDiscover() {
+            const seed = document.getElementById('discover-seed').value;
+            if (!seed) return showToast("SEED REQUIRED");
+            showToast("INITIATING DISCOVERY...");
+            try {
+                const res = await fetch('/api/caas/discover', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ seed: seed })
+                });
+                const data = await res.json();
+                showToast(data.message || "DISCOVERY STARTED");
+            } catch (e) {
+                showToast("ERROR: " + e);
+            }
+        }
+
+        function searchActor() {
+            const actor = document.getElementById('actor-search').value;
+            if (!actor) return;
+            window.location.href = '/caas-intelligence?search=' + actor;
+        }
+
+        // Fake uptime
+        let startTime = Date.now();
+        setInterval(() => {
+            let diff = Date.now() - startTime;
+            let h = Math.floor(diff / 3600000);
+            let m = Math.floor((diff % 3600000) / 60000);
+            let s = Math.floor((diff % 60000) / 1000);
+            document.getElementById('uptime').textContent = 
+                `UPTIME: ${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+        }, 1000);
+    </script>
 </body>
 </html>

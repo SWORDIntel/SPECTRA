@@ -28,10 +28,8 @@ COPY requirements.txt /app/
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY tgarchive/ /app/tgarchive/
-COPY setup.py /app/
-COPY README.md /app/
+# Copy application code needed by the unified web UI
+COPY . /app/
 
 # Install SPECTRA
 RUN pip install --no-cache-dir -e .
@@ -45,22 +43,28 @@ USER spectra
 
 # Environment variables (override at runtime)
 ENV PYTHONUNBUFFERED=1 \
+    SPECTRA_HOST=0.0.0.0 \
+    SPECTRA_PORT=5000 \
     SPECTRA_DB_PATH=/app/data/spectra.db \
     SPECTRA_MEDIA_DIR=/app/media \
     SPECTRA_LOG_DIR=/app/logs \
-    SPECTRA_CHECKPOINT_DIR=/app/checkpoints
+    SPECTRA_CHECKPOINT_DIR=/app/checkpoints \
+    SPECTRA_BOOTSTRAP_SECRET= \
+    SPECTRA_SESSION_SECRET=change-me-in-production \
+    SPECTRA_WEBAUTHN_ORIGIN= \
+    SPECTRA_WEBAUTHN_RP_ID=
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "from tgarchive.db.integrity_checker import quick_integrity_check; \
-                   import sys; \
-                   sys.exit(0 if quick_integrity_check('${SPECTRA_DB_PATH}') else 1)"
+    CMD python -c "import urllib.request, sys; \
+url = 'http://127.0.0.1:5000/login'; \
+sys.exit(0 if urllib.request.urlopen(url, timeout=5).getcode() < 400 else 1)"
 
 # Volumes for persistent data
 VOLUME ["/app/data", "/app/logs", "/app/media", "/app/checkpoints"]
 
-# Expose health check port
-EXPOSE 8080
+# Expose unified web UI port
+EXPOSE 5000
 
 # Default command
-CMD ["python", "-m", "tgarchive"]
+CMD ["sh", "-c", "python -m spectra_app.spectra_gui_launcher --host ${SPECTRA_HOST:-0.0.0.0} --port ${SPECTRA_PORT:-5000} --log-level ${LOG_LEVEL:-INFO}"]

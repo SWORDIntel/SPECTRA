@@ -15,7 +15,7 @@ from telethon.tl.functions.channels import JoinChannelRequest # Added for joinin
 from telethon.sessions import StringSession
 
 
-from ..core.sync import Config # Assuming Config is in .sync, adjust if necessary
+from tgarchive.core.sync import Config
 
 logger = logging.getLogger(__name__)
 

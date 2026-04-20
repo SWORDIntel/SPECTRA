@@ -6,6 +6,8 @@ This module contains functions for file deduplication.
 """
 
 import hashlib
+import re
+from difflib import SequenceMatcher
 import imagehash
 try:
     import ssdeep
@@ -47,7 +49,18 @@ def get_fuzzy_hash(file_path):
     Generates a fuzzy hash for a file.
     """
     if not HAS_SSDEEP:
-        return None
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                text = f.read().lower()
+        except Exception:
+            return None
+
+        normalized = re.sub(r"\s+", " ", text).strip()
+        if not normalized:
+            return None
+
+        # Deterministic fallback signature for environments without ssdeep.
+        return "fallback:" + normalized
     try:
         return ssdeep.hash_from_file(file_path)
     except Exception:
@@ -57,6 +70,19 @@ def compare_fuzzy_hashes(hash1, hash2):
     """
     Compares two fuzzy hashes and returns a similarity percentage.
     """
+    if not hash1 or not hash2:
+        return 0
+
+    if hash1 == hash2:
+        return 100
+
+    if hash1.startswith("fallback:") and hash2.startswith("fallback:"):
+        text1 = hash1.removeprefix("fallback:")
+        text2 = hash2.removeprefix("fallback:")
+        if not text1 or not text2:
+            return 0
+        return int(round(SequenceMatcher(None, text1, text2).ratio() * 100))
+
     if not HAS_SSDEEP:
         return 0
     try:

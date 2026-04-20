@@ -44,7 +44,18 @@ fi
 
 case "$COMMAND" in
     "web"|"gui"|"ui"|"")
-        exec python3 -m spectra_app.spectra_gui_launcher --host 127.0.0.1 --port 5000 "$@"
+        HOST="${SPECTRA_HOST:-127.0.0.1}"
+        PORT="${SPECTRA_PORT:-5000}"
+        exec python3 -m spectra_app.spectra_gui_launcher --host "$HOST" --port "$PORT" "$@"
+        ;;
+    "semantic-tui")
+        exec python3 -m tgarchive.ui.tui_caas "$@"
+        ;;
+    "semantic-discovery")
+        exec python3 -m tgarchive.osint.caas.discovery_ops "$@"
+        ;;
+    "process-queue")
+        exec python3 -m tgarchive.osint.caas.cli process-queue "$@"
         ;;
     "docs"|"documentation")
         exec python3 "$SCRIPT_DIR/webapp.py" "$@"
@@ -68,17 +79,22 @@ SPECTRA - Telegram Network Discovery & Archiving System
 Usage: ./spectra [COMMAND]
 
 Commands:
-  web          Launch the main web console (default)
-  docs         Launch the documentation console
-  tui          Launch the legacy TUI
-  bootstrap    Auto-setup and launch SPECTRA
-  install      Install/update SPECTRA
-  repair       Repair broken SPECTRA installation
-  help         Show this help message
+  web                 Launch the main web console (default)
+  semantic-tui        Launch the semantic-intelligence TUI
+  semantic-discovery  Run CAAS-aware semantic discovery
+  process-queue       Process the semantic intelligence queue
+  docs                Launch the documentation console
+  tui                 Launch the legacy TUI
+  bootstrap           Auto-setup and launch SPECTRA
+  install             Install/update SPECTRA
+  repair              Repair broken SPECTRA installation
+  help                Show this help message
 
 Examples:
-  ./spectra              # Launch the main web console
-  ./spectra docs         # Open the documentation launcher
+  ./spectra                    # Launch the main web console
+  ./spectra semantic-tui       # Launch semantic TUI
+  ./spectra process-queue --loop # Keep processing queue
+  ./spectra docs               # Open the documentation launcher
   ./spectra install      # Install or update
   ./spectra repair       # Repair a broken installation
 

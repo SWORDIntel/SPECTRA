@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPECTRA - [MARKET INTELLIGENCE]</title>
+    <style>
+        :root {
+            --bg: #000; --panel: #0a0a0a; --line: #1a1a1a;
+            --accent: #00ffcc; --accent-dim: rgba(0, 255, 204, 0.08);
+            --danger: #ff0055; --warn: #f3b64b; --ink: #e0e0e0; --muted: #666;
+            --font-mono: "SFMono-Regular", Consolas, monospace;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--bg); color: var(--ink); font-family: sans-serif; }
+        .shell { padding: 30px; max-width: 1400px; margin: 0 auto; }
+        .header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 30px; border-bottom: 2px solid var(--line); padding-bottom: 15px; }
+        h1 { margin: 0; font-family: var(--font-mono); font-size: 28px; color: var(--accent); letter-spacing: 0.1em; }
+        .back-link { color: var(--muted); text-decoration: none; font-family: var(--font-mono); font-size: 12px; }
+        .back-link:hover { color: var(--accent); }
+
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; }
+        .card { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 25px; position: relative; }
+        .card::before { content: ""; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: var(--accent); }
+        .card h2 { font-family: var(--font-mono); font-size: 14px; text-transform: uppercase; color: var(--accent); margin-top: 0; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 20px; }
+
+        .market-list { list-style: none; padding: 0; margin: 0; }
+        .market-item { padding: 15px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; transition: 0.2s; }
+        .market-item:hover { background: var(--accent-dim); }
+        .market-name { font-family: var(--font-mono); font-weight: bold; color: #fff; }
+        .market-meta { font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
+        .gmv { font-family: var(--font-mono); color: var(--accent); font-weight: bold; font-size: 18px; }
+
+        .actor-card { margin-bottom: 15px; padding: 15px; background: #080808; border: 1px solid #111; }
+        .actor-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .actor-name { font-family: var(--font-mono); font-size: 16px; font-weight: bold; color: var(--accent); }
+        
+        .severity-bar { height: 4px; background: #111; width: 80px; display: inline-block; margin-right: 10px; vertical-align: middle; }
+        .severity-fill { height: 100%; box-shadow: 0 0 10px currentColor; }
+        
+        .badge { display: inline-block; padding: 2px 6px; border: 1px solid var(--accent); color: var(--accent); font-family: var(--font-mono); font-size: 9px; text-transform: uppercase; margin-right: 5px; background: var(--accent-dim); }
+
+        table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 12px; }
+        th { text-align: left; color: var(--muted); padding: 10px; border-bottom: 1px solid var(--line); }
+        td { padding: 12px 10px; border-bottom: 1px solid #0f0f0f; }
+
+        .summary-box { background: var(--accent-dim); border: 1px solid var(--accent); padding: 20px; font-family: var(--font-mono); line-height: 1.6; }
+        .briefing-card { grid-column: span 2; background: var(--accent-dim); border: 2px solid var(--accent); padding: 30px; font-family: var(--font-mono); font-size: 14px; line-height: 1.8; color: var(--accent); margin-bottom: 20px; box-shadow: 0 0 30px rgba(0,255,204,0.1); }
+        .nexus-tag { background: var(--danger-dim); color: var(--danger); border: 1px solid var(--danger); padding: 2px 6px; font-size: 10px; margin-top: 5px; display: inline-block; }
+    </style>
+</head>
+<body>
+    <div class="shell">
+        <div class="header">
+            <div>
+                <a href="/" class="back-link">[ RETURN_TO_DECK ]</a>
+                <h1>MARKET INTELLIGENCE // ECONOMICS</h1>
+            </div>
+            <div style="text-align: right; font-family: var(--font-mono);">
+                <div style="color: var(--muted); font-size: 10px;">DATA_POINTS_COLLECTED</div>
+                <div style="font-size: 24px; color: var(--accent);">{{ market_snapshot.total_profiles }}</div>
+            </div>
+        </div>
+
+        <div class="briefing-card">
+            [ AUTOMATED INTEL SYNTHESIS ] :: {{ market_snapshot.summary.upper() }}
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h2>Profitability Rankings // GMV Proxy</h2>
+                <div class="market-list">
+                    {% for s in market_snapshot.service_rankings[:10] %}
+                    <div class="market-item">
+                        <div>
+                            <div class="market-name">{{ s.category.upper() }}</div>
+                            <div class="market-meta">{{ s.mentions }} SIGHTINGS // AVG ${{ s.avg_price }}</div>
+                        </div>
+                        <div class="gmv">${{ "{:,.0f}".format(s.estimated_market_value) }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Target Dossiers // Top Actors</h2>
+                {% for d in top_dossiers %}
+                <div class="actor-card" style="cursor: pointer;" onclick="viewFullBrief('{{ d.actor_handle }}')">
+                    <div class="actor-header">
+                        <div class="actor-name">@{{ d.actor_handle.upper() }}</div>
+                        <div style="display: flex; align-items: center;">
+                            <div class="severity-bar">
+                                <div class="severity-fill" style="width: {{ d.caas_severity * 100 }}%; color: {% if d.caas_severity > 0.7 %}var(--danger){% elif d.caas_severity > 0.4 %}var(--warn){% else %}var(--accent){% endif %}; background: currentColor;"></div>
+                            </div>
+                            <span style="font-family: var(--font-mono); font-size: 12px; color: var(--muted);">{{ "%.2f"|format(d.caas_severity) }}</span>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        {% for svc, count in d.top_services[:4] %}
+                        <span class="badge">{{ svc.replace('_', ' ') }}</span>
+                        {% endfor %}
+                    </div>
+                    <div style="font-family: var(--font-mono); font-size: 10px; color: #444;">
+                        OBSERVATIONS: {{ d.message_count }} // PRICE_POINTS: {{ d.price_history|length }}
+                        <br>
+                        <span class="nexus-tag">NEXUS_LINK_DETECTED</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div id="full-brief-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 2000; padding: 50px; overflow-y: auto;">
+            <div style="max-width: 900px; margin: 0 auto;">
+                <button onclick="document.getElementById('full-brief-overlay').style.display='none'" style="background: none; border: 1px solid var(--accent); color: var(--accent); padding: 10px; cursor: pointer; margin-bottom: 20px;">[ CLOSE_DOSSIER ]</button>
+                <div id="brief-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function viewFullBrief(handle) {
+            const overlay = document.getElementById('full-brief-overlay');
+            const content = document.getElementById('brief-content');
+            overlay.style.display = 'block';
+            content.innerHTML = '<div style="color: var(--accent); font-family: var(--font-mono);">EXTRACTING_FORENSIC_SNAPSHOT...</div>';
+            
+            try {
+                const res = await fetch('/api/v1/actor/brief/' + handle);
+                const data = await res.json();
+                
+                let html = `<h1 style="color: var(--accent); font-family: var(--font-mono); border-bottom: 2px solid var(--accent); padding-bottom: 10px;">DOSSIER: @${data.handle.upper()}</h1>`;
+                html += `<div style="background: var(--accent-dim); padding: 20px; margin: 20px 0; font-family: var(--font-mono); line-height: 1.6; border: 1px solid var(--accent);">${data.brief}</div>`;
+                
+                if (Object.keys(data.wallets).length > 0) {
+                    html += `<h3>CRYPTO_WALLETS_IDENTIFIED</h3><table style="width: 100%; border-collapse: collapse;">`;
+                    for (const [sym, addrs] of Object.entries(data.wallets)) {
+                        html += `<tr><td style="color: var(--accent); width: 120px;">${sym}</td><td>${addrs.join('<br>')}</td></tr>`;
+                    }
+                    html += `</table>`;
+                    html += `<p style="font-size: 11px; color: var(--muted); margin-top: 10px;">[ DIRECTEYE HOOKS ARMED // AWAITING BLOCKCHAIN ATTRIBUTION ]</p>`;
+                }
+                
+                if (data.nexus_links.length > 0) {
+                    html += `<h3 style="color: var(--danger); margin-top: 30px;">INFRASTRUCTURE_NEXUS_LINKS</h3>`;
+                    data.nexus_links.forEach(n => {
+                        html += `<div style="padding: 10px; border: 1px solid var(--danger); background: var(--danger-dim); margin-bottom: 10px;">`;
+                        html += `<div style="font-family: var(--font-mono); font-size: 12px; color: var(--danger);">SHARED_ARTIFACT: ${n.artifact}</div>`;
+                        html += `<div style="font-size: 11px; color: #888;">CO-LOCATED_ACTORS: ${n.actors.join(', ')}</div>`;
+                        html += `</div>`;
+                    });
+                }
+                
+                content.innerHTML = html;
+            } catch (e) {
+                content.innerHTML = '<div style="color: var(--danger);">FAILED_TO_EXTRACT_DOSSIER: ' + e + '</div>';
+            }
+        }
+    </script>
+</body>
+</html>

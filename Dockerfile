@@ -69,5 +69,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # Expose port
 EXPOSE 5000
 
-# Default entrypoint: unified SPECTRA web UI
-CMD ["sh", "-c", "python -m spectra_app.spectra_gui_launcher --host ${SPECTRA_HOST:-0.0.0.0} --port ${SPECTRA_PORT:-5000} --log-level ${SPECTRA_LOG_LEVEL:-INFO}"]
+# Default entrypoint: Unified Web Console
+CMD ["python", "-m", "spectra_app.spectra_gui_launcher", "--host", "0.0.0.0", "--port", "5000"]

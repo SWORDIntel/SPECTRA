@@ -51,11 +51,126 @@ services:
     networks:
       - spectra-network
 
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
+  # Caddy Reverse Proxy for Automated SSL & Secure Access
+  caddy:
+    image: caddy:latest
+    container_name: spectra-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: "${SITE_ADDRESS:-localhost}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy-data:/data
+      - caddy-config:/config
+      - spectra-logs:/var/log/caddy
+    depends_on:
+      - spectra
+    networks:
+      - spectra-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
+  # ============================================================================
+  # MEMSHADOW SIDECAR - Advanced Memory Persistence & Semantic Analysis
+  # ============================================================================
+
+  memshadow-db:
+    image: postgres:15-alpine
+    container_name: memshadow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: memshadow
+      POSTGRES_PASSWORD: ${MEMSHADOW_POSTGRES_PASSWORD:-1786}
+      POSTGRES_DB: memshadow
+    volumes:
+      - memshadow-postgres-data:/var/lib/postgresql/data
+    networks:
+      - spectra-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U memshadow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  memshadow-cache:
+    image: redis:7-alpine
+    container_name: memshadow-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${MEMSHADOW_REDIS_PASSWORD:-1786}
+    volumes:
+      - memshadow-redis-data:/data
+    networks:
+      - spectra-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${MEMSHADOW_REDIS_PASSWORD:-1786}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  memshadow-vector:
+    image: chromadb/chroma:latest
+    container_name: memshadow-chromadb
+    restart: unless-stopped
+    environment:
+      CHROMA_SERVER_AUTH_PROVIDER: "chromadb.auth.token.TokenAuthServerProvider"
+      CHROMA_SERVER_AUTH_CREDENTIALS: ${MEMSHADOW_CHROMA_TOKEN:-1786}
+    volumes:
+      - memshadow-chroma-data:/chroma/chroma
+    networks:
+      - spectra-network
+
+  memshadow:
+    build:
+      context: ./src/MEMSHADOW
+      dockerfile: Dockerfile
+    container_name: memshadow-app
+    restart: unless-stopped
+    depends_on:
+      memshadow-db:
+        condition: service_healthy
+      memshadow-cache:
+        condition: service_healthy
+    environment:
+      # Database
+      POSTGRES_SERVER: memshadow-db
+      POSTGRES_USER: memshadow
+      POSTGRES_PASSWORD: ${MEMSHADOW_POSTGRES_PASSWORD:-1786}
+      POSTGRES_DB: memshadow
+      # Redis
+      REDIS_HOST: memshadow-cache
+      REDIS_PASSWORD: ${MEMSHADOW_REDIS_PASSWORD:-1786}
+      REDIS_URL: redis://:1786@memshadow-cache:6379/0
+      # Chroma
+      CHROMA_HOST: memshadow-vector
+      CHROMA_PORT: "8000"
+      # Features
+      ENABLE_SECURITY_MIDDLEWARE: "true"
+      WEB_ADMIN_PASSWORD: ${MEMSHADOW_ADMIN_PASSWORD:-1786}
+      EMBEDDING_DIMENSION: "4096"
+      # Safety: Explicitly disable blackbox mode
+      MEMSHADOW_BLACKBOX_MODE: "false"
+    networks:
+      - spectra-network
+
+  # Qdrant Vector Database for Semantic Search (Enabled by default)
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: spectra-qdrant
+    ports:
+      - "6333:6333"     # REST API
+      - "6334:6334"     # gRPC API
+    volumes:
+      - spectra-qdrant:/qdrant/storage
+    environment:
+      QDRANT_API_KEY: "${QDRANT_API_KEY:-optional-api-key-change-in-production}"
+    networks:
+      - spectra-network
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:5000/login"]
       interval: 30s
@@ -74,6 +189,18 @@ volumes:
     driver: local
   spectra-config:
     driver: local
+  memshadow-postgres-data:
+    driver: local
+  memshadow-redis-data:
+    driver: local
+  memshadow-chroma-data:
+    driver: local
+  caddy-data:
+    driver: local
+  caddy-config:
+    driver: local
+  # spectra-redis:
+  #   driver: local
 
 networks:
   spectra-network:

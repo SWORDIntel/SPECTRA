@@ -78,6 +78,10 @@ class ThreatActorProfile:
     associate_count: int = 0
     network_threat_score: float = 0.0
 
+    # CaaS metrics
+    caas_severity: float = 0.0
+    caas_confidence: float = 0.0
+
     # Metadata
     tags: List[str] = field(default_factory=list)
     notes: str = ""
@@ -105,6 +109,10 @@ class ThreatActorProfile:
             "network": {
                 "associate_count": self.associate_count,
                 "network_threat_score": round(self.network_threat_score, 2),
+            },
+            "caas": {
+                "severity": round(self.caas_severity, 2),
+                "confidence": round(self.caas_confidence, 2),
             },
             "tags": self.tags,
             "notes": self.notes,
@@ -241,11 +249,12 @@ class ThreatScorer:
     """
 
     # Scoring weights
-    KEYWORD_WEIGHT = 0.30
-    PATTERN_WEIGHT = 0.25
+    KEYWORD_WEIGHT = 0.25
+    PATTERN_WEIGHT = 0.20
     BEHAVIORAL_WEIGHT = 0.20
     NETWORK_WEIGHT = 0.15
     TEMPORAL_WEIGHT = 0.10
+    CAAS_WEIGHT = 0.10
 
     @classmethod
     def calculate_threat_score(
@@ -254,8 +263,10 @@ class ThreatScorer:
         pattern_indicators: List[ThreatIndicator],
         behavioral_flags: List[BehavioralFlag],
         network_threat_score: float = 0.0,
+        caas_severity: float = 0.0,
         message_count: int = 1,
         time_span_days: int = 1,
+        last_seen: Optional[datetime] = None,
     ) -> Tuple[float, float]:
         """
         Calculate threat score and confidence.
@@ -265,8 +276,10 @@ class ThreatScorer:
             pattern_indicators: List of pattern indicators
             behavioral_flags: List of behavioral flags
             network_threat_score: Threat score from network associations
+            caas_severity: CaaS severity score
             message_count: Total message count
             time_span_days: Days between first and last message
+            last_seen: Date actor was last seen
 
         Returns:
             (threat_score, confidence) tuple
@@ -300,13 +313,29 @@ class ThreatScorer:
         if time_span_days > 30:  # Sustained activity bonus
             temporal_score = min(1.0, time_span_days / 365)
 
+        # Factor 6: CaaS severity
+        caas_score = min(10.0, caas_severity * 10.0)
+
+        # Temporal decay for CaaS score
+        if last_seen and caas_score > 0:
+            if last_seen.tzinfo is None:
+                last_seen = last_seen.replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+            days_since_seen = (now - last_seen).days
+            if days_since_seen > 30:
+                # Reduce by 25% for every subsequent 30 days
+                decay_periods = (days_since_seen - 1) // 30
+                decay_factor = 0.75 ** decay_periods
+                caas_score *= decay_factor
+
         # Weighted sum
         total_score = (
             keyword_score * cls.KEYWORD_WEIGHT +
             pattern_score * cls.PATTERN_WEIGHT +
             behavioral_score * cls.BEHAVIORAL_WEIGHT +
             network_score * cls.NETWORK_WEIGHT +
-            temporal_score * cls.TEMPORAL_WEIGHT
+            temporal_score * cls.TEMPORAL_WEIGHT +
+            caas_score * cls.CAAS_WEIGHT
         )
 
         # Final score (1-10 scale)
@@ -319,6 +348,7 @@ class ThreatScorer:
             behavioral_flags,
             message_count,
             time_span_days,
+            caas_severity=caas_severity,
         )
 
         return final_score, confidence
@@ -330,6 +360,7 @@ class ThreatScorer:
         behavioral_flags: List[BehavioralFlag],
         message_count: int,
         time_span_days: int,
+        caas_severity: float = 0.0,
     ) -> float:
         """
         Calculate confidence score (0-1) for threat assessment.
@@ -339,6 +370,7 @@ class ThreatScorer:
         - Multiple indicator types
         - Higher message count
         - Longer observation period
+        - CaaS-specific message volume
         """
         # Indicator diversity
         indicator_types = set()
@@ -361,12 +393,18 @@ class ThreatScorer:
         # Time span (normalized to 0-1)
         time_score = min(1.0, time_span_days / 365.0)  # 365+ days = max
 
+        # CaaS confidence: weighted by number of messages profiled
+        caas_confidence = 0.0
+        if caas_severity > 0:
+            caas_confidence = min(1.0, message_count / 25.0)
+
         # Weighted confidence
         confidence = (
-            diversity_score * 0.4 +
-            count_score * 0.3 +
-            volume_score * 0.2 +
-            time_score * 0.1
+            diversity_score * 0.35 +
+            count_score * 0.25 +
+            volume_score * 0.15 +
+            time_score * 0.1 +
+            caas_confidence * 0.15
         )
 
         return min(1.0, max(0.0, confidence))
@@ -406,6 +444,9 @@ class ThreatProfiler:
         messages: List[Dict[str, Any]],
         network_threat_score: float = 0.0,
         associate_count: int = 0,
+        caas_severity: float = 0.0,
+        previous_profile: Optional[ThreatActorProfile] = None,
+        db: Any = None,
     ) -> ThreatActorProfile:
         """
         Create comprehensive threat actor profile.
@@ -418,6 +459,9 @@ class ThreatProfiler:
             messages: List of message dictionaries
             network_threat_score: Pre-calculated network threat score
             associate_count: Number of associates
+            caas_severity: CaaS severity score
+            previous_profile: Previous profile for delta analysis
+            db: Database handle for alert generation
 
         Returns:
             ThreatActorProfile object
@@ -441,12 +485,13 @@ class ThreatProfiler:
         content_flags = self.behavioral_analyzer.analyze_content_patterns(message_texts)
         all_behavioral_flags = activity_flags + content_flags
 
-        # Calculate time span
+        # Calculate time span and last_seen
         time_span_days = 1
-        if len(message_timestamps) >= 2:
+        last_seen = None
+        if message_timestamps:
             first_time = min(message_timestamps)
-            last_time = max(message_timestamps)
-            time_span_days = max(1, (last_time - first_time).days)
+            last_seen = max(message_timestamps)
+            time_span_days = max(1, (last_seen - first_time).days)
 
         # Calculate threat score
         threat_score, confidence = self.scorer.calculate_threat_score(
@@ -454,9 +499,34 @@ class ThreatProfiler:
             pattern_indicators=pattern_indicators,
             behavioral_flags=all_behavioral_flags,
             network_threat_score=network_threat_score,
+            caas_severity=caas_severity,
             message_count=len(messages),
             time_span_days=time_span_days,
+            last_seen=last_seen,
         )
+
+        # Automatic CaaS Alert generation for significant severity increase
+        if previous_profile and caas_severity > previous_profile.caas_severity + 0.15:
+            summary = f"Significant CaaS severity increase for {username}: {previous_profile.caas_severity:.2f} -> {caas_severity:.2f}"
+            if db:
+                try:
+                    db.conn.execute(
+                        """
+                        INSERT INTO caas_alert (created_at, severity, actor_id, alert_type, score, summary)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            datetime.now(timezone.utc).isoformat(),
+                            "HIGH",
+                            user_id,
+                            "severity_spike",
+                            caas_severity,
+                            summary
+                        )
+                    )
+                    db.conn.commit()
+                except Exception as e:
+                    logger.error(f"Failed to generate automated caas_alert: {e}")
 
         # Classify threat
         classification = self.scorer.classify_threat_level(threat_score)
@@ -468,6 +538,11 @@ class ThreatProfiler:
             pattern_indicators,
             all_behavioral_flags,
         )
+
+        # Calculate CaaS confidence (weighted by message volume)
+        caas_conf = 0.0
+        if caas_severity > 0:
+            caas_conf = min(1.0, len(messages) / 25.0)
 
         # Create profile
         profile = ThreatActorProfile(
@@ -485,6 +560,8 @@ class ThreatProfiler:
             channels=list(set(m.get('channel_id', 0) for m in messages)),
             associate_count=associate_count,
             network_threat_score=network_threat_score,
+            caas_severity=caas_severity,
+            caas_confidence=caas_conf,
             tags=tags,
             last_updated=datetime.now(timezone.utc),
         )

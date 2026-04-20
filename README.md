@@ -1,14 +1,14 @@
-# SPECTRA
+# SPECTRA [SWORD CIPHER COMMAND]
 
 **Spectrally-Processing Extraction, Crawling, & Tele-Reconnaissance Archive**
 
-SPECTRA is an advanced framework for Telegram data collection, network discovery, and forensic-grade archiving with multi-account support, graph-based targeting, and robust OPSEC features.
+SPECTRA is a forensic-grade intelligence framework for Telegram network discovery, criminal market economics, and threat actor attribution. It features a unified **NSO-style Cipher Command** dashboard for real-time operational control.
 
 <p align="center">
   <img src="SPECTRA.png" alt="SPECTRA" width="35%">
 </p>
 
-## Features
+## 🛡️ Cipher Command Features
 
 - 🔄 **Multi-account orchestration** with smart, persistent selection and failure detection
 - 🕵️ **Proxy rotation** for OPSEC and anti-detection
@@ -23,28 +23,33 @@ SPECTRA is an advanced framework for Telegram data collection, network discovery
 - ☁️ **Forwarding Mode:** Traverse a series of channels, discover related channels, and download text/archive files with specific rules.
 - 🔐 **Dockerized web console** with first-run bootstrap admin enrollment and YubiKey/passkey WebAuthn sign-in
 - 🛡️ **Red team/OPSEC features**: account/proxy rotation, SQL audit trail, sidecar metadata, persistent state
+- 🕸️ **Infrastructure Nexus**: Map shared technical artifacts (Panel URLs, Bot IDs) to reveal hidden connections between seemingly independent actors.
+- 💰 **Economic Market Engine**: Track Gross Market Value (GMV) across CaaS sectors (Initial Access, Malware, Logs) with USD-normalized pricing.
+- 📑 **Narrative Synthesis**: Automated LLM-driven intelligence briefings that classify actor archetypes and strategic threat status.
+- 💳 **Wallet-Watch (DIRECTEYE Ready)**: Forensic extraction of BTC, XMR, and TRX/ETH addresses with built-in hooks for [DIRECTEYE](https://github.com/SWORDIntel/DIRECTEYE) blockchain attribution.
+- 🚀 **One-Command Deployment**: Production-ready Docker orchestration with automated SSL via **Caddy**.
+- 🛡️ **OPSEC Core**: Multi-account/API rotation and proxy support for anti-detection and persistent collection.
+- 🧠 **MEMSHADOW Sidecar**: Advanced 4096-dimensional semantic memory persistence and cross-LLM context preservation for deep threat analysis.
 
-## ⚡ Quick Start
+## ⚡ Quick Start (Docker)
 
-**Root launchers:**
+The fastest way to launch the **Cipher Command Deck** with automated SSL and secure proxying:
 
 ```bash
-# Clone and enter directory
+# Clone and enter
 git clone https://github.com/SWORDIntel/SPECTRA.git
 cd SPECTRA
 
-# Main web console
-./spectra
-
-# Documentation launcher
-python3 webapp.py
+# Launch the full stack
+export SITE_ADDRESS="your-domain.com" # Defaults to localhost
+docker-compose up -d
 ```
 
-`./spectra` is the primary entry point for the web console. `python3 webapp.py` opens the documentation shell and lands on `/docs`.
+Access the dashboard at `https://your-domain.com` (or `http://localhost`).
 
-## Local GUI
+## 🖥️ Local Execution
 
-The repository also includes a local web launcher for orchestration, status, and documentation:
+Launch the unified web console directly:
 
 ```bash
 ./spectra
@@ -58,77 +63,23 @@ export SPECTRA_SESSION_SECRET="change-me-in-production"
 export SPECTRA_WEBAUTHN_ORIGIN="http://localhost:5000"
 export SPECTRA_WEBAUTHN_RP_ID="localhost"
 ./spectra
-```
-
-Standard machine-readable API surfaces:
-
-- `/openapi.json`
-- `/.well-known/openapi.json`
-- `/docs`
-
-## Installation
-
+### Operational API Keys
+Secure the interface for remote access:
 ```bash
-# Clone the repository
-git clone https://github.com/SWORDIntel/SPECTRA.git
-cd SPECTRA
-
-# Create virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install core dependencies (recommended - stable)
-pip install telethon rich pillow pandas networkx matplotlib python-magic pyaes pyasn1 feedgen lxml imagehash croniter npyscreen pysocks
-
-# OR install all dependencies (may require system packages)
-pip install -r requirements.txt
-
-# Install package in development mode
-pip install -e .
+export SPECTRA_GUI_API_KEY="your-secure-key"
+./spectra --api-key "$SPECTRA_GUI_API_KEY"
 ```
 
-## Configuration
+## 🧠 Intelligence Pipeline
 
-SPECTRA supports multi-account configuration with automatic account import from `gen_config.py` (TELESMASHER-compatible) and persistent SQL storage for all operations.
-
-### Setting up Telegram API access
-
-1. Visit https://my.telegram.org/apps to register your application
-2. Create a config file or use the built-in account import:
-
+### Layer 0: Semantic Discovery
+Pivot through the criminal network using CaaS-aware scoring to identify high-value targets.
 ```bash
-# Import accounts from gen_config.py
-python -m tgarchive accounts --import
+./spectra discover --seed @target_channel
 ```
 
-## System Status
-
-**Current Version**: 2025-01-XX (Production Ready)
-- ✅ **Core System**: Fully operational with all syntax errors resolved
-- ✅ **CLI Interface**: 18 commands available and tested
-- ✅ **Dependencies**: Core dependencies installed and verified
-- ✅ **Architecture**: Professional-grade modular design validated
-- ✅ **CNSA 2.0 Compliance**: All cryptographic operations updated
-
-**Recent Enhancements (2025-01-XX)**:
-- Fixed critical Git merge conflicts blocking system startup
-- Resolved CLI parser conflicts and syntax errors
-- Validated full system functionality and dependency chain
-- See [CHANGELOG.md](docs/reference/CHANGELOG.md) for complete details
-
-## Documentation
-
-### 📚 [Full Documentation Site](https://swordintel.github.io/SPECTRA/)
-
-**Complete HTML documentation built with [Docusaurus](https://docusaurus.io/) - a modern static site generator with:**
-- 🔍 **Full-text search** across all documentation
-- 🌙 **Dark theme** (default) with light mode toggle
-- 📱 **Responsive design** for mobile and desktop
-- 🧭 **Interactive navigation** with organized sidebar
-- ⚡ **Fast loading** with optimized static HTML
-- 🔗 **Versioning support** for future releases
-
-**For local development:**
+### Layer 1: Forensic Profiling
+Extract pricing, services, and aliases from canonical archives into structured dossiers.
 ```bash
 cd docs
 npm install          # Install Docusaurus dependencies
@@ -170,42 +121,25 @@ Original markdown files are still available in:
 
 ## Project Layout
 
-```
-SPECTRA/
-├── spectra              ← Main launcher for the local web console
-├── webapp.py            ← Documentation launcher (`/docs`)
-├── spectra.sh           ← Compatibility wrapper
-├── tgarchive/           ← Core CLI/TUI/archive/forwarding package
-├── src/spectra_app/     ← Web launcher and orchestration implementation
-├── spectra_app/         ← Compatibility package for repo-root imports
-├── templates/           ← Shared web UI templates
-├── docs/                ← Docusaurus source and compatibility docs
-├── scripts/             ← Install, launch, and maintenance helpers
-├── examples/            ← Example scripts
-├── tests/               ← Repo-level smoke/integration scripts
-├── deployment/          ← Docker/system deployment assets
-├── bootstrap            ← Bootstrap entrypoint
-├── index.html           ← Root redirect into the documentation site
-├── Makefile             ← Common development commands
-├── setup.py             ← Packaging entrypoint
-└── CONTRIBUTING.md      ← Development workflow guide
+./spectra process-queue --batch-size 250
 ```
 
-Local runtime output such as `logs/`, `spectra_venv/`, and `spectra_config.json` is intentionally kept out of version control.
+### Layer 2: Nexus & Wallet Analysis
+Automatically map infrastructure links and crypto-financial footprints across the entire repository.
 
-For detailed structure explanation, see [PROJECT_STRUCTURE.md](docs/reference/PROJECT_STRUCTURE.md)
+## 📁 System Status & Architecture
 
-## Integration & Architecture
+* ✅ **Cipher-Ops Dashboard**: High-contrast operational control surface.
+* ✅ **Economic Intel**: USD-normalized GMV tracking and profitability rankings.
+* ✅ **Forensic Dossiers**: Narrative summaries, wallet sightings, and nexus alerts.
+* ✅ **Production Ready**: Docker + Caddy integration for secure remote ops.
 
-- **`SPECTRA/tgarchive/discovery.py`**: Integration point for group crawling, network analysis, parallel archiving, and SQL-backed state
-- **`SPECTRA/tgarchive/__main__.py`**: Unified CLI/TUI entry point
-- **`examples/parallel_example.py`**: Example for parallel, multi-account operations
-- All modules are importable and can be reused in your own scripts or pipelines
+## 📚 Documentation
 
-## Contributing
+Detailed technical reference and guides are available at:
+* **Dashboard API**: `/docs` (OpenAPI 3.1 / Swagger)
+* **Full Manual**: `/readme` or [GitHub Pages](https://swordintel.github.io/SPECTRA/)
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow and verification guidance.
-
-## License
+## 📜 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.

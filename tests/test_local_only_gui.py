@@ -20,7 +20,6 @@ def test_port_checking():
     print("1. Testing port availability checking...")
 
     # Import the functions
-    sys.path.insert(0, str(Path(__file__).parent))
     from spectra_app.spectra_gui_launcher import check_port_available, find_available_port, get_security_level
 
     # Test port checking
@@ -30,8 +29,6 @@ def test_port_checking():
     # Test port finding
     available_port, is_preferred = find_available_port("127.0.0.1", 5000)
     print(f"   Found available port: {available_port} (preferred: {is_preferred})")
-
-    return True
 
 def test_security_levels():
     """Test security level detection"""
@@ -49,8 +46,6 @@ def test_security_levels():
     print(f"   0.0.0.0: {level} - {desc}")
     assert level == "CRITICAL", f"Expected CRITICAL security for 0.0.0.0, got {level}"
 
-    return True
-
 def test_default_config():
     """Test default configuration is localhost"""
     print("3. Testing default configuration...")
@@ -62,34 +57,41 @@ def test_default_config():
     print(f"   Default port: {config.port}")
 
     assert config.host == "127.0.0.1", f"Expected localhost default, got {config.host}"
+    assert config.port == 5000, f"Expected default port 5000, got {config.port}"
     print("   ✅ Default configuration is LOCAL ONLY")
 
-    return True
+def test_login_template_copy():
+    """Test that login UI copy reflects the first-run bootstrap flow"""
+    print("4. Testing login template bootstrap messaging...")
+
+    login_template = ROOT_DIR / "templates" / "login.html"
+    if login_template.exists():
+        content = login_template.read_text()
+        assert "Bootstrap admin enrollment" in content, "Login template missing bootstrap messaging"
+        assert "YubiKey" in content, "Login template missing YubiKey copy"
+        assert "passkey" in content.lower(), "Login template missing passkey copy"
+        print("   ✅ Login template contains first-run bootstrap messaging")
+    else:
+        raise AssertionError("Login template not found")
 
 def test_template_content():
     """Test that templates contain LOCAL ONLY messaging"""
-    print("4. Testing template LOCAL ONLY messaging...")
+    print("5. Testing template LOCAL ONLY messaging...")
 
     # Check README template
-    readme_template = Path("templates/readme.html")
+    readme_template = ROOT_DIR / "templates" / "readme.html"
     if readme_template.exists():
         content = readme_template.read_text()
-        if "LOCAL ONLY" in content:
-            print("   ✅ README template contains LOCAL ONLY messaging")
-        else:
-            print("   ❌ README template missing LOCAL ONLY messaging")
-            return False
+        assert "LOCAL ONLY" in content, "README template missing LOCAL ONLY messaging"
+        print("   ✅ README template contains LOCAL ONLY messaging")
     else:
-        print("   ❌ README template not found")
-        return False
-
-    return True
+        raise AssertionError("README template not found")
 
 def test_security_api_routes():
     """Test that security API routes are present in the launcher"""
-    print("5. Testing security API routes...")
+    print("6. Testing security API routes...")
 
-    launcher_file = Path("spectra_app/spectra_gui_launcher.py")
+    launcher_file = ROOT_DIR / "spectra_app" / "spectra_gui_launcher.py"
     content = launcher_file.read_text()
 
     required_routes = [
@@ -105,7 +107,7 @@ def test_security_api_routes():
             print(f"   ❌ Missing route: {route}")
             all_present = False
 
-    return all_present
+    assert all_present, "Missing security API routes"
 
 def main():
     """Run all tests"""
@@ -116,6 +118,7 @@ def main():
         test_port_checking,
         test_security_levels,
         test_default_config,
+        test_login_template_copy,
         test_template_content,
         test_security_api_routes
     ]
@@ -125,11 +128,9 @@ def main():
 
     for test_func in tests:
         try:
-            if test_func():
-                passed += 1
-                print("   ✅ PASSED\n")
-            else:
-                print("   ❌ FAILED\n")
+            test_func()
+            passed += 1
+            print("   ✅ PASSED\n")
         except Exception as e:
             print(f"   ❌ ERROR: {e}\n")
 
@@ -150,7 +151,6 @@ def main():
         print("python3 examples/demo_readme_gui.py")
         print("Then visit: http://127.0.0.1:5000/readme")
 
-        return True
     else:
         print("⚠️ Some tests failed. Check the issues above.")
         return False

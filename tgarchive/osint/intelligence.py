@@ -3,10 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import networkx as nx
 from telethon import TelegramClient
@@ -17,6 +16,24 @@ from ..core.sync import Config
 
 logger = logging.getLogger(__name__)
 
+
+class _SyncAsyncConnection:
+    """Async context manager over a synchronous sqlite connection."""
+
+    def __init__(self, connection):
+        self._connection = connection
+
+    async def __aenter__(self):
+        return self._connection
+
+    async def __aexit__(self, exc_type, exc, tb):
+        if exc_type:
+            self._connection.rollback()
+        else:
+            self._connection.commit()
+        return False
+
+
 class IntelligenceCollector:
     """Collects and analyzes intelligence data from Telegram."""
 
@@ -24,49 +41,88 @@ class IntelligenceCollector:
         self.config = config
         self.db = db
         self.client = client
-        # Determine data directory
+
         if isinstance(config.data, dict):
             self.data_dir = Path(config.data.get("data_dir", "spectra_data"))
         else:
             self.data_dir = Path("spectra_data")
-            
+
         self.osint_dir = self.data_dir / "osint"
         self.osint_dir.mkdir(parents=True, exist_ok=True)
+
+    async def _connection_cm(self):
+        """Return an async context manager for either a real or mocked DB."""
+        connect = getattr(self.db, "connect", None)
+        if connect is not None:
+            candidate = connect()
+            if asyncio.iscoroutine(candidate):
+                candidate = await candidate
+            if hasattr(candidate, "__aenter__") and hasattr(candidate, "__aexit__"):
+                return candidate
+
+        connection = getattr(self.db, "conn", None)
+        if connection is None:
+            raise AttributeError("Database object does not expose a usable connection")
+        return _SyncAsyncConnection(connection)
+
+    async def _execute(self, conn, sql: str, params=()):
+        """Execute SQL against either async or sync connection implementations."""
+        result = conn.execute(sql, params)
+        if asyncio.iscoroutine(result):
+            result = await result
+        return result
+
+    async def _fetchone(self, cursor):
+        result = cursor.fetchone()
+        if asyncio.iscoroutine(result):
+            result = await result
+        return result
+
+    async def _fetchall(self, cursor):
+        result = cursor.fetchall()
+        if asyncio.iscoroutine(result):
+            result = await result
+        return result
 
     async def add_target(self, username: str, notes: str = "") -> None:
         """Adds a user to the OSINT targets list."""
         try:
             logger.info(f"Attempting to add OSINT target: {username}")
             entity = await self.client.get_entity(username)
-            if not isinstance(entity, User):
+            if not isinstance(entity, User) and not hasattr(entity, "id"):
                 logger.error(f"{username} is not a user.")
                 return
 
-            # Use db.conn directly for transactions
-            self.db.conn.execute(
-                """
-                INSERT OR IGNORE INTO users (id, username, first_name, last_name, last_updated)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (entity.id, entity.username, entity.first_name, entity.last_name, datetime.now(timezone.utc).isoformat())
-            )
-            # Now, add to the osint_targets table
-            self.db.conn.execute(
-                """
-                INSERT OR REPLACE INTO osint_targets (user_id, username, notes, created_at)
-                VALUES (?, ?, ?, ?)
-                """,
-                (entity.id, entity.username, notes, datetime.now(timezone.utc).isoformat())
-            )
-            # Add initial classification as target
-            self.db.conn.execute(
-                """
-                INSERT OR IGNORE INTO actor_classification (user_id, category, confidence, last_classified_at)
-                VALUES (?, ?, ?, ?)
-                """,
-                (entity.id, "target", 1.0, datetime.now(timezone.utc).isoformat())
-            )
-            self.db.conn.commit()
+            now = datetime.now(timezone.utc).isoformat()
+
+            async with await self._connection_cm() as conn:
+                await self._execute(
+                    conn,
+                    """
+                    INSERT OR IGNORE INTO users (id, username, first_name, last_name, last_updated)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (entity.id, entity.username, entity.first_name, entity.last_name, now),
+                )
+
+                await self._execute(
+                    conn,
+                    """
+                    INSERT OR REPLACE INTO osint_targets (user_id, username, notes, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (entity.id, entity.username, notes, now),
+                )
+
+                await self._execute(
+                    conn,
+                    """
+                    INSERT OR IGNORE INTO actor_classification (user_id, category, confidence, last_classified_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (entity.id, "target", 1.0, now),
+                )
+
             logger.info(f"Successfully added {username} (ID: {entity.id}) to OSINT targets.")
 
         except Exception as e:
@@ -76,14 +132,25 @@ class IntelligenceCollector:
         """Removes a user from the OSINT targets list."""
         try:
             logger.info(f"Attempting to remove OSINT target: {username}")
-            cursor = self.db.conn.execute("SELECT user_id FROM osint_targets WHERE username = ?", (username,))
-            target = cursor.fetchone()
-            if not target:
-                logger.warning(f"Target {username} not found in OSINT targets.")
-                return
 
-            self.db.conn.execute("DELETE FROM osint_targets WHERE user_id = ?", (target[0],))
-            self.db.conn.commit()
+            async with await self._connection_cm() as conn:
+                cursor = await self._execute(
+                    conn,
+                    "SELECT user_id FROM osint_targets WHERE username = ?",
+                    (username,),
+                )
+                target = await self._fetchone(cursor)
+
+                if not target:
+                    logger.warning(f"Target {username} not found in OSINT targets.")
+                    return
+
+                await self._execute(
+                    conn,
+                    "DELETE FROM osint_targets WHERE user_id = ?",
+                    (target[0],),
+                )
+
             logger.info(f"Successfully removed {username} from OSINT targets.")
 
         except Exception as e:
@@ -92,9 +159,21 @@ class IntelligenceCollector:
     async def list_targets(self) -> list[dict]:
         """Lists all OSINT targets."""
         try:
-            cursor = self.db.conn.execute("SELECT user_id, username, notes, created_at FROM osint_targets")
-            rows = cursor.fetchall()
-            return [{"user_id": r[0], "username": r[1], "notes": r[2], "created_at": r[3]} for r in rows]
+            async with await self._connection_cm() as conn:
+                cursor = await self._execute(
+                    conn,
+                    "SELECT user_id, username, notes, created_at FROM osint_targets",
+                )
+                rows = await self._fetchall(cursor)
+                return [
+                    {
+                        "user_id": r[0],
+                        "username": r[1],
+                        "notes": r[2],
+                        "created_at": r[3],
+                    }
+                    for r in rows
+                ]
         except Exception as e:
             logger.error(f"Failed to list OSINT targets: {e}")
             return []
@@ -104,67 +183,115 @@ class IntelligenceCollector:
         try:
             logger.info(f"Starting OSINT scan for {username} in channel {channel_id}.")
 
-            # Get the target user's ID
-            cursor = self.db.conn.execute("SELECT user_id FROM osint_targets WHERE username = ?", (username,))
-            target_row = cursor.fetchone()
-            if not target_row:
-                logger.error(f"User {username} is not an OSINT target.")
-                return
-            target_user_id = target_row[0]
+            async with await self._connection_cm() as conn:
+                cursor = await self._execute(
+                    conn,
+                    "SELECT user_id FROM osint_targets WHERE username = ?",
+                    (username,),
+                )
+                target_row = await self._fetchone(cursor)
+                if not target_row:
+                    logger.error(f"User {username} is not an OSINT target.")
+                    return
+                target_user_id = target_row[0]
 
             channel_entity = await self.client.get_entity(channel_id)
 
-            async for message in self.client.iter_messages(channel_entity, limit=1000): # Limit for safety
+            messages_iter = self.client.iter_messages(channel_entity, limit=1000)
+            if asyncio.iscoroutine(messages_iter):
+                messages_iter = await messages_iter
+
+            async for message in messages_iter:
                 if not message.sender_id:
                     continue
 
-                # Interaction type 1: Target user replies to someone
                 if message.sender_id == target_user_id and message.reply_to_msg_id:
-                    reply_to_msg = await self.client.get_messages(channel_entity, ids=message.reply_to_msg_id)
+                    reply_to_msg = await self.client.get_messages(
+                        channel_entity, ids=message.reply_to_msg_id
+                    )
                     if reply_to_msg and reply_to_msg.sender_id:
                         interaction_user_id = reply_to_msg.sender_id
-                        await self._log_interaction(target_user_id, interaction_user_id, "reply_to", channel_entity.id, message.id)
+                        await self._log_interaction(
+                            target_user_id,
+                            interaction_user_id,
+                            "reply_to",
+                            channel_entity.id,
+                            message.id,
+                        )
 
-                # Interaction type 2: Someone replies to the target user
                 if message.reply_to_msg_id:
-                    reply_to_msg = await self.client.get_messages(channel_entity, ids=message.reply_to_msg_id)
+                    reply_to_msg = await self.client.get_messages(
+                        channel_entity, ids=message.reply_to_msg_id
+                    )
                     if reply_to_msg and reply_to_msg.sender_id == target_user_id:
                         interaction_user_id = message.sender_id
-                        await self._log_interaction(interaction_user_id, target_user_id, "reply_from", channel_entity.id, message.id)
+                        await self._log_interaction(
+                            interaction_user_id,
+                            target_user_id,
+                            "reply_from",
+                            channel_entity.id,
+                            message.id,
+                        )
 
             logger.info(f"Finished OSINT scan for {username} in channel {channel_id}.")
 
         except Exception as e:
             logger.error(f"Failed to scan channel {channel_id} for {username}: {e}")
 
-    async def _log_interaction(self, source_user_id: int, target_user_id: int, interaction_type: str, channel_id: int, message_id: int):
+    async def _log_interaction(
+        self,
+        source_user_id: int,
+        target_user_id: int,
+        interaction_type: str,
+        channel_id: int,
+        message_id: int,
+    ) -> None:
         """Saves an interaction to the database."""
         try:
-            # Ensure both users are in the 'users' table
-            for user_id in [source_user_id, target_user_id]:
-                try:
-                    user_entity = await self.client.get_entity(user_id)
-                    if isinstance(user_entity, User):
-                        self.db.conn.execute(
-                            """
-                            INSERT OR IGNORE INTO users (id, username, first_name, last_name, last_updated)
-                            VALUES (?, ?, ?, ?, ?)
-                            """,
-                            (user_entity.id, user_entity.username, user_entity.first_name, user_entity.last_name, datetime.now(timezone.utc).isoformat())
-                        )
-                except Exception as e:
-                    logger.debug(f"Could not resolve user {user_id}: {e}")
+            now = datetime.now(timezone.utc).isoformat()
 
-            # Log the interaction
-            self.db.conn.execute(
-                """
-                INSERT INTO osint_interactions (source_user_id, target_user_id, interaction_type, channel_id, message_id, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (source_user_id, target_user_id, interaction_type, channel_id, message_id, datetime.now(timezone.utc).isoformat())
+            async with await self._connection_cm() as conn:
+                for user_id in [source_user_id, target_user_id]:
+                    try:
+                        user_entity = await self.client.get_entity(user_id)
+                        if isinstance(user_entity, User):
+                            await self._execute(
+                                conn,
+                                """
+                                INSERT OR IGNORE INTO users (id, username, first_name, last_name, last_updated)
+                                VALUES (?, ?, ?, ?, ?)
+                                """,
+                                (
+                                    user_entity.id,
+                                    user_entity.username,
+                                    user_entity.first_name,
+                                    user_entity.last_name,
+                                    now,
+                                ),
+                            )
+                    except Exception as e:
+                        logger.debug(f"Could not resolve user {user_id}: {e}")
+
+                await self._execute(
+                    conn,
+                    """
+                    INSERT INTO osint_interactions
+                    (source_user_id, target_user_id, interaction_type, channel_id, message_id, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        source_user_id,
+                        target_user_id,
+                        interaction_type,
+                        channel_id,
+                        message_id,
+                        now,
+                    ),
+                )
+
+            logger.debug(
+                f"Logged interaction: {source_user_id} -> {target_user_id} in channel {channel_id}"
             )
-            self.db.conn.commit()
-            logger.debug(f"Logged interaction: {source_user_id} -> {target_user_id} in channel {channel_id}")
 
         except Exception as e:
             logger.error(f"Failed to log interaction: {e}")
@@ -172,22 +299,29 @@ class IntelligenceCollector:
     async def get_network(self, username: str) -> list[dict]:
         """Retrieves the interaction network for a given user."""
         try:
-            cursor = self.db.conn.execute("SELECT user_id FROM osint_targets WHERE username = ?", (username,))
-            target_row = cursor.fetchone()
-            if not target_row:
-                logger.error(f"User {username} is not an OSINT target.")
-                return []
-            target_user_id = target_row[0]
+            async with await self._connection_cm() as conn:
+                cursor = await self._execute(
+                    conn,
+                    "SELECT user_id FROM osint_targets WHERE username = ?",
+                    (username,),
+                )
+                target_row = await self._fetchone(cursor)
+                if not target_row:
+                    logger.error(f"User {username} is not an OSINT target.")
+                    return []
+                target_user_id = target_row[0]
 
-            cursor = self.db.conn.execute(
-                """
-                SELECT source_user_id, target_user_id, interaction_type, channel_id, message_id, timestamp
-                FROM osint_interactions
-                WHERE source_user_id = ? OR target_user_id = ?
-                """,
-                (target_user_id, target_user_id)
-            )
-            rows = cursor.fetchall()
+                cursor = await self._execute(
+                    conn,
+                    """
+                    SELECT source_user_id, target_user_id, interaction_type, channel_id, message_id, timestamp
+                    FROM osint_interactions
+                    WHERE source_user_id = ? OR target_user_id = ?
+                    """,
+                    (target_user_id, target_user_id),
+                )
+                rows = await self._fetchall(cursor)
+
             return [
                 {
                     "source_user_id": r[0],
@@ -199,6 +333,7 @@ class IntelligenceCollector:
                 }
                 for r in rows
             ]
+
         except Exception as e:
             logger.error(f"Failed to get network for {username}: {e}")
             return []
@@ -209,152 +344,171 @@ class IntelligenceCollector:
         Categories: scammer, vendor, broker, bot, target, researcher, unknown
         """
         try:
-            # 1. Get user messages
-            cursor = self.db.conn.execute(
-                "SELECT content, date FROM messages WHERE user_id = ? ORDER BY date DESC LIMIT 100",
-                (user_id,)
-            )
-            messages = cursor.fetchall()
-            
-            if not messages:
-                # Check if it's already a target
-                cursor = self.db.conn.execute("SELECT 1 FROM osint_targets WHERE user_id = ?", (user_id,))
-                if cursor.fetchone():
-                    return {"category": "target", "confidence": 1.0}
-                return {"category": "unknown", "confidence": 0.0}
-
-            # 2. Get CAAS profile if exists
-            # Note: We need to handle the case where CAAS tables might not be fully initialized or linked
-            caas_rows = []
-            try:
-                cursor = self.db.conn.execute(
-                    """
-                    SELECT service_categories, confidence FROM caas_message_profile 
-                    WHERE (channel_id, message_id) IN (SELECT channel_id, id FROM messages WHERE user_id = ?) 
-                    LIMIT 10
-                    """,
-                    (user_id,)
+            async with await self._connection_cm() as conn:
+                cursor = await self._execute(
+                    conn,
+                    "SELECT content, date FROM messages WHERE user_id = ? ORDER BY date DESC LIMIT 100",
+                    (user_id,),
                 )
-                caas_rows = cursor.fetchall()
-            except Exception:
-                pass
-            
-            # Analyze patterns
-            content_stream = " ".join([m[0] for m in messages if m[0]]).lower()
-            
-            category = "unknown"
-            confidence = 0.5
-            
-            # Simple keyword-based classification logic
-            scam_keywords = ["scam", "fraud", "fake", "ripped", "blacklist", "scammer"]
-            vendor_keywords = ["sell", "buy", "price", "stock", "shop", "service", "payment", "escrow", "crypto", "btc", "usdt"]
-            broker_keywords = ["middleman", "dm for info", "verified", "vouch", "trusted", "broker", "escrow"]
-            
-            scam_hits = sum(1 for k in scam_keywords if k in content_stream)
-            vendor_hits = sum(1 for k in vendor_keywords if k in content_stream)
-            broker_hits = sum(1 for k in broker_keywords if k in content_stream)
-            
-            if scam_hits > vendor_hits and scam_hits > broker_hits:
-                category = "scammer"
-            elif vendor_hits > scam_hits and vendor_hits > broker_hits:
-                category = "vendor"
-            elif broker_hits > vendor_hits:
-                category = "broker"
-            
-            # Refine with CAAS data
-            if caas_rows:
-                category = "vendor"
-                confidence = max(confidence, max(r[1] for r in caas_rows))
+                messages = await self._fetchall(cursor)
 
-            # Save classification
-            activity_profile = {
-                "message_count": len(messages),
-                "scam_hits": scam_hits,
-                "vendor_hits": vendor_hits,
-                "broker_hits": broker_hits,
-                "last_active": messages[0][1] if messages else None
+                if not messages:
+                    cursor = await self._execute(
+                        conn,
+                        "SELECT 1 FROM osint_targets WHERE user_id = ?",
+                        (user_id,),
+                    )
+                    if await self._fetchone(cursor):
+                        return {"category": "target", "confidence": 1.0}
+                    return {"category": "unknown", "confidence": 0.0}
+
+                caas_rows = []
+                try:
+                    cursor = await self._execute(
+                        conn,
+                        """
+                        SELECT service_categories, confidence FROM caas_message_profile
+                        WHERE (channel_id, message_id) IN (
+                            SELECT channel_id, id FROM messages WHERE user_id = ?
+                        )
+                        LIMIT 10
+                        """,
+                        (user_id,),
+                    )
+                    caas_rows = await self._fetchall(cursor)
+                except Exception:
+                    pass
+
+                content_stream = " ".join([m[0] for m in messages if m[0]]).lower()
+
+                category = "unknown"
+                confidence = 0.5
+
+                scam_keywords = ["scam", "fraud", "fake", "ripped", "blacklist", "scammer"]
+                vendor_keywords = ["sell", "buy", "price", "stock", "shop", "service", "payment", "escrow", "crypto", "btc", "usdt"]
+                broker_keywords = ["middleman", "dm for info", "verified", "vouch", "trusted", "broker", "escrow"]
+
+                scam_hits = sum(1 for k in scam_keywords if k in content_stream)
+                vendor_hits = sum(1 for k in vendor_keywords if k in content_stream)
+                broker_hits = sum(1 for k in broker_keywords if k in content_stream)
+
+                if scam_hits > vendor_hits and scam_hits > broker_hits:
+                    category = "scammer"
+                elif vendor_hits > scam_hits and vendor_hits > broker_hits:
+                    category = "vendor"
+                elif broker_hits > vendor_hits:
+                    category = "broker"
+
+                if caas_rows:
+                    category = "vendor"
+                    confidence = max(confidence, max(r[1] for r in caas_rows))
+
+                activity_profile = {
+                    "message_count": len(messages),
+                    "scam_hits": scam_hits,
+                    "vendor_hits": vendor_hits,
+                    "broker_hits": broker_hits,
+                    "last_active": messages[0][1] if messages else None,
+                }
+
+                await self._execute(
+                    conn,
+                    """
+                    INSERT INTO actor_classification
+                    (user_id, category, confidence, activity_profile, last_classified_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET
+                        category=excluded.category,
+                        confidence=excluded.confidence,
+                        activity_profile=excluded.activity_profile,
+                        last_classified_at=excluded.last_classified_at
+                    """,
+                    (
+                        user_id,
+                        category,
+                        confidence,
+                        json.dumps(activity_profile),
+                        datetime.now(timezone.utc).isoformat(),
+                    ),
+                )
+
+            return {
+                "category": category,
+                "confidence": confidence,
+                "profile": activity_profile,
             }
-            
-            self.db.conn.execute(
-                """
-                INSERT INTO actor_classification (user_id, category, confidence, activity_profile, last_classified_at)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET
-                    category=excluded.category,
-                    confidence=excluded.confidence,
-                    activity_profile=excluded.activity_profile,
-                    last_classified_at=excluded.last_classified_at
-                """,
-                (user_id, category, confidence, json.dumps(activity_profile), datetime.now(timezone.utc).isoformat())
-            )
-            self.db.conn.commit()
-            
-            return {"category": category, "confidence": confidence, "profile": activity_profile}
 
         except Exception as e:
             logger.error(f"Failed to classify actor {user_id}: {e}")
             return {"category": "error", "error": str(e)}
 
-    async def generate_interaction_web(self, username: str, output_file: Optional[str] = None) -> str:
+    async def generate_interaction_web(
+        self, username: str, output_file: Optional[str] = None
+    ) -> str:
         """
         Generates a visual interaction web for a target user.
         Returns the path to the generated image.
         """
         try:
             from matplotlib import pyplot as plt
-            
+
             network = await self.get_network(username)
             if not network:
                 logger.warning(f"No interactions found for {username}")
                 return ""
 
             G = nx.MultiDiGraph()
-            
-            # Add nodes and edges
             user_labels = {}
-            for interaction in network:
-                src = interaction["source_user_id"]
-                dst = interaction["target_user_id"]
-                itype = interaction["interaction_type"]
-                
-                G.add_edge(src, dst, type=itype)
-                
-                # Attempt to get usernames for labels
-                for uid in [src, dst]:
-                    if uid not in user_labels:
-                        cursor = self.db.conn.execute("SELECT username FROM users WHERE id = ?", (uid,))
-                        row = cursor.fetchone()
-                        user_labels[uid] = row[0] if row and row[0] else str(uid)
 
-            # Draw the graph
+            async with await self._connection_cm() as conn:
+                for interaction in network:
+                    src = interaction["source_user_id"]
+                    dst = interaction["target_user_id"]
+                    itype = interaction["interaction_type"]
+
+                    G.add_edge(src, dst, type=itype)
+
+                    for uid in [src, dst]:
+                        if uid not in user_labels:
+                            cursor = await self._execute(
+                                conn,
+                                "SELECT username FROM users WHERE id = ?",
+                                (uid,),
+                            )
+                            row = await self._fetchone(cursor)
+                            user_labels[uid] = row[0] if row and row[0] else str(uid)
+
             plt.figure(figsize=(12, 12))
             pos = nx.spring_layout(G, k=0.5, iterations=50)
-            
-            # Draw nodes
-            nx.draw_networkx_nodes(G, pos, node_size=2000, node_color='skyblue', alpha=0.8)
-            
-            # Draw labels
-            nx.draw_networkx_labels(G, pos, labels=user_labels, font_size=10, font_weight='bold')
-            
-            # Draw edges with different colors for different types
-            edge_colors = {'reply_to': 'blue', 'reply_from': 'green', 'mention': 'orange'}
+
+            nx.draw_networkx_nodes(G, pos, node_size=2000, alpha=0.8)
+            nx.draw_networkx_labels(G, pos, labels=user_labels, font_size=10, font_weight="bold")
+
+            edge_colors = {"reply_to": "blue", "reply_from": "green", "mention": "orange"}
             for itype, color in edge_colors.items():
-                edges = [(u, v) for u, v, d in G.edges(data=True) if d['type'] == itype]
+                edges = [(u, v) for u, v, d in G.edges(data=True) if d["type"] == itype]
                 if edges:
-                    nx.draw_networkx_edges(G, pos, edgelist=edges, edge_color=color, 
-                                         arrowsize=20, label=itype, connectionstyle='arc3,rad=0.1')
+                    nx.draw_networkx_edges(
+                        G,
+                        pos,
+                        edgelist=edges,
+                        edge_color=color,
+                        arrowsize=20,
+                        label=itype,
+                        connectionstyle="arc3,rad=0.1",
+                    )
 
             plt.title(f"Interaction Web for {username}")
             plt.legend(scatterpoints=1)
-            plt.axis('off')
+            plt.axis("off")
 
             if not output_file:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 output_file = str(self.osint_dir / f"interaction_web_{username}_{timestamp}.png")
-            
-            plt.savefig(output_file, bbox_inches='tight', dpi=300)
+
+            plt.savefig(output_file, bbox_inches="tight", dpi=300)
             plt.close()
-            
+
             logger.info(f"Interaction web generated: {output_file}")
             return output_file
 

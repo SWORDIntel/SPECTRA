@@ -41,6 +41,26 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_date ON messages(date);
 CREATE INDEX IF NOT EXISTS idx_messages_user ON messages(user_id);
 
+CREATE TABLE IF NOT EXISTS osint_targets (
+    user_id       INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    username      TEXT NOT NULL UNIQUE,
+    notes         TEXT DEFAULT '',
+    created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_osint_targets_username ON osint_targets(username);
+
+CREATE TABLE IF NOT EXISTS osint_interactions (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    target_user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    interaction_type TEXT NOT NULL,
+    channel_id       BIGINT NOT NULL,
+    message_id       INTEGER NOT NULL,
+    timestamp        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_osint_interactions_source ON osint_interactions(source_user_id);
+CREATE INDEX IF NOT EXISTS idx_osint_interactions_target ON osint_interactions(target_user_id);
+
 CREATE TABLE IF NOT EXISTS checkpoints (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     last_message_id  INTEGER,

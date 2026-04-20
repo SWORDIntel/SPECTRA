@@ -14,8 +14,8 @@ from pathlib import Path
 spectra_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(spectra_root))
 
-from test_enhancements import run_all_tests
-from test_integration_full import run_integration_tests
+from .test_enhancements import run_all_tests
+from .test_integration_full import run_integration_tests
 
 
 def main():

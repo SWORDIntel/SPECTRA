@@ -9,11 +9,11 @@ import logging
 from typing import Dict, Any, Optional, List
 
 try:
-    from ..ml.pattern_detector import PatternDetector
-    from ..ml.correlation_engine import CorrelationEngine
-    from ..ml.continuous_learner import ContinuousLearner
-    from ..ai.entity_extraction import EntityExtractor
-    from ..ai.semantic_search import SemanticSearcher
+    from ...ml.pattern_detector import PatternDetector
+    from ...ml.correlation_engine import CorrelationEngine
+    from ...ml.continuous_learner import ContinuousLearner
+    from ...ai.entity_extraction import EntityExtractor
+    from ...ai.semantic_search import SemanticSearcher
     ML_AVAILABLE = True
 except ImportError:
     ML_AVAILABLE = False

@@ -61,6 +61,7 @@ cli_bp = Blueprint('cli', __name__)
 
 # Import route handlers
 from .auth import *
+from .core import *
 from .channels import *
 from .messages import *
 from .search import *

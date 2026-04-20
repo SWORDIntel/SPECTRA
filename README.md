@@ -29,7 +29,7 @@ SPECTRA is a forensic-grade intelligence framework for Telegram network discover
 - 💳 **Wallet-Watch (DIRECTEYE Ready)**: Forensic extraction of BTC, XMR, and TRX/ETH addresses with built-in hooks for [DIRECTEYE](https://github.com/SWORDIntel/DIRECTEYE) blockchain attribution.
 - 🚀 **One-Command Deployment**: Production-ready Docker orchestration with automated SSL via **Caddy**.
 - 🛡️ **OPSEC Core**: Multi-account/API rotation and proxy support for anti-detection and persistent collection.
-- 🧠 **MEMSHADOW Sidecar**: Advanced 4096-dimensional semantic memory persistence and cross-LLM context preservation for deep threat analysis.
+- 🧠 **MEMSHADOW Integration Ready**: Sidecar is optional and can be reconnected via `SPECTRA_MEMSHADOW_URL` without changing route contracts.
 
 ## ⚡ Quick Start (Docker)
 

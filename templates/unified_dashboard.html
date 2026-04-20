@@ -115,7 +115,7 @@
                     <div style="margin-top: 20px; display: flex; gap: 10px;">
                         <div class="status-pill">AGENTS: {{ system_status.total_agents }}</div>
                         <div class="status-pill">HOST: {{ access_host }}</div>
-                        <div class="status-pill" id="memshadow-pill" style="display:none; border-color: var(--accent); color: var(--accent);">MEMSHADOW: ACTIVE</div>
+                        <div class="status-pill" id="memshadow-pill" style="display:none; border-color: var(--accent); color: var(--accent);">MEMSHADOW: INTEGRATION READY</div>
                     </div>
                 </section>
 
@@ -241,10 +241,17 @@
                 const res = await fetch('/api/sidecar/memshadow/status');
                 const data = await res.json();
                 const pill = document.getElementById('memshadow-pill');
-                if (data.active) {
+                if (data.active || data.integration_ready) {
                     pill.style.display = 'block';
-                    pill.onclick = () => window.location.href = data.url;
-                    pill.style.cursor = 'pointer';
+                    if (data.active) {
+                        pill.textContent = 'MEMSHADOW: ACTIVE';
+                        pill.onclick = () => window.location.href = data.url;
+                        pill.style.cursor = 'pointer';
+                    } else {
+                        pill.textContent = 'MEMSHADOW: INTEGRATION READY';
+                        pill.onclick = null;
+                        pill.style.cursor = 'default';
+                    }
                 } else {
                     pill.style.display = 'none';
                 }

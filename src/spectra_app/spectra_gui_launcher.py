@@ -782,16 +782,17 @@ class SpectraGUILauncher:
 
         @self.app.route('/api/sidecar/memshadow/status')
         def api_memshadow_status():
-            """Check the health and status of the MEMSHADOW sidecar."""
-            import requests
-            mem_url = os.getenv("SPECTRA_MEMSHADOW_URL", "http://memshadow:18080")
-            try:
-                res = requests.get(f"{mem_url}/health", timeout=2)
-                if res.status_code == 200:
-                    return jsonify({"active": True, "status": "Healthy", "url": "/memshadow"})
-                return jsonify({"active": False, "status": "Degraded", "error": f"HTTP {res.status_code}"})
-            except Exception as e:
-                return jsonify({"active": False, "status": "Unavailable", "error": str(e)})
+            """MEMSHADOW sidecar removed; retain integration contract for future reconnect."""
+            integration_url = os.getenv("SPECTRA_MEMSHADOW_URL", "").strip()
+            return jsonify(
+                {
+                    "active": False,
+                    "status": "Disabled",
+                    "integration_ready": True,
+                    "url": integration_url or None,
+                    "message": "MEMSHADOW sidecar is not deployed in this stack. Set SPECTRA_MEMSHADOW_URL to reconnect.",
+                }
+            )
 
         @self.app.route('/api/caas/process-queue', methods=['POST'])
         def api_caas_process_queue():
@@ -804,6 +805,109 @@ class SpectraGUILauncher:
                 
                 threading.Thread(target=_run, daemon=True).start()
                 return jsonify({"success": True, "message": "CaaS Queue processing initiated in background."})
+            except Exception as e:
+                return jsonify({"success": False, "error": str(e)}), 500
+
+        @self.app.route('/api/caas/flagged-channel', methods=['POST'])
+        def api_caas_flagged_channel():
+            """Flag or unflag a channel for guaranteed message logging."""
+            try:
+                from tgarchive.db import SpectraDB
+                from tgarchive.osint.caas.schema import ensure_schema, upsert_flagged_channel
+                data = request.get_json() or {}
+                channel_id = data.get("channel_id")
+                if channel_id is None:
+                    return jsonify({"success": False, "error": "channel_id is required"}), 400
+                reason = data.get("reason")
+                active = bool(data.get("active", True))
+
+                db = SpectraDB(Path(self.config.database_path))
+                ensure_schema(db)
+                upsert_flagged_channel(db, channel_id=int(channel_id), reason=reason, active=active)
+                return jsonify({"success": True, "channel_id": int(channel_id), "active": active})
+            except Exception as e:
+                return jsonify({"success": False, "error": str(e)}), 500
+
+        @self.app.route('/api/caas/invite-lists', methods=['POST'])
+        def api_caas_invite_lists():
+            """Add or update an invite list and attach channels for list-wide logging."""
+            try:
+                from tgarchive.db import SpectraDB
+                from tgarchive.osint.caas.schema import ensure_schema, add_or_update_invite_list
+                data = request.get_json() or {}
+                list_name = (data.get("list_name") or "").strip()
+                channels = data.get("channels") or []
+                if not list_name:
+                    return jsonify({"success": False, "error": "list_name is required"}), 400
+                if not isinstance(channels, list) or not channels:
+                    return jsonify({"success": False, "error": "channels must be a non-empty list"}), 400
+
+                normalized_channels = [int(c) for c in channels]
+                db = SpectraDB(Path(self.config.database_path))
+                ensure_schema(db)
+                list_id = add_or_update_invite_list(
+                    db,
+                    list_name=list_name,
+                    channels=normalized_channels,
+                    source_invite=data.get("source_invite"),
+                    reason=data.get("reason"),
+                    flagged=bool(data.get("flagged", False)),
+                )
+                return jsonify({"success": True, "list_id": list_id, "channel_count": len(normalized_channels)})
+            except Exception as e:
+                return jsonify({"success": False, "error": str(e)}), 500
+
+        @self.app.route('/api/caas/tracked-targets', methods=['GET', 'POST'])
+        def api_caas_tracked_targets():
+            """Track threat actors by username or channels by id for persistent logging."""
+            try:
+                from tgarchive.db import SpectraDB
+                from tgarchive.osint.caas.schema import ensure_schema, upsert_tracked_target
+                db = SpectraDB(Path(self.config.database_path))
+                ensure_schema(db)
+
+                if request.method == 'GET':
+                    rows = db.conn.execute(
+                        """
+                        SELECT id, target_type, actor_username, channel_id, reason, active, created_at, updated_at
+                        FROM caas_tracked_target
+                        ORDER BY updated_at DESC
+                        """
+                    ).fetchall()
+                    return jsonify(
+                        {
+                            "success": True,
+                            "targets": [
+                                {
+                                    "id": row[0],
+                                    "target_type": row[1],
+                                    "actor_username": row[2],
+                                    "channel_id": row[3],
+                                    "reason": row[4],
+                                    "active": bool(row[5]),
+                                    "created_at": row[6],
+                                    "updated_at": row[7],
+                                }
+                                for row in rows
+                            ],
+                        }
+                    )
+
+                data = request.get_json() or {}
+                target_type = (data.get("target_type") or "").strip()
+                reason = data.get("reason")
+                active = bool(data.get("active", True))
+                target_id = upsert_tracked_target(
+                    db,
+                    target_type=target_type,
+                    actor_username=data.get("actor_username"),
+                    channel_id=data.get("channel_id"),
+                    reason=reason,
+                    active=active,
+                )
+                return jsonify({"success": True, "id": target_id, "target_type": target_type, "active": active})
+            except ValueError as exc:
+                return jsonify({"success": False, "error": str(exc)}), 400
             except Exception as e:
                 return jsonify({"success": False, "error": str(e)}), 500
 

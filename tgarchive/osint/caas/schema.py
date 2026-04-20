@@ -81,6 +81,69 @@ CREATE TABLE IF NOT EXISTS caas_alert (
     evidence_json TEXT,
     status TEXT NOT NULL DEFAULT 'new'
 );
+
+CREATE TABLE IF NOT EXISTS caas_flagged_channel (
+    channel_id INTEGER PRIMARY KEY,
+    reason TEXT,
+    created_at TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS caas_invite_list (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    list_name TEXT NOT NULL UNIQUE,
+    source_invite TEXT,
+    reason TEXT,
+    flagged INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS caas_invite_list_channel (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    list_id INTEGER NOT NULL REFERENCES caas_invite_list(id) ON DELETE CASCADE,
+    channel_id INTEGER NOT NULL,
+    channel_ref TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(list_id, channel_id)
+);
+CREATE INDEX IF NOT EXISTS idx_caas_invite_list_channel_id ON caas_invite_list_channel(channel_id);
+
+CREATE TABLE IF NOT EXISTS caas_flagged_message_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    channel_id INTEGER NOT NULL,
+    message_id INTEGER NOT NULL,
+    list_id INTEGER REFERENCES caas_invite_list(id),
+    list_name TEXT,
+    trigger_type TEXT NOT NULL,
+    reason TEXT,
+    content TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_caas_flagged_message_log_channel_id ON caas_flagged_message_log(channel_id);
+CREATE INDEX IF NOT EXISTS idx_caas_flagged_message_log_message_id ON caas_flagged_message_log(message_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_caas_flagged_message_log_dedupe
+ON caas_flagged_message_log(channel_id, message_id, trigger_type, ifnull(list_id, -1));
+
+CREATE TABLE IF NOT EXISTS caas_tracked_target (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_type TEXT NOT NULL CHECK(target_type IN ('actor_username', 'channel_id')),
+    actor_username TEXT,
+    channel_id INTEGER,
+    reason TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK(
+        (target_type = 'actor_username' AND actor_username IS NOT NULL AND channel_id IS NULL)
+        OR
+        (target_type = 'channel_id' AND channel_id IS NOT NULL AND actor_username IS NULL)
+    )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_caas_tracked_target_actor
+ON caas_tracked_target(target_type, actor_username);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_caas_tracked_target_channel
+ON caas_tracked_target(target_type, channel_id);
 """
 
 
@@ -140,3 +203,120 @@ def upsert_channel_profile(db: Any, *, channel_id: int, channel_link: Optional[s
         ),
     )
     db.conn.commit()
+
+
+def upsert_flagged_channel(db: Any, *, channel_id: int, reason: Optional[str] = None, active: bool = True) -> None:
+    ensure_schema(db)
+    now = datetime.utcnow().isoformat()
+    db.conn.execute(
+        """
+        INSERT INTO caas_flagged_channel(channel_id, reason, created_at, active)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(channel_id) DO UPDATE SET
+            reason=excluded.reason,
+            active=excluded.active
+        """,
+        (channel_id, reason, now, 1 if active else 0),
+    )
+    db.conn.commit()
+
+
+def add_or_update_invite_list(
+    db: Any,
+    *,
+    list_name: str,
+    channels: list[int],
+    source_invite: Optional[str] = None,
+    reason: Optional[str] = None,
+    flagged: bool = False,
+) -> int:
+    ensure_schema(db)
+    now = datetime.utcnow().isoformat()
+    db.conn.execute(
+        """
+        INSERT INTO caas_invite_list(list_name, source_invite, reason, flagged, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(list_name) DO UPDATE SET
+            source_invite=excluded.source_invite,
+            reason=excluded.reason,
+            flagged=excluded.flagged,
+            updated_at=excluded.updated_at
+        """,
+        (list_name, source_invite, reason, 1 if flagged else 0, now, now),
+    )
+    row = db.conn.execute("SELECT id FROM caas_invite_list WHERE list_name = ?", (list_name,)).fetchone()
+    if not row:
+        raise RuntimeError(f"Failed to load invite list id for {list_name}")
+    list_id = int(row[0])
+
+    for channel_id in channels:
+        db.conn.execute(
+            """
+            INSERT INTO caas_invite_list_channel(list_id, channel_id, channel_ref, created_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(list_id, channel_id) DO UPDATE SET
+                channel_ref=excluded.channel_ref
+            """,
+            (list_id, int(channel_id), str(channel_id), now),
+        )
+
+    db.conn.commit()
+    return list_id
+
+
+def upsert_tracked_target(
+    db: Any,
+    *,
+    target_type: str,
+    actor_username: Optional[str] = None,
+    channel_id: Optional[int] = None,
+    reason: Optional[str] = None,
+    active: bool = True,
+) -> int:
+    ensure_schema(db)
+    if target_type not in {"actor_username", "channel_id"}:
+        raise ValueError("target_type must be one of: actor_username, channel_id")
+
+    now = datetime.utcnow().isoformat()
+    if target_type == "actor_username":
+        if not actor_username:
+            raise ValueError("actor_username is required for actor_username tracking")
+        normalized_username = actor_username.strip().lstrip("@").lower()
+        db.conn.execute(
+            """
+            INSERT INTO caas_tracked_target(target_type, actor_username, channel_id, reason, active, created_at, updated_at)
+            VALUES (?, ?, NULL, ?, ?, ?, ?)
+            ON CONFLICT(target_type, actor_username) DO UPDATE SET
+                reason=excluded.reason,
+                active=excluded.active,
+                updated_at=excluded.updated_at
+            """,
+            (target_type, normalized_username, reason, 1 if active else 0, now, now),
+        )
+        row = db.conn.execute(
+            "SELECT id FROM caas_tracked_target WHERE target_type = ? AND actor_username = ?",
+            (target_type, normalized_username),
+        ).fetchone()
+    else:
+        if channel_id is None:
+            raise ValueError("channel_id is required for channel_id tracking")
+        db.conn.execute(
+            """
+            INSERT INTO caas_tracked_target(target_type, actor_username, channel_id, reason, active, created_at, updated_at)
+            VALUES (?, NULL, ?, ?, ?, ?, ?)
+            ON CONFLICT(target_type, channel_id) DO UPDATE SET
+                reason=excluded.reason,
+                active=excluded.active,
+                updated_at=excluded.updated_at
+            """,
+            (target_type, int(channel_id), reason, 1 if active else 0, now, now),
+        )
+        row = db.conn.execute(
+            "SELECT id FROM caas_tracked_target WHERE target_type = ? AND channel_id = ?",
+            (target_type, int(channel_id)),
+        ).fetchone()
+
+    if not row:
+        raise RuntimeError("Failed to resolve tracked target id")
+    db.conn.commit()
+    return int(row[0])

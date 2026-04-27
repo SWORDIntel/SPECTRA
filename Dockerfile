@@ -12,7 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN grep -v '^qdrant-client>=' requirements.txt > /tmp/requirements.osint-node.txt && \
+    pip install --no-cache-dir --user -r /tmp/requirements.osint-node.txt
 
 
 # Stage 2: Runtime

@@ -90,6 +90,7 @@ from .implementation_tools import ImplementationTools
 from .agent_optimization_engine import AgentOptimizationEngine
 from .programmatic_api import SpectraProgrammaticAPI
 from .webauthn_auth import JsonOperatorStore, WebAuthnAuthService
+from .msnet_bridge import MsnetBridge, create_msnet_bridge
 
 
 def check_port_available(host: str, port: int, timeout: float = 3.0) -> bool:
@@ -313,6 +314,7 @@ class SpectraGUILauncher:
         self.implementation_tools: Optional[ImplementationTools] = None
         self.optimization_engine: Optional[AgentOptimizationEngine] = None
         self.programmatic_api: Optional[SpectraProgrammaticAPI] = None
+        self.msnet_bridge: MsnetBridge = create_msnet_bridge()
 
         # Flask application for unified interface
         if FLASK_AVAILABLE:
@@ -542,6 +544,54 @@ class SpectraGUILauncher:
     def _setup_unified_routes(self):
         """Setup unified Flask routes for the complete system"""
 
+        def _msnet_auth_error():
+            return jsonify({"success": False, "error": "invalid msnet token"}), 401
+
+        def _msnet_token() -> Optional[str]:
+            return request.headers.get("x-msnet-token") or request.headers.get("authorization")
+
+        def _msnet_authorized() -> bool:
+            expected = str((self.msnet_bridge.config.auth_token if self.msnet_bridge else "").strip())
+            if not expected:
+                return True
+            provided = _msnet_token()
+            if not provided:
+                return False
+            return provided == expected or provided == f"Bearer {expected}"
+
+        def _notify_msnet_event(kind: str, payload: Dict[str, Any]):
+            try:
+                self.socketio.emit(
+                    "msnet_event",
+                    {
+                        "kind": kind,
+                        "payload": payload,
+                        "received_at": datetime.now().isoformat(),
+                        "source": "msnet",
+                    },
+                )
+            except Exception:
+                pass
+
+        def _emit_msnet_event(kind: str, payload: Dict[str, Any]) -> None:
+            _notify_msnet_event(kind, payload)
+            if not self.msnet_bridge.enabled or not self.msnet_bridge.config.emit_events:
+                return
+
+            def _runner():
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        loop.run_until_complete(self.msnet_bridge.emit(kind, payload))
+                    finally:
+                        loop.close()
+                        asyncio.set_event_loop(None)
+                except Exception:
+                    pass
+
+            threading.Thread(target=_runner, daemon=True).start()
+
         @self.app.route('/login', methods=['GET'])
         def login():
             """Bootstrap and sign-in page for browser operators."""
@@ -759,17 +809,21 @@ class SpectraGUILauncher:
             try:
                 data = request.get_json() or {}
                 enable = data.get("enable", not self.coordinator_engine.is_running)
+                _emit_msnet_event("spectra.caas.autonomous.toggle.request", {"enable": bool(enable)})
                 
                 if enable and not self.coordinator_engine.is_running:
                     def _run():
                         asyncio.run(self.coordinator_engine.start(interval_minutes=60))
                     
                     threading.Thread(target=_run, daemon=True).start()
+                    _emit_msnet_event("spectra.caas.autonomous.started", {"status": "started"})
                     return jsonify({"success": True, "active": True, "message": "Autonomous Intelligence Coordinator activated."})
                 else:
                     self.coordinator_engine.stop()
+                    _emit_msnet_event("spectra.caas.autonomous.stopped", {"status": "stopped"})
                     return jsonify({"success": True, "active": False, "message": "Autonomous Intelligence Coordinator deactivated."})
             except Exception as e:
+                _emit_msnet_event("spectra.caas.autonomous.error", {"error": str(e)})
                 return jsonify({"success": False, "error": str(e)}), 500
 
         @self.app.route('/api/caas/autonomous/status')
@@ -799,13 +853,16 @@ class SpectraGUILauncher:
             """Trigger the CaaS profile queue processor in the background."""
             try:
                 from tgarchive.osint.caas.queue_worker import process_queue
+                _emit_msnet_event("spectra.caas.process_queue.request", {})
                 def _run():
                     with self.app.app_context():
                         process_queue(db_path=self.config.database_path, batch_size=250, once=True)
                 
                 threading.Thread(target=_run, daemon=True).start()
+                _emit_msnet_event("spectra.caas.process_queue.started", {"status": "queued"})
                 return jsonify({"success": True, "message": "CaaS Queue processing initiated in background."})
             except Exception as e:
+                _emit_msnet_event("spectra.caas.process_queue.error", {"error": str(e)})
                 return jsonify({"success": False, "error": str(e)}), 500
 
         @self.app.route('/api/caas/flagged-channel', methods=['POST'])
@@ -824,8 +881,13 @@ class SpectraGUILauncher:
                 db = SpectraDB(Path(self.config.database_path))
                 ensure_schema(db)
                 upsert_flagged_channel(db, channel_id=int(channel_id), reason=reason, active=active)
+                _emit_msnet_event(
+                    "spectra.caas.flagged_channel.updated",
+                    {"channel_id": int(channel_id), "active": active},
+                )
                 return jsonify({"success": True, "channel_id": int(channel_id), "active": active})
             except Exception as e:
+                _emit_msnet_event("spectra.caas.flagged_channel.error", {"error": str(e)})
                 return jsonify({"success": False, "error": str(e)}), 500
 
         @self.app.route('/api/caas/invite-lists', methods=['POST'])
@@ -853,8 +915,13 @@ class SpectraGUILauncher:
                     reason=data.get("reason"),
                     flagged=bool(data.get("flagged", False)),
                 )
+                _emit_msnet_event(
+                    "spectra.caas.invite_list.updated",
+                    {"list_name": list_name, "list_id": list_id, "channels": normalized_channels},
+                )
                 return jsonify({"success": True, "list_id": list_id, "channel_count": len(normalized_channels)})
             except Exception as e:
+                _emit_msnet_event("spectra.caas.invite_list.error", {"error": str(e)})
                 return jsonify({"success": False, "error": str(e)}), 500
 
         @self.app.route('/api/caas/tracked-targets', methods=['GET', 'POST'])
@@ -905,10 +972,16 @@ class SpectraGUILauncher:
                     reason=reason,
                     active=active,
                 )
+                _emit_msnet_event(
+                    "spectra.caas.tracked_target.updated",
+                    {"target_type": target_type, "target_id": target_id, "active": active},
+                )
                 return jsonify({"success": True, "id": target_id, "target_type": target_type, "active": active})
             except ValueError as exc:
+                _emit_msnet_event("spectra.caas.tracked_target.error", {"error": str(exc)})
                 return jsonify({"success": False, "error": str(exc)}), 400
             except Exception as e:
+                _emit_msnet_event("spectra.caas.tracked_target.error", {"error": str(e)})
                 return jsonify({"success": False, "error": str(e)}), 500
 
         @self.app.route('/api/caas/discover', methods=['POST'])
@@ -921,6 +994,7 @@ class SpectraGUILauncher:
                     return jsonify({"success": False, "error": "Seed entity required"}), 400
                 
                 from tgarchive.osint.caas.discovery_ops import discover_with_caas
+                _emit_msnet_event("spectra.caas.discover.request", {"seed": seed})
                 def _run():
                     asyncio.run(discover_with_caas(
                         config_path=self.config.orchestrator_config,
@@ -932,8 +1006,10 @@ class SpectraGUILauncher:
                     ))
                 
                 threading.Thread(target=_run, daemon=True).start()
+                _emit_msnet_event("spectra.caas.discover.started", {"seed": seed})
                 return jsonify({"success": True, "message": f"Discovery initiated for {seed}"})
             except Exception as e:
+                _emit_msnet_event("spectra.caas.discover.error", {"error": str(e)})
                 return jsonify({"success": False, "error": str(e)}), 500
 
         @self.app.route('/api/v1/actor/brief/<handle>')
@@ -1121,6 +1197,69 @@ class SpectraGUILauncher:
                 "data_access": "Local system files only"
             })
 
+        @self.app.route('/api/v1/msnet/status')
+        def api_msnet_status():
+            return jsonify(self.msnet_bridge.status)
+
+        @self.app.route('/api/v1/msnet/event', methods=['POST'])
+        def api_msnet_event():
+            if not _msnet_authorized():
+                return _msnet_auth_error()
+
+            raw = request.get_data(cache=False) or b"{}"
+            try:
+                kind, payload = self.msnet_bridge.parse_payload(raw)
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                return jsonify({"success": False, "error": f"invalid msnet payload: {exc}"}), 400
+
+            try:
+                result = self.msnet_bridge.handle_inbound(kind, payload)
+                _notify_msnet_event(kind, payload)
+                return jsonify({"received": True, "kind": kind, "detail": result})
+            except Exception as exc:
+                self.logger.error("MSNET inbound handling failed: %s", exc)
+                return jsonify({"success": False, "error": str(exc)}), 500
+
+        @self.app.route('/api/v1/msnet/emit', methods=['POST'])
+        def api_msnet_emit():
+            msnet_token = _msnet_token()
+            token_expected = bool((self.msnet_bridge.config.auth_token if self.msnet_bridge else "").strip())
+            if self._current_operator():
+                pass
+            elif token_expected and (msnet_token == (self.msnet_bridge.config.auth_token if self.msnet_bridge else "").strip()
+                                   or msnet_token == f"Bearer {(self.msnet_bridge.config.auth_token if self.msnet_bridge else '').strip()}"):
+                pass
+            else:
+                return jsonify({"success": False, "error": "authentication required"}), 401
+
+            payload = request.get_json(silent=True) or {}
+            if not isinstance(payload, dict):
+                return jsonify({"success": False, "error": "payload must be a JSON object"}), 400
+
+            kind = str(payload.get("kind", "")).strip()
+            event_payload = payload.get("payload")
+            if not kind:
+                return jsonify({"success": False, "error": "field 'kind' is required"}), 400
+            if not isinstance(event_payload, dict):
+                event_payload = {"value": event_payload}
+
+            try:
+                result = asyncio.run(self.msnet_bridge.emit(kind, event_payload))
+            except RuntimeError:
+                # Fallback for environments where asyncio.run is unavailable due loop state.
+                threading.Thread(
+                    target=lambda: asyncio.run(self.msnet_bridge.emit(kind, event_payload)),
+                    daemon=True,
+                ).start()
+                result = {"accepted": True, "status": "queued"}
+
+            return jsonify({
+                "kind": kind,
+                "source": (self.msnet_bridge.config.source_id if self.msnet_bridge else "spectra-node"),
+                "service": (self.msnet_bridge.config.service_id if self.msnet_bridge else "spectra"),
+                "result": result,
+            })
+
         @self.app.route('/openapi.json')
         @self.app.route('/.well-known/openapi.json')
         def api_openapi_spec():
@@ -1236,6 +1375,7 @@ class SpectraGUILauncher:
                 "/logout",
                 "/static/",
                 "/api/auth/",
+                "/api/v1/msnet/",
             )
             public_exact = {"/favicon.ico", "/health"}
             if request.path in public_exact or any(request.path.startswith(path) for path in public_prefixes):
@@ -2341,6 +2481,8 @@ class SpectraGUILauncher:
                 "auth_session": "/api/auth/session",
                 "auth_register_options": "/api/auth/webauthn/register/options",
                 "auth_authenticate_options": "/api/auth/webauthn/authenticate/options",
+                "msnet_status": "/api/v1/msnet/status",
+                "msnet_emit": "/api/v1/msnet/emit",
             },
             "timestamp": datetime.now().isoformat()
         }

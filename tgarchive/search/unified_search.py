@@ -7,6 +7,7 @@ based on query characteristics for maximum performance.
 """
 
 import logging
+import os
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from enum import Enum
@@ -14,10 +15,12 @@ from enum import Enum
 from .hybrid_search import (
     HybridSearchEngine,
     SQLiteFTS5IndexManager,
-    QdrantVectorManager,
+    QIHSEVectorManager,
     SearchResult,
     SearchType,
 )
+
+QdrantVectorManager = QIHSEVectorManager
 from .not_stisla_bindings import (
     NotStislaSearchEngine,
     not_stisla_available,
@@ -64,10 +67,17 @@ class UnifiedSearchEngine:
         self.db = db_connection
         self.cache = cache_manager
         
+        vector_store_path = os.getenv(
+            "SPECTRA_QIHSE_VECTOR_PATH",
+            os.path.join(os.getenv("QIHSE_INDEX_ROOT", "/data/indexes/qihse-api"), "spectra_vectors"),
+        )
+        if qdrant_url and not qdrant_url.startswith(("http://", "https://")):
+            vector_store_path = qdrant_url
+
         # Initialize search engines with cache
         self.fts5 = SQLiteFTS5IndexManager(db_connection)
-        self.vector = QdrantVectorManager(qdrant_url)
-        self.hybrid = HybridSearchEngine(db_connection, qdrant_url, cache_manager=cache_manager)
+        self.vector = QIHSEVectorManager(vector_store_path=vector_store_path)
+        self.hybrid = HybridSearchEngine(db_connection, vector_store_path=vector_store_path, cache_manager=cache_manager)
         
         # Initialize NOT_STISLA engines
         self.not_stisla_timestamp = None

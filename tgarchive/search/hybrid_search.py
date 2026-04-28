@@ -13,6 +13,7 @@ Storage Architecture:
 """
 
 import logging
+import os
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
@@ -269,6 +270,11 @@ class QIHSEVectorManager:
             collection_name: Collection name
             embedding_model: HuggingFace model for embeddings
         """
+        if vector_store_path.startswith(("http://", "https://")):
+            vector_store_path = os.getenv(
+                "SPECTRA_QIHSE_VECTOR_PATH",
+                os.path.join(os.getenv("QIHSE_INDEX_ROOT", "/data/indexes/qihse-api"), "spectra_vectors"),
+            )
         from sentence_transformers import SentenceTransformer
         from ..db.vector_store import VectorStoreManager, VectorStoreConfig
 

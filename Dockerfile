@@ -39,6 +39,9 @@ WORKDIR /app
 # Copy Python dependencies from builder
 COPY --from=builder /root/.local /home/spectra/.local
 
+# Some legacy CAAS modules import requests directly during route setup.
+RUN python -m pip install --no-cache-dir requests>=2.31.0
+
 # Copy application code
 COPY --chown=spectra:spectra . .
 

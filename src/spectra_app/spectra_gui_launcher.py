@@ -2214,7 +2214,8 @@ class SpectraGUILauncher:
                 host=self.config.host,
                 port=actual_port,
                 debug=self.config.debug,
-                use_reloader=False
+                use_reloader=False,
+                allow_unsafe_werkzeug=True
             )
         except Exception as e:
             self.logger.error(f"Failed to start web interface: {e}")

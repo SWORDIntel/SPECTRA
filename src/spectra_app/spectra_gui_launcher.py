@@ -34,7 +34,7 @@ import sys
 import threading
 import time
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Callable, Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, asdict
 from enum import Enum
 from pathlib import Path
@@ -558,6 +558,237 @@ class SpectraGUILauncher:
             if not provided:
                 return False
             return provided == expected or provided == f"Bearer {expected}"
+
+        def _coerce_bool(value: object, default: bool = False) -> bool:
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, (int, float)):
+                return bool(value)
+            if isinstance(value, str):
+                normalized = value.strip().lower()
+                if normalized in {"1", "true", "yes", "on"}:
+                    return True
+                if normalized in {"0", "false", "no", "off", ""}:
+                    return False
+            return default
+
+        def _coerce_int(value: object, field_name: str) -> int:
+            if isinstance(value, bool):
+                return int(value)
+            if isinstance(value, int):
+                return value
+            if isinstance(value, str):
+                try:
+                    return int(value.strip())
+                except ValueError as exc:
+                    raise ValueError(f"{field_name} must be an integer") from exc
+            raise ValueError(f"{field_name} must be an integer")
+
+        def _coerce_int_list(value: object, field_name: str) -> list[int]:
+            if not isinstance(value, list) or not value:
+                raise ValueError(f"{field_name} must be a non-empty list")
+            normalized: list[int] = []
+            for item in value:
+                normalized.append(_coerce_int(item, field_name))
+            return normalized
+
+        def _run_background(target: Callable[[], None]) -> None:
+            threading.Thread(target=target, daemon=True).start()
+
+        def _route_msnet_event(kind: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+            normalized = str(kind or "").strip().lower()
+            source = str(payload.get("msnet_source") or payload.get("source") or "unknown")
+            action = "observe"
+            supported = False
+            status = "received"
+
+            try:
+                if normalized == "msnet.ping":
+                    return {
+                        "action": "ping",
+                        "supported": True,
+                        "source": source,
+                        "kind": normalized,
+                        "status": "pong",
+                        "result": {"message": "pong", "received_at": datetime.now().isoformat()},
+                    }
+
+                if normalized == "spectra.caas.autonomous.toggle.request":
+                    action = "spectra.caas.autonomous.toggle"
+                    supported = True
+                    enable = payload.get("enable")
+                    if enable is None:
+                        enable = not self.coordinator_engine.is_running
+                    desired_state = _coerce_bool(enable, not self.coordinator_engine.is_running)
+
+                    if desired_state and not self.coordinator_engine.is_running:
+                        def _start():
+                            asyncio.run(self.coordinator_engine.start(interval_minutes=60))
+
+                        _run_background(_start)
+                        status = "started"
+                    elif not desired_state and self.coordinator_engine.is_running:
+                        self.coordinator_engine.stop()
+                        status = "stopped"
+                    else:
+                        status = "already"
+
+                    return {
+                        "action": action,
+                        "supported": True,
+                        "source": source,
+                        "kind": normalized,
+                        "status": status,
+                        "result": {
+                            "active": bool(self.coordinator_engine.is_running),
+                            "message": f"Autonomous coordinator now {status}",
+                        },
+                    }
+
+                if normalized == "spectra.caas.process_queue.request":
+                    from tgarchive.osint.caas.queue_worker import process_queue
+
+                    def _run():
+                        with self.app.app_context():
+                            process_queue(db_path=self.config.database_path, batch_size=250, once=True)
+
+                    action = "spectra.caas.process_queue"
+                    supported = True
+                    status = "queued"
+                    _run_background(_run)
+
+                elif normalized == "spectra.caas.flagged_channel.request":
+                    from tgarchive.db import SpectraDB
+                    from tgarchive.osint.caas.schema import ensure_schema, upsert_flagged_channel
+
+                    action = "spectra.caas.flagged_channel"
+                    supported = True
+                    if "channel_id" not in payload:
+                        raise ValueError("channel_id is required")
+                    channel_id_int = _coerce_int(payload.get("channel_id"), "channel_id")
+
+                    reason = payload.get("reason")
+                    active = _coerce_bool(payload.get("active", True), True)
+                    db = SpectraDB(Path(self.config.database_path))
+                    ensure_schema(db)
+                    upsert_flagged_channel(db, channel_id=channel_id_int, reason=reason, active=active)
+                    status = "updated"
+
+                elif normalized == "spectra.caas.invite_list.request":
+                    from tgarchive.db import SpectraDB
+                    from tgarchive.osint.caas.schema import ensure_schema, add_or_update_invite_list
+
+                    action = "spectra.caas.invite_list"
+                    supported = True
+                    list_name = (payload.get("list_name") or "").strip()
+                    if not list_name:
+                        raise ValueError("list_name is required")
+
+                    normalized_channels = _coerce_int_list(payload.get("channels"), "channels")
+                    db = SpectraDB(Path(self.config.database_path))
+                    ensure_schema(db)
+                    list_id = add_or_update_invite_list(
+                        db,
+                        list_name=list_name,
+                        channels=normalized_channels,
+                        source_invite=payload.get("source_invite"),
+                        reason=payload.get("reason"),
+                        flagged=_coerce_bool(payload.get("flagged", False), False),
+                    )
+                    status = "updated"
+
+                    return {
+                        "action": action,
+                        "supported": True,
+                        "source": source,
+                        "kind": normalized,
+                        "status": status,
+                        "result": {"list_name": list_name, "list_id": list_id, "channel_count": len(normalized_channels)},
+                    }
+
+                elif normalized == "spectra.caas.tracked_target.request":
+                    from tgarchive.db import SpectraDB
+                    from tgarchive.osint.caas.schema import ensure_schema, upsert_tracked_target
+
+                    action = "spectra.caas.tracked_target"
+                    supported = True
+                    target_type = (payload.get("target_type") or "").strip()
+                    reason = payload.get("reason")
+                    active = _coerce_bool(payload.get("active", True), True)
+
+                    db = SpectraDB(Path(self.config.database_path))
+                    ensure_schema(db)
+                    target_id = upsert_tracked_target(
+                        db,
+                        target_type=target_type,
+                        actor_username=payload.get("actor_username"),
+                        channel_id=payload.get("channel_id"),
+                        reason=reason,
+                        active=active,
+                    )
+                    status = "updated"
+
+                    return {
+                        "action": action,
+                        "supported": True,
+                        "source": source,
+                        "kind": normalized,
+                        "status": status,
+                        "result": {"target_type": target_type, "target_id": target_id, "active": active},
+                    }
+
+                if normalized in {
+                    "spectra.caas.autonomous.started",
+                    "spectra.caas.autonomous.stopped",
+                    "spectra.caas.process_queue.started",
+                    "spectra.caas.flagged_channel.updated",
+                    "spectra.caas.invite_list.updated",
+                    "spectra.caas.tracked_target.updated",
+                    "spectra.caas.discover.response",
+                }:
+                    action = normalized
+                    supported = True
+                    status = "ack"
+
+                elif normalized == "spectra.caas.discover.request":
+                    from tgarchive.osint.caas.discovery_ops import discover_with_caas
+
+                    action = "spectra.caas.discover"
+                    supported = True
+                    seed = payload.get("seed")
+                    if not seed:
+                        raise ValueError("seed is required")
+
+                    def _run():
+                        asyncio.run(discover_with_caas(
+                            config_path=self.config.orchestrator_config,
+                            db_path=self.config.database_path,
+                            data_dir="spectra_data",
+                            seed=seed,
+                            depth=1,
+                            max_messages=500,
+                        ))
+
+                    _run_background(_run)
+                    status = "queued"
+
+            except Exception as exc:
+                return {
+                    "action": action,
+                    "supported": supported,
+                    "source": source,
+                    "kind": normalized,
+                    "status": "error",
+                    "error": str(exc),
+                }
+
+            return {
+                "action": action,
+                "supported": supported,
+                "source": source,
+                "kind": normalized,
+                "status": status,
+            }
 
         def _notify_msnet_event(kind: str, payload: Dict[str, Any]):
             try:
@@ -1214,8 +1445,9 @@ class SpectraGUILauncher:
 
             try:
                 result = self.msnet_bridge.handle_inbound(kind, payload)
+                routing = _route_msnet_event(kind, payload)
                 _notify_msnet_event(kind, payload)
-                return jsonify({"received": True, "kind": kind, "detail": result})
+                return jsonify({"received": True, "kind": kind, "detail": result, "routing": routing})
             except Exception as exc:
                 self.logger.error("MSNET inbound handling failed: %s", exc)
                 return jsonify({"success": False, "error": str(exc)}), 500

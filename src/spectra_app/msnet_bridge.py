@@ -39,8 +39,8 @@ def _classify_kind(kind: str) -> tuple[str, bool]:
         return "ping", True
     if normalized in KNOWN_MSNET_KINDS:
         return "route", True
-    if normalized.startswith("spectra."):
-        return "spectra", True
+    if normalized.startswith(("spectra.", "argus.", "directeye.", "stalker.")):
+        return "route", True
     return "observe", False
 
 

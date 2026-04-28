@@ -601,6 +601,10 @@ class SpectraGUILauncher:
             action = "observe"
             supported = False
             status = "received"
+            if normalized.startswith(("spectra.", "argus.", "directeye.", "stalker.")):
+                action = normalized
+                supported = True
+                status = "forwarded"
 
             try:
                 if normalized == "msnet.ping":

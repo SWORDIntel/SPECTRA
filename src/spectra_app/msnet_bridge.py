@@ -11,6 +11,39 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
+KNOWN_MSNET_KINDS = {
+    "msnet.ping",
+    "spectra.caas.autonomous.toggle.request",
+    "spectra.caas.process_queue.request",
+    "spectra.caas.flagged_channel.request",
+    "spectra.caas.invite_list.request",
+    "spectra.caas.tracked_target.request",
+    "spectra.caas.discover.request",
+    "spectra.caas.discover.response",
+    "spectra.caas.autonomous.started",
+    "spectra.caas.autonomous.stopped",
+    "spectra.caas.process_queue.started",
+    "spectra.caas.invite_list.updated",
+    "spectra.caas.flagged_channel.updated",
+    "spectra.caas.tracked_target.updated",
+}
+
+
+def _normalize_kind(value: str) -> str:
+    return str(value or "unknown").strip().lower().replace(" ", "_")
+
+
+def _classify_kind(kind: str) -> tuple[str, bool]:
+    normalized = _normalize_kind(kind)
+    if normalized == "msnet.ping":
+        return "ping", True
+    if normalized in KNOWN_MSNET_KINDS:
+        return "route", True
+    if normalized.startswith("spectra."):
+        return "spectra", True
+    return "observe", False
+
+
 def _normalize_targets(raw_targets: str) -> list[str]:
     return [item.strip() for item in raw_targets.split(",") if item.strip()]
 
@@ -127,10 +160,17 @@ class MsnetBridge:
         return {"enabled": self.enabled, "sent": sent, "failed": failed, "targets": len(self.config.targets)}
 
     def handle_inbound(self, kind: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = _normalize_kind(kind)
+        action, supported = _classify_kind(normalized)
+
         return {
             "received": True,
-            "kind": kind,
+            "kind": normalized,
             "source": payload.get("msnet_source", self.config.node_id),
+            "service": payload.get("service", self.config.service_id),
+            "action": action,
+            "supported": supported,
+            "status": "pong" if action == "ping" else "received",
             "ts": payload.get("msnet_ts", time.time()),
         }
 
@@ -151,4 +191,3 @@ def create_msnet_bridge() -> MsnetBridge:
         emit_events=environ.get("MSNET_EMIT_EVENTS", "true").lower() != "false",
     )
     return MsnetBridge(config)
-

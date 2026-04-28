@@ -26,5 +26,38 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run tests
-        run: make test
+      - name: Prepare CI bundle
+        run: mkdir -p .github/ci-artifacts
+
+      - name: Run tests with artifact capture
+        run: |
+          set -o pipefail
+          START_TS=$(date -u +%s)
+          make test 2>&1 | tee .github/ci-artifacts/tests.log
+          TEST_STATUS=${PIPESTATUS[0]}
+          END_TS=$(date -u +%s)
+          DURATION=$((END_TS - START_TS))
+          {
+            echo "# SPECTRA CI Summary"
+            echo "repository: SPECTRA"
+            echo "workflow: ${{ github.workflow }}"
+            echo "run_id: ${{ github.run_id }}"
+            echo "job: ${{ github.job }}"
+            echo "status: $([ \"$TEST_STATUS\" = \"0\" ] && echo PASS || echo FAIL)"
+            echo "duration_seconds: $DURATION"
+            echo "ref: ${{ github.ref }}"
+            echo "sha: ${{ github.sha }}"
+          } > .github/ci-artifacts/ci-summary.md
+          exit "$TEST_STATUS"
+
+      - name: Upload CI artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spectra-ci-artifacts
+          path: .github/ci-artifacts/
+
+      - name: Emit workflow status
+        if: always()
+        run: |
+          echo "::notice file=.github/ci-artifacts/ci-summary.md,title=SPECTRA CI Summary::See attached artifact 'spectra-ci-artifacts'"

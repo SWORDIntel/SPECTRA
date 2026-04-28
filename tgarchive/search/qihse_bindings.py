@@ -191,16 +191,22 @@ class QihsePerformanceStats(Structure):
 # Load QIHSE library
 def _load_qihse_library():
     """Load QIHSE shared library"""
-    possible_paths = [
+    possible_paths = []
+    if os.getenv("QIHSE_LIB_PATH"):
+        possible_paths.append(Path(os.environ["QIHSE_LIB_PATH"]))
+
+    possible_paths.extend([
         # Relative to SPECTRA root
         Path(__file__).parent.parent.parent.parent.parent / "libs" / "search_algorithms" / "QIHSE" / "qihse" / "libqihse.so",
         Path(__file__).parent.parent.parent.parent.parent / "libs" / "search_algorithms" / "QIHSE" / "build" / "bin" / "libqihse.so",
+        # OSINT node unified install
+        Path("/opt/osint-node/sources/QIHSE/qihse/libqihse.so"),
         # System library paths
         Path("/usr/local/lib/libqihse.so"),
         Path("/usr/lib/libqihse.so"),
         # Current directory
         Path("libqihse.so"),
-    ]
+    ])
     
     for lib_path in possible_paths:
         if lib_path.exists():

@@ -51,6 +51,8 @@ Flask==2.3.3
 Flask-SocketIO==5.3.6
 # Fallback: Flask-SocketIO>=5.0.0,<6.0
 
+requests>=2.31.0
+
 # WebAuthn / YubiKey authentication
 fido2>=2.1.1
 
@@ -62,16 +64,13 @@ Flask-CORS>=4.0.0
 
 # === SEMANTIC SEARCH & VECTOR DATABASE (NEW) ===
 # Vector database for semantic search
-qdrant-client>=2.7.0
-# Fallback: qdrant-client>=2.0.0,<3.0
+# qdrant-client removed on this CPU-only node; QIHSE is used instead
 
 # Embedding models for semantic search
-sentence-transformers>=2.2.0
-# Fallback: sentence-transformers>=2.0.0,<3.0
+# sentence-transformers removed on this CPU-only node
 
 # Machine learning for clustering, anomaly detection
-scikit-learn>=1.3.0
-# Fallback: scikit-learn>=1.0.0,<2.0
+# scikit-learn removed on this CPU-only node
 
 # Markdown processing for documentation
 Markdown==3.5.1

@@ -74,10 +74,12 @@ Usage:
 from .hybrid_search import (
     HybridSearchEngine,
     SQLiteFTS5IndexManager,
-    QdrantVectorManager,
+    QIHSEVectorManager,
     SearchType,
     SearchResult,
 )
+
+QdrantVectorManager = QIHSEVectorManager
 
 from .semantic_analysis import (
     SemanticClusteringEngine,
@@ -99,6 +101,7 @@ __all__ = [
     # Hybrid Search
     "HybridSearchEngine",
     "SQLiteFTS5IndexManager",
+    "QIHSEVectorManager",
     "QdrantVectorManager",
     "SearchType",
     "SearchResult",

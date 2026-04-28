@@ -112,16 +112,24 @@ class NotStislaParallelConfig(Structure):
 def _load_not_stisla_library():
     """Load NOT_STISLA shared library"""
     # Try multiple possible locations
-    possible_paths = [
+    possible_paths = []
+    for env_name in ("NOT_STISLA_LIB_PATH", "QIHSE_LIB_PATH"):
+        if os.getenv(env_name):
+            possible_paths.append(Path(os.environ[env_name]))
+
+    possible_paths.extend([
         # Relative to SPECTRA root
         Path(__file__).parent.parent.parent.parent.parent / "libs" / "search_algorithms" / "not_stisla" / "libnot_stisla.so",
         Path(__file__).parent.parent.parent.parent.parent / "libs" / "search_algorithms" / "not_stisla" / "libnot_stisla.a",
+        # OSINT node unified install: NOT_STISLA symbols are embedded in libqihse.so
+        Path("/opt/osint-node/sources/QIHSE/qihse/libqihse.so"),
         # System library paths
+        Path("/usr/local/lib/libqihse.so"),
         Path("/usr/local/lib/libnot_stisla.so"),
         Path("/usr/lib/libnot_stisla.so"),
         # Current directory
         Path("libnot_stisla.so"),
-    ]
+    ])
     
     for lib_path in possible_paths:
         if lib_path.exists():

@@ -27,6 +27,9 @@ SPECTRA is a forensic-grade intelligence framework for Telegram network discover
 - 💰 **Economic Market Engine**: Track Gross Market Value (GMV) across CaaS sectors (Initial Access, Malware, Logs) with USD-normalized pricing.
 - 📑 **Narrative Synthesis**: Automated LLM-driven intelligence briefings that classify actor archetypes and strategic threat status.
 - 💳 **Wallet-Watch (DIRECTEYE Ready)**: Forensic extraction of BTC, XMR, and TRX/ETH addresses with built-in hooks for [DIRECTEYE](https://github.com/SWORDIntel/DIRECTEYE) blockchain attribution.
+- 🤖 **Gatekeeper Evasion**: Built-in anti-bot challenge solving for automated invite access (math captchas and inline callbacks).
+- 👁️ **Media OCR & Image Fingerprinting**: Tesseract OCR integration scans downloaded media to pull threat indicators and crypto wallets directly from screenshots.
+- ⏳ **Burner Account & Temporal Tracking**: Correlates and builds aliases over time mapping rebrands to original Telegram user IDs.
 - 🚀 **One-Command Deployment**: Production-ready Docker orchestration with automated SSL via **Caddy**.
 - 🛡️ **OPSEC Core**: Multi-account/API rotation and proxy support for anti-detection and persistent collection.
 - 🧠 **MEMSHADOW Integration Ready**: Sidecar is optional and can be reconnected via `SPECTRA_MEMSHADOW_URL` without changing route contracts.
@@ -64,7 +67,14 @@ export SPECTRA_WEBAUTHN_ORIGIN="http://localhost:5000"
 export SPECTRA_WEBAUTHN_RP_ID="localhost"
 ./spectra
 ### Operational API Keys
-Secure the interface for remote access:
+Secure the interface for remote access or update your local `spectra_config.json`:
+```json
+{
+    "api_id": 34453253,
+    "api_hash": "b7188bbfe84dda5fce97f40faecfef6d"
+}
+```
+You can also launch with a GUI key:
 ```bash
 export SPECTRA_GUI_API_KEY="your-secure-key"
 ./spectra --api-key "$SPECTRA_GUI_API_KEY"

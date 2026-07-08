@@ -34,7 +34,12 @@ PAYMENT_PATTERNS = {
     "usdt": [r"\busdt\b", r"\btether\b"],
     "escrow": [r"\bescrow\b", r"\bmiddleman\b", r"\bmm\b"],
 }
-
+WALLET_PATTERNS = {
+    "btc": [r"\b(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,39}\b"],
+    "xmr": [r"\b4[0-9AB][1-9A-HJ-NP-Za-km-z]{93}\b", r"\b8[0-9AB][1-9A-HJ-NP-Za-km-z]{93}\b"],
+    "usdt_erc20": [r"\b0x[a-fA-F0-9]{40}\b"],
+    "usdt_trc20": [r"\bT[a-zA-Z0-9]{33}\b"],
+}
 
 def _normalize_currency(value: Optional[str]) -> Optional[str]:
     if not value:
@@ -69,6 +74,8 @@ class MessageProfile:
     enterprise_model: list[str] = field(default_factory=list)
     seller_aliases: list[str] = field(default_factory=list)
     payment_methods: list[str] = field(default_factory=list)
+    invite_links: list[str] = field(default_factory=list)
+    crypto_wallets: list[dict[str, str]] = field(default_factory=list)
     delivery_model: Optional[str] = None
     prices: list[PriceObservation] = field(default_factory=list)
     threat_indicators: list[dict[str, Any]] = field(default_factory=list)
@@ -81,6 +88,8 @@ class MessageProfile:
                 "enterprise_model": self.enterprise_model,
                 "seller_aliases": self.seller_aliases,
                 "payment_methods": self.payment_methods,
+                "invite_links": self.invite_links,
+                "crypto_wallets": self.crypto_wallets,
                 "delivery_model": self.delivery_model,
                 "prices": [asdict(p) for p in self.prices],
                 "threat_indicators": self.threat_indicators,
@@ -128,6 +137,26 @@ class CAASProfilerV2:
         aliases = sorted(set(HANDLE_RE.findall(content or "")))
         if sender_username:
             aliases = sorted(set(aliases + [sender_username]))
+        invite_links = sorted(set(re.findall(r'(?:https?://)?t\.me/(?:joinchat/|\+)?([a-zA-Z0-9_-]+)', content or "", re.I)))
+        external_targets = sorted(set(
+            re.findall(r'([a-zA-Z0-9-]+\.onion)', content or "", re.I) +
+            re.findall(r'(?:https?://)?(?:discord\.gg|discord\.com/invite)/([a-zA-Z0-9_-]+)', content or "", re.I)
+        ))
+        
+        crypto_wallets = []
+        for ctype, patterns in WALLET_PATTERNS.items():
+            for pat in patterns:
+                for match in re.findall(pat, content or ""):
+                    # some regexes capture groups (like btc), we just want the whole match string
+                    if isinstance(match, tuple):
+                        # Use search to get the full match since findall returns tuples if groups are present
+                        full_match = re.search(pat, content).group(0)
+                        if {"type": ctype, "address": full_match} not in crypto_wallets:
+                            crypto_wallets.append({"type": ctype, "address": full_match})
+                    else:
+                        if {"type": ctype, "address": match} not in crypto_wallets:
+                            crypto_wallets.append({"type": ctype, "address": match})
+
         prices = self._extract_prices(normalized)
 
         # Enhanced threat detection integration
@@ -135,6 +164,15 @@ class CAASProfilerV2:
         indicators = self.threat_detector.detect_indicators(content or "")
         for ind in indicators:
             threat_indicators.append(ind.to_dict())
+
+        # Also add external targets to threat indicators for upstream processing
+        for ext in external_targets:
+            threat_indicators.append({
+                "type": "external_infrastructure",
+                "value": ext,
+                "severity": 3.0,
+                "level": "high"
+            })
 
         confidence = 0.10
         if service_categories:
@@ -169,6 +207,7 @@ class CAASProfilerV2:
             enterprise_model=enterprise_model,
             seller_aliases=aliases,
             payment_methods=payment_methods,
+            invite_links=invite_links,
             delivery_model=delivery_model,
             prices=prices,
             threat_indicators=threat_indicators,
@@ -225,7 +264,7 @@ class CAASProfilerV2:
                 )
 
         for alias in profile.seller_aliases:
-            db.conn.execute(
+            cursor = db.conn.execute(
                 """
                 INSERT INTO actor_entity (platform, canonical_handle, entity_type, bot_likelihood, first_seen, last_seen)
                 VALUES (?, ?, ?, ?, ?, ?)
@@ -233,7 +272,72 @@ class CAASProfilerV2:
                     entity_type=excluded.entity_type,
                     bot_likelihood=MAX(actor_entity.bot_likelihood, excluded.bot_likelihood),
                     last_seen=excluded.last_seen
+                RETURNING id
                 """,
                 ("telegram", alias, "seller_alias", 0.0, now, now),
             )
+            actor_id = cursor.fetchone()[0]
+
+            db.conn.execute(
+                """
+                INSERT INTO actor_alias_history (actor_id, alias, first_seen, last_seen)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(actor_id, alias) DO UPDATE SET
+                    last_seen=excluded.last_seen
+                """,
+                (actor_id, alias, now, now)
+            )
+            
+            # Tag POI in CAAS tracked targets (Spidering/Tagging)
+            normalized_alias = alias.lstrip("@").lower()
+            db.conn.execute(
+                """
+                INSERT INTO caas_tracked_target (target_type, actor_username, reason, active, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(target_type, actor_username) DO UPDATE SET updated_at=excluded.updated_at
+                """,
+                ("actor_username", normalized_alias, f"Auto-tagged POI from channel {channel_id}", 1, now, now)
+            )
+
+        # Spidering: Add extracted invite links to discovery list
+        for link in profile.invite_links:
+            db.conn.execute(
+                """
+                INSERT INTO caas_invite_list (list_name, source_invite, reason, flagged, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(list_name) DO NOTHING
+                """,
+                (f"spider_{link}", f"https://t.me/{link}", f"Spidering extracted from channel {channel_id}", 0, now, now)
+            )
+
+        # Cross-Platform Extraction: Log external infrastructure like .onion and discord
+        for ind in profile.threat_indicators:
+            if ind.get("type") == "external_infrastructure":
+                val = ind["value"]
+                ttype = "onion" if ".onion" in val else ("discord" if "discord" in val else "other")
+                db.conn.execute(
+                    """
+                    INSERT INTO caas_external_targets (target_type, target_value, source_channel_id, reason, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(target_value) DO UPDATE SET updated_at=excluded.updated_at
+                    """,
+                    (ttype, val, channel_id, f"Extracted external infrastructure from channel {channel_id}", now, now)
+                )
+
+        # Log crypto wallets
+        for wallet in profile.crypto_wallets:
+            actor = profile.seller_aliases[0] if profile.seller_aliases else None
+            db.conn.execute(
+                """
+                INSERT INTO caas_wallets (wallet_address, crypto_type, source_channel_id, source_message_id, actor_username, detected_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(wallet_address) DO UPDATE SET
+                    source_channel_id=excluded.source_channel_id,
+                    source_message_id=excluded.source_message_id,
+                    actor_username=COALESCE(excluded.actor_username, actor_username),
+                    detected_at=excluded.detected_at
+                """,
+                (wallet["address"], wallet["type"], channel_id, message_id, actor, now)
+            )
+
         db.conn.commit()

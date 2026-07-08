@@ -4,12 +4,12 @@ Command History System for SPECTRA TUI
 
 Hybrid architecture for fast command history:
 - In-memory deque for recent operations (1000-5000) - O(1) append, instant access
-- NOT_STISLA indexing for fast timestamp-based lookups - 22.28x speedup
+- KEYSTONE indexing for fast timestamp-based lookups - 22.28x speedup
 - SQLite persistence for older history and periodic flush
 
 Performance:
 - Recent operations: Instant access from memory
-- Timestamp searches: 22.28x faster with NOT_STISLA
+- Timestamp searches: 22.28x faster with KEYSTONE
 - Memory efficient: Only recent N operations in memory
 - Persistent: SQLite ensures data survives restarts
 """
@@ -26,17 +26,17 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-# Try to import NOT_STISLA for fast timestamp searches
+# Try to import KEYSTONE for fast timestamp searches
 try:
-    from ..search.not_stisla_bindings import (
-        NotStislaSearchEngine,
-        NOT_STISLA_WORKLOAD_TELEMETRY,
-        not_stisla_available,
+    from ..search.keystone_bindings import (
+        KeystoneSearchEngine,
+        KEYSTONE_WORKLOAD_TELEMETRY,
+        keystone_available,
     )
-    NOT_STISLA_ENABLED = not_stisla_available()
+    KEYSTONE_ENABLED = keystone_available()
 except ImportError:
-    NOT_STISLA_ENABLED = False
-    logger.debug("NOT_STISLA not available for command history")
+    KEYSTONE_ENABLED = False
+    logger.debug("KEYSTONE not available for command history")
 
 
 @dataclass
@@ -65,7 +65,7 @@ class CommandHistory:
     
     Architecture:
     - In-memory deque: Recent 1000-5000 operations (instant access)
-    - NOT_STISLA: Fast timestamp-based lookups (22.28x speedup)
+    - KEYSTONE: Fast timestamp-based lookups (22.28x speedup)
     - SQLite: Persistence for older history and periodic flush
     """
     
@@ -90,20 +90,20 @@ class CommandHistory:
         # In-memory storage for recent operations
         self.recent_history: deque = deque(maxlen=self.RECENT_HISTORY_SIZE)
         
-        # NOT_STISLA engine for fast timestamp searches
-        self.not_stisla_engine: Optional[NotStislaSearchEngine] = None
-        self.timestamp_array: List[int] = []  # Sorted timestamps for NOT_STISLA
+        # KEYSTONE engine for fast timestamp searches
+        self.keystone_engine: Optional[KeystoneSearchEngine] = None
+        self.timestamp_array: List[int] = []  # Sorted timestamps for KEYSTONE
         self.timestamp_to_index: Dict[int, int] = {}  # Map timestamp to index in recent_history
         
-        if NOT_STISLA_ENABLED:
+        if KEYSTONE_ENABLED:
             try:
-                self.not_stisla_engine = NotStislaSearchEngine(
-                    workload_type=NOT_STISLA_WORKLOAD_TELEMETRY
+                self.keystone_engine = KeystoneSearchEngine(
+                    workload_type=KEYSTONE_WORKLOAD_TELEMETRY
                 )
-                logger.debug("NOT_STISLA engine initialized for command history")
+                logger.debug("KEYSTONE engine initialized for command history")
             except Exception as e:
-                logger.warning(f"Failed to initialize NOT_STISLA: {e}")
-                self.not_stisla_engine = None
+                logger.warning(f"Failed to initialize KEYSTONE: {e}")
+                self.keystone_engine = None
         
         # SQLite database for persistence
         self._init_database()
@@ -178,17 +178,17 @@ class CommandHistory:
             for entry in reversed(entries):
                 self.recent_history.append(entry)
             
-            # Build NOT_STISLA index
-            self._rebuild_not_stisla_index()
+            # Build KEYSTONE index
+            self._rebuild_keystone_index()
             
             logger.debug(f"Loaded {len(self.recent_history)} recent operations from database")
             
         except Exception as e:
             logger.error(f"Failed to load recent history: {e}")
     
-    def _rebuild_not_stisla_index(self):
-        """Rebuild NOT_STISLA timestamp index"""
-        if not self.not_stisla_engine:
+    def _rebuild_keystone_index(self):
+        """Rebuild KEYSTONE timestamp index"""
+        if not self.keystone_engine:
             return
         
         # Extract timestamps and create sorted array
@@ -233,10 +233,10 @@ class CommandHistory:
         # Add to in-memory recent history
         self.recent_history.append(entry)
         
-        # Update NOT_STISLA index
-        if self.not_stisla_engine:
+        # Update KEYSTONE index
+        if self.keystone_engine:
             timestamp_int = int(timestamp)
-            # Insert in sorted order for NOT_STISLA
+            # Insert in sorted order for KEYSTONE
             import bisect
             bisect.insort(self.timestamp_array, timestamp_int)
             # Map timestamp to index in recent_history
@@ -308,7 +308,7 @@ class CommandHistory:
         tolerance_seconds: float = 1.0
     ) -> Optional[CommandHistoryEntry]:
         """
-        Search for entry by timestamp using NOT_STISLA.
+        Search for entry by timestamp using KEYSTONE.
         
         Args:
             target_timestamp: Target timestamp
@@ -317,7 +317,7 @@ class CommandHistory:
         Returns:
             CommandHistoryEntry if found, None otherwise
         """
-        if not self.timestamp_array or not self.not_stisla_engine:
+        if not self.timestamp_array or not self.keystone_engine:
             # Fallback to linear search
             target_int = int(target_timestamp)
             for entry in self.recent_history:
@@ -325,9 +325,9 @@ class CommandHistory:
                     return entry
             return None
         
-        # Use NOT_STISLA for fast search
+        # Use KEYSTONE for fast search
         target_int = int(target_timestamp)
-        idx = self.not_stisla_engine.search(self.timestamp_array, target_int, tolerance=int(tolerance_seconds))
+        idx = self.keystone_engine.search(self.timestamp_array, target_int, tolerance=int(tolerance_seconds))
         
         if idx is not None and 0 <= idx < len(self.timestamp_array):
             timestamp = self.timestamp_array[idx]
@@ -379,11 +379,11 @@ class CommandHistory:
         start_int = int(start_time)
         end_int = int(end_time)
         
-        # Use NOT_STISLA to find entries in range
-        if self.not_stisla_engine and self.timestamp_array:
+        # Use KEYSTONE to find entries in range
+        if self.keystone_engine and self.timestamp_array:
             # Find start and end indices
-            start_idx = self.not_stisla_engine.search(self.timestamp_array, start_int, tolerance=3600)
-            end_idx = self.not_stisla_engine.search(self.timestamp_array, end_int, tolerance=3600)
+            start_idx = self.keystone_engine.search(self.timestamp_array, start_int, tolerance=3600)
+            end_idx = self.keystone_engine.search(self.timestamp_array, end_int, tolerance=3600)
             
             if start_idx is not None and end_idx is not None:
                 # Get entries in range
@@ -413,7 +413,7 @@ class CommandHistory:
             return {
                 'total_entries': 0,
                 'in_memory_count': 0,
-                'not_stisla_enabled': self.not_stisla_engine is not None,
+                'keystone_enabled': self.keystone_engine is not None,
             }
         
         # Count by operation type
@@ -440,7 +440,7 @@ class CommandHistory:
         return {
             'total_entries': db_count,
             'in_memory_count': len(self.recent_history),
-            'not_stisla_enabled': self.not_stisla_engine is not None,
+            'keystone_enabled': self.keystone_engine is not None,
             'operation_counts': operation_counts,
             'status_counts': status_counts,
             'oldest_in_memory': self.recent_history[0].timestamp if self.recent_history else None,
@@ -466,6 +466,6 @@ class CommandHistory:
     def close(self):
         """Close and flush all data"""
         self._flush_to_database()
-        if self.not_stisla_engine:
-            # NOT_STISLA engine cleanup is handled by __del__
-            self.not_stisla_engine = None
+        if self.keystone_engine:
+            # KEYSTONE engine cleanup is handled by __del__
+            self.keystone_engine = None

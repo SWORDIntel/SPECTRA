@@ -2,7 +2,7 @@
 Memory-Bounded Anchor Table Management
 ======================================
 
-Manages NOT_STISLA anchor tables with memory limits to prevent excessive
+Manages KEYSTONE anchor tables with memory limits to prevent excessive
 memory usage while maintaining optimal search performance.
 """
 
@@ -10,18 +10,18 @@ import logging
 from typing import Dict, Optional
 from pathlib import Path
 
-from .not_stisla_bindings import (
-    NotStislaSearchEngine,
-    not_stisla_available,
-    NOT_STISLA_MAX_ANCHORS,
+from .keystone_bindings import (
+    KeystoneSearchEngine,
+    keystone_available,
+    KEYSTONE_MAX_ANCHORS,
 )
 
 logger = logging.getLogger(__name__)
 
 
-class NotStislaMemoryManager:
+class KeystoneMemoryManager:
     """
-    Manages NOT_STISLA anchor table memory usage.
+    Manages KEYSTONE anchor table memory usage.
     
     Implements memory-bounded anchor tables with automatic pruning
     to prevent excessive memory consumption.
@@ -35,10 +35,10 @@ class NotStislaMemoryManager:
             max_memory_mb: Maximum memory budget in MB for all anchor tables
         """
         self.max_memory = max_memory_mb * 1024 * 1024  # Convert to bytes
-        self.anchor_tables: Dict[int, NotStislaSearchEngine] = {}
+        self.anchor_tables: Dict[int, KeystoneSearchEngine] = {}
         self.usage_counts: Dict[int, int] = {}  # Track usage for LRU pruning
     
-    def get_anchor_table(self, workload_type: int) -> Optional[NotStislaSearchEngine]:
+    def get_anchor_table(self, workload_type: int) -> Optional[KeystoneSearchEngine]:
         """
         Get or create anchor table with memory limits.
         
@@ -48,7 +48,7 @@ class NotStislaMemoryManager:
         Returns:
             Anchor table engine or None if unavailable
         """
-        if not not_stisla_available():
+        if not keystone_available():
             return None
         
         # Return existing table if available
@@ -66,15 +66,15 @@ class NotStislaMemoryManager:
         
         # Create new anchor table
         try:
-            from .not_stisla_config import create_spectra_anchor_table
+            from .keystone_config import create_spectra_anchor_table
             table = create_spectra_anchor_table(workload_type)
             
             # Set memory limit per table
             if table.anchor_table:
-                from .not_stisla_bindings import _lib
+                from .keystone_bindings import _lib
                 if _lib:
-                    _lib.not_stisla_anchor_table_set_memory_limit(
-                        table.anchor_table, NOT_STISLA_MAX_ANCHORS
+                    _lib.keystone_anchor_table_set_memory_limit(
+                        table.anchor_table, KEYSTONE_MAX_ANCHORS
                     )
             
             self.anchor_tables[workload_type] = table
@@ -98,7 +98,7 @@ class NotStislaMemoryManager:
         # Max anchors per table is 16
         # Plus overhead for structure (~100 bytes)
         anchor_size = 32
-        max_anchors = NOT_STISLA_MAX_ANCHORS
+        max_anchors = KEYSTONE_MAX_ANCHORS
         overhead = 100
         
         return (anchor_size * max_anchors) + overhead

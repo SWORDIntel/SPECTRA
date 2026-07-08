@@ -57,7 +57,7 @@ class SearchUpdateStream:
         # Stream search results using actual search engines
         # Integration requires UnifiedSearchEngine instance with database connection
         
-        # Stream NOT_STISLA results first (fastest)
+        # Stream KEYSTONE results first (fastest)
         if 'date_from' in kwargs or 'date_to' in kwargs:
             # Stream temporal results
             async for result in self._stream_temporal_results(query, **kwargs):
@@ -101,13 +101,13 @@ class SearchUpdateStream:
         **kwargs
     ) -> AsyncGenerator[SearchResult, None]:
         """
-        Stream temporal search results using NOT_STISLA.
+        Stream temporal search results using KEYSTONE.
         
-        Requires database connection and NOT_STISLA engine to be initialized.
+        Requires database connection and KEYSTONE engine to be initialized.
         Integration point: Connect to actual search engine instance.
         """
-        # Integration requires: db_connection, not_stisla_engine
-        # Implementation: Call not_stisla_engine.search_stream() when engine available
+        # Integration requires: db_connection, keystone_engine
+        # Implementation: Call keystone_engine.search_stream() when engine available
         # Returns empty generator until engine integration provided
         return
         yield  # Make this a generator

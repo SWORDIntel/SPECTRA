@@ -1,0 +1,15 @@
+[submodule "KEYSTONE"]
+	path = KEYSTONE
+	url = https://github.com/SWORDIntel/KEYSTONE
+[submodule "QIHSE"]
+	path = QIHSE
+	url = https://github.com/SWORDIntel/QIHSE
+[submodule "libs/KEYSTONE"]
+	path = libs/KEYSTONE
+	url = https://github.com/SWORDIntel/KEYSTONE
+[submodule "libs/QIHSE"]
+	path = libs/QIHSE
+	url = https://github.com/SWORDIntel/QIHSE
+[submodule "src/MEMSHADOW"]
+	path = src/MEMSHADOW
+	url = https://github.com/SWORDIntel/MEMSHADOW

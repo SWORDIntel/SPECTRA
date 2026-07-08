@@ -105,15 +105,8 @@ TZ = timezone.utc
 console = Console()
 
 # ── Logging Setup ─────────────────────────────────────────────────────────
-LOGS_DIR = Path.cwd() / "logs"
-LOGS_DIR.mkdir(exist_ok=True)
-log_file = LOGS_DIR / f"{APP_NAME}_{datetime.now(tz=TZ).strftime('%Y%m%d_%H%M%S')}.log"
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.FileHandler(log_file, encoding="utf-8"), logging.StreamHandler(sys.stdout)],
-)
-logger = logging.getLogger(APP_NAME)
+from tgarchive.core.log_engine import setup_log_engine
+logger = setup_log_engine(APP_NAME)
 
 # DEFAULT_CFG and Config class are now in config_models.py
 

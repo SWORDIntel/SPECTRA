@@ -26,7 +26,7 @@
 
 #### Phase 1: Core Enhancements
 - ✅ **Keyboard Shortcuts** - 3/3 tests passed
-- ✅ **Command History** - 4/4 tests passed (NOT_STISLA + SQLite hybrid verified)
+- ✅ **Command History** - 4/4 tests passed (KEYSTONE + SQLite hybrid verified)
 - ⚠️ **Progress Feedback** - 1/1 passed, 1 skipped (npyscreen Widget)
 - ✅ **Contextual Help** - 3/3 tests passed
 - ✅ **Auto-completion** - Tested via integration
@@ -49,7 +49,7 @@
 - ✅ **Quick Access** - Tested via integration
 
 #### Final Phase: Enterprise Features
-- ✅ **Audit Logging** - 2/2 tests passed (NOT_STISLA indexed)
+- ✅ **Audit Logging** - 2/2 tests passed (KEYSTONE indexed)
 - ✅ **Smart Defaults** - 1/1 test passed
 - ✅ **Remote-Friendly** - 2/2 tests passed
 
@@ -59,7 +59,7 @@
 ## Verification
 
 All tests verify:
-- ✅ Real API usage (NOT_STISLA, SQLite, JSON persistence)
+- ✅ Real API usage (KEYSTONE, SQLite, JSON persistence)
 - ✅ No fake implementations (follows cursorrules)
 - ✅ Proper error handling
 - ✅ Data persistence

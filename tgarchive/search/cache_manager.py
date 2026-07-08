@@ -239,7 +239,7 @@ class CacheManager:
         anchor_data: Any,
         ttl: Optional[int] = None
     ) -> bool:
-        """Cache NOT_STISLA anchor table"""
+        """Cache KEYSTONE anchor table"""
         key = self._make_key("anchor_table", workload_type)
         return self.set(key, anchor_data, ttl or 86400)  # 24 hours default
     

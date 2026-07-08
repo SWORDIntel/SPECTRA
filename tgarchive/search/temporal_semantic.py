@@ -2,7 +2,7 @@
 Temporal-Semantic Correlation Search
 ====================================
 
-Combines NOT_STISLA for fast temporal filtering with QIHSE for semantic similarity
+Combines KEYSTONE for fast temporal filtering with QIHSE for semantic similarity
 to find semantically similar messages within specific time windows.
 """
 
@@ -11,10 +11,10 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 import numpy as np
 
-from .not_stisla_bindings import (
-    NotStislaSearchEngine,
-    not_stisla_available,
-    NOT_STISLA_WORKLOAD_TELEMETRY,
+from .keystone_bindings import (
+    KeystoneSearchEngine,
+    keystone_available,
+    KEYSTONE_WORKLOAD_TELEMETRY,
 )
 from .qihse_bindings import (
     QihseSearchEngine,
@@ -30,7 +30,7 @@ class TemporalSemanticSearch:
     """
     Temporal-semantic correlation search engine.
     
-    Uses NOT_STISLA for fast temporal filtering (22.28x speedup) combined with
+    Uses KEYSTONE for fast temporal filtering (22.28x speedup) combined with
     QIHSE for semantic similarity search (2-5x speedup) to find related messages
     within time windows.
     """
@@ -45,14 +45,14 @@ class TemporalSemanticSearch:
         """
         self.db = db_connection
         
-        # Initialize NOT_STISLA for temporal searches
-        self.not_stisla = None
-        if not_stisla_available():
+        # Initialize KEYSTONE for temporal searches
+        self.keystone = None
+        if keystone_available():
             try:
-                self.not_stisla = NotStislaSearchEngine(NOT_STISLA_WORKLOAD_TELEMETRY)
-                logger.info("NOT_STISLA initialized for temporal search")
+                self.keystone = KeystoneSearchEngine(KEYSTONE_WORKLOAD_TELEMETRY)
+                logger.info("KEYSTONE initialized for temporal search")
             except Exception as e:
-                logger.warning(f"Failed to initialize NOT_STISLA: {e}")
+                logger.warning(f"Failed to initialize KEYSTONE: {e}")
         
         # Initialize QIHSE for semantic search
         self.qihse = None
@@ -89,7 +89,7 @@ class TemporalSemanticSearch:
         """
         Find semantically similar messages within time window.
         
-        Step 1: Use NOT_STISLA to find messages in time window (22.28x faster than SQL)
+        Step 1: Use KEYSTONE to find messages in time window (22.28x faster than SQL)
         Step 2: Use QIHSE to find semantically similar (on filtered set)
         
         Args:
@@ -103,22 +103,22 @@ class TemporalSemanticSearch:
         Returns:
             List of SearchResult objects
         """
-        # Step 1: Use NOT_STISLA for fast temporal filtering
+        # Step 1: Use KEYSTONE for fast temporal filtering
         timestamp_start = int(start_time.timestamp())
         timestamp_end = int(end_time.timestamp())
         
         message_ids = []
-        if self.not_stisla and hasattr(self.db, 'find_messages_by_timestamp_range'):
+        if self.keystone and hasattr(self.db, 'find_messages_by_timestamp_range'):
             try:
                 message_ids = self.db.find_messages_by_timestamp_range(
                     timestamp_start, timestamp_end, channel_id
                 )
-                logger.debug(f"NOT_STISLA found {len(message_ids)} messages in time window")
+                logger.debug(f"KEYSTONE found {len(message_ids)} messages in time window")
             except Exception as e:
-                logger.warning(f"NOT_STISLA temporal search failed: {e}")
+                logger.warning(f"KEYSTONE temporal search failed: {e}")
                 message_ids = []
         
-        # Fallback to SQL if NOT_STISLA unavailable
+        # Fallback to SQL if KEYSTONE unavailable
         if not message_ids:
             try:
                 query_sql = """
@@ -230,7 +230,7 @@ class TemporalSemanticSearch:
                             match_type=SearchType.SEMANTIC,
                             metadata={
                                 'algorithm': 'temporal_semantic',
-                                'not_stisla_temporal': True,
+                                'keystone_temporal': True,
                                 'qihse_semantic': True,
                                 'time_window': {
                                     'start': start_time.isoformat(),

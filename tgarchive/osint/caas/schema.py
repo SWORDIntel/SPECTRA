@@ -144,11 +144,57 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_caas_tracked_target_actor
 ON caas_tracked_target(target_type, actor_username);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_caas_tracked_target_channel
 ON caas_tracked_target(target_type, channel_id);
+
+CREATE TABLE IF NOT EXISTS caas_external_targets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_type TEXT NOT NULL CHECK(target_type IN ('onion', 'discord', 'other')),
+    target_value TEXT NOT NULL UNIQUE,
+    source_channel_id INTEGER,
+    reason TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS group_relationships (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_group TEXT,
+    target_group TEXT,
+    relationship_type TEXT DEFAULT 'mention',
+    weight REAL DEFAULT 1.0,
+    UNIQUE(source_group, target_group, relationship_type)
+);
+
+CREATE TABLE IF NOT EXISTS caas_wallets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    wallet_address TEXT NOT NULL UNIQUE,
+    crypto_type TEXT NOT NULL,
+    source_channel_id INTEGER,
+    source_message_id INTEGER,
+    actor_username TEXT,
+    detected_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS actor_alias_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor_id INTEGER NOT NULL REFERENCES actor_entity(id) ON DELETE CASCADE,
+    alias TEXT NOT NULL,
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    UNIQUE(actor_id, alias)
+);
+
+ALTER TABLE actor_entity ADD COLUMN telegram_user_id INTEGER;
 """
 
-
 def ensure_schema(db: Any) -> None:
-    db.conn.executescript(CAAS_SCHEMA_SQL)
+    # First apply everything except the alter table (we remove it from the big script)
+    # Actually it's easier to just catch exceptions for alter table, but executescript stops on error.
+    script_without_alter = CAAS_SCHEMA_SQL.replace("ALTER TABLE actor_entity ADD COLUMN telegram_user_id INTEGER;", "")
+    db.conn.executescript(script_without_alter)
+    try:
+        db.conn.execute("ALTER TABLE actor_entity ADD COLUMN telegram_user_id INTEGER;")
+    except Exception:
+        pass # Already exists
     db.conn.commit()
 
 
@@ -156,7 +202,7 @@ def enqueue_profile_candidate(db: Any, *, channel_id: int, message_id: int, topi
     ensure_schema(db)
     db.conn.execute(
         """
-        INSERT OR IGNORE INTO caas_profile_queue
+        INSERT OR REPLACE INTO caas_profile_queue
         (channel_id, message_id, topic_id, sender_id, sender_username, date, content, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,

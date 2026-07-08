@@ -324,7 +324,7 @@ class QihseSearchEngine:
         Args:
             vectors: Array of vectors to search (n x dims)
             query_vector: Query vector (dims,)
-            anchor_table: Optional NOT_STISLA anchor table
+            anchor_table: Optional KEYSTONE anchor table
             confidence_threshold: Minimum confidence threshold
         
         Returns:

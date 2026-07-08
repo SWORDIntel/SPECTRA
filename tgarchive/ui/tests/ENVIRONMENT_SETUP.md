@@ -47,7 +47,7 @@ cd external/intel/SPECTRA/tgarchive/ui/tests
 Integration tests require full SPECTRA imports which have a dependency on `CreateForumTopicRequest` from telethon. This appears to be a version compatibility issue in the SPECTRA codebase itself (used in `forwarding/topic_manager.py`). 
 
 The unit tests for all 20 enhancements pass successfully, verifying:
-- ✅ Real API usage (NOT_STISLA, SQLite, JSON)
+- ✅ Real API usage (KEYSTONE, SQLite, JSON)
 - ✅ Component functionality
 - ✅ Data persistence
 - ✅ Error handling

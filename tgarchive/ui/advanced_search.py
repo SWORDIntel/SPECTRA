@@ -3,7 +3,7 @@ Advanced Search System for SPECTRA TUI
 =======================================
 
 Multi-criteria search with saved filters, search history, and integration
-with hybrid search (SQLite FTS5, Qdrant, NOT_STISLA, QIHSE).
+with hybrid search (SQLite FTS5, Qdrant, KEYSTONE, QIHSE).
 """
 
 import json

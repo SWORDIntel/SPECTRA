@@ -38,6 +38,32 @@ class SpectraDB(BaseDB):
         self.sorting_hash = SortingHashOperations(self)
         self.migration = MigrationOperations(self)
         self.mirror = MirrorOperations(self)
+        
+        # Integrate QIHSE natively as the root vector DB layer
+        try:
+            from .vector_store import VectorStoreManager, VectorStoreConfig
+            vstore_config = VectorStoreConfig(
+                backend="qihse",
+                path="./data/vector_store",
+                collection_name="spectra_messages",
+            )
+            self.vector_store = VectorStoreManager(vstore_config)
+            import logging
+            logging.getLogger(__name__).info("QIHSE Vector Store natively integrated as DB layer")
+        except Exception as e:
+            self.vector_store = None
+            import logging
+            logging.getLogger(__name__).warning(f"Failed to integrate native QIHSE Vector Store: {e}")
+
+    # Delegate vector store operations
+    def index_message(self, message_id: int, content: str, user_id: Optional[int], channel_id: Optional[int], date: datetime):
+        if self.vector_store:
+            return self.vector_store.index_message(message_id, content, user_id, channel_id, date)
+
+    def semantic_search(self, query: str, limit: int = 10, channel_id: Optional[int] = None) -> List[Any]:
+        if self.vector_store:
+            return self.vector_store.semantic_search(query, limit, channel_id)
+        return []
 
     # Delegate core operations
     def upsert_user(self, user):

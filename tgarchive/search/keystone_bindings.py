@@ -1,8 +1,8 @@
 """
-NOT_STISLA Python FFI Bindings
+KEYSTONE Python FFI Bindings
 ==============================
 
-Python ctypes wrapper for NOT_STISLA C library providing:
+Python ctypes wrapper for KEYSTONE C library providing:
 - 22.28x speedup over binary search for sorted arrays
 - Anchor-based interpolation search with learning
 - Memory-bounded anchor tables
@@ -23,26 +23,26 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Constants from not_stisla.h
-NOT_STISLA_NOT_FOUND = 0xFFFFFFFFFFFFFFFF
-NOT_STISLA_MAX_ANCHORS = 16
-NOT_STISLA_CHUNK_SIZE = 4
-NOT_STISLA_MIN_ANCHORS = 2
+# Constants from keystone.h
+KEYSTONE_NOT_FOUND = 0xFFFFFFFFFFFFFFFF
+KEYSTONE_MAX_ANCHORS = 16
+KEYSTONE_CHUNK_SIZE = 4
+KEYSTONE_MIN_ANCHORS = 2
 
 # Workload types
-NOT_STISLA_WORKLOAD_TELEMETRY = 0
-NOT_STISLA_WORKLOAD_IDS = 1
-NOT_STISLA_WORKLOAD_OFFSETS = 2
-NOT_STISLA_WORKLOAD_EVENTS = 3
+KEYSTONE_WORKLOAD_TELEMETRY = 0
+KEYSTONE_WORKLOAD_IDS = 1
+KEYSTONE_WORKLOAD_OFFSETS = 2
+KEYSTONE_WORKLOAD_EVENTS = 3
 
 # Error codes
-NOT_STISLA_SUCCESS = 0
-NOT_STISLA_ERROR_INVALID_PARAM = -1
-NOT_STISLA_ERROR_MEMORY = -2
-NOT_STISLA_ERROR_NOT_FOUND = -3
+KEYSTONE_SUCCESS = 0
+KEYSTONE_ERROR_INVALID_PARAM = -1
+KEYSTONE_ERROR_MEMORY = -2
+KEYSTONE_ERROR_NOT_FOUND = -3
 
 
-class NotStislaAnchor(Structure):
+class KeystoneAnchor(Structure):
     """Anchor structure for interpolation search"""
     _fields_ = [
         ("v", c_int64),           # value
@@ -52,7 +52,7 @@ class NotStislaAnchor(Structure):
     ]
 
 
-class NotStislaStats(Structure):
+class KeystoneStats(Structure):
     """Statistics structure"""
     _fields_ = [
         ("searches_total", c_uint64),
@@ -66,21 +66,21 @@ class NotStislaStats(Structure):
     ]
 
 
-class NotStislaAnchorTable(Structure):
+class KeystoneAnchorTable(Structure):
     """Anchor table structure"""
     _fields_ = [
-        ("anchors", POINTER(NotStislaAnchor)),
+        ("anchors", POINTER(KeystoneAnchor)),
         ("capacity", c_size_t),
         ("size", c_size_t),
         ("max_capacity", c_size_t),
         ("searches_performed", c_size_t),
         ("workload_type", c_int),
-        ("stats", NotStislaStats),
+        ("stats", KeystoneStats),
         ("creation_time", c_uint64),
     ]
 
 
-class NotStislaConfig(Structure):
+class KeystoneConfig(Structure):
     """Configuration structure"""
     _fields_ = [
         ("tol", c_size_t),
@@ -90,7 +90,7 @@ class NotStislaConfig(Structure):
     ]
 
 
-class NotStislaBatchItem(Structure):
+class KeystoneBatchItem(Structure):
     """Batch search item"""
     _fields_ = [
         ("key", c_int64),
@@ -99,7 +99,7 @@ class NotStislaBatchItem(Structure):
     ]
 
 
-class NotStislaParallelConfig(Structure):
+class KeystoneParallelConfig(Structure):
     """Parallel search configuration"""
     _fields_ = [
         ("num_threads", c_int),
@@ -108,34 +108,45 @@ class NotStislaParallelConfig(Structure):
     ]
 
 
-# Load NOT_STISLA library
-def _load_not_stisla_library():
-    """Load NOT_STISLA shared library"""
+# Load KEYSTONE library
+def _load_keystone_library():
+    """Load KEYSTONE shared library"""
     # Try multiple possible locations
     possible_paths = []
-    for env_name in ("NOT_STISLA_LIB_PATH", "QIHSE_LIB_PATH"):
+    for env_name in ("KEYSTONE_LIB_PATH", "QIHSE_LIB_PATH"):
         if os.getenv(env_name):
             possible_paths.append(Path(os.environ[env_name]))
 
     possible_paths.extend([
-        # Relative to SPECTRA root
-        Path(__file__).parent.parent.parent.parent.parent / "libs" / "search_algorithms" / "not_stisla" / "libnot_stisla.so",
-        Path(__file__).parent.parent.parent.parent.parent / "libs" / "search_algorithms" / "not_stisla" / "libnot_stisla.a",
-        # OSINT node unified install: NOT_STISLA symbols are embedded in libqihse.so
+        Path(__file__).parent.parent.parent.parent.parent / "libs" / "search_algorithms" / "keystone" / "libkeystone.so",
+        Path(__file__).parent.parent.parent.parent.parent / "libs" / "search_algorithms" / "keystone" / "libkeystone.a",
+        Path(__file__).parent.parent / "KEYSTONE" / "libkeystone.so", # New path natively embedded in SPECTRA
+        # OSINT node unified install: KEYSTONE symbols are embedded in libqihse.so
         Path("/opt/osint-node/sources/QIHSE/qihse/libqihse.so"),
         # System library paths
         Path("/usr/local/lib/libqihse.so"),
-        Path("/usr/local/lib/libnot_stisla.so"),
-        Path("/usr/lib/libnot_stisla.so"),
+        Path("/usr/local/lib/libkeystone.so"),
+        Path("/usr/lib/libkeystone.so"),
         # Current directory
-        Path("libnot_stisla.so"),
+        Path("libkeystone.so"),
     ])
     
     for lib_path in possible_paths:
         if lib_path.exists():
             try:
+                # Need to load the correct library - KEYSTONE functions are missing in qihse
+                if lib_path.name == "libqihse.so":
+                    # Try to check if keystone_anchor_table_create is in it before assuming
+                    import subprocess
+                    try:
+                        res = subprocess.run(["nm", "-D", str(lib_path)], capture_output=True, text=True)
+                        if "keystone_anchor_table_create" not in res.stdout:
+                            continue
+                    except Exception:
+                        pass
+                
                 lib = ctypes.CDLL(str(lib_path))
-                logger.info(f"Loaded NOT_STISLA library from {lib_path}")
+                logger.info(f"Loaded KEYSTONE library from {lib_path}")
                 return lib
             except OSError as e:
                 logger.debug(f"Failed to load {lib_path}: {e}")
@@ -143,100 +154,100 @@ def _load_not_stisla_library():
     
     # Try loading by name (if in LD_LIBRARY_PATH)
     try:
-        lib = ctypes.CDLL("libnot_stisla.so")
-        logger.info("Loaded NOT_STISLA library from system path")
+        lib = ctypes.CDLL("libkeystone.so")
+        logger.info("Loaded KEYSTONE library from system path")
         return lib
     except OSError:
-        logger.warning("NOT_STISLA library not found. Some features will be unavailable.")
+        logger.warning("KEYSTONE library not found. Some features will be unavailable.")
         return None
 
 
-_lib = _load_not_stisla_library()
+_lib = _load_keystone_library()
 
 if _lib is not None:
     # Define function signatures
-    _lib.not_stisla_anchor_table_create.argtypes = []
-    _lib.not_stisla_anchor_table_create.restype = POINTER(NotStislaAnchorTable)
+    _lib.keystone_anchor_table_create.argtypes = []
+    _lib.keystone_anchor_table_create.restype = POINTER(KeystoneAnchorTable)
     
-    _lib.not_stisla_anchor_table_destroy.argtypes = [POINTER(NotStislaAnchorTable)]
-    _lib.not_stisla_anchor_table_destroy.restype = None
+    _lib.keystone_anchor_table_destroy.argtypes = [POINTER(KeystoneAnchorTable)]
+    _lib.keystone_anchor_table_destroy.restype = None
     
-    _lib.not_stisla_anchor_table_size.argtypes = [POINTER(NotStislaAnchorTable)]
-    _lib.not_stisla_anchor_table_size.restype = c_size_t
+    _lib.keystone_anchor_table_size.argtypes = [POINTER(KeystoneAnchorTable)]
+    _lib.keystone_anchor_table_size.restype = c_size_t
     
-    _lib.not_stisla_anchor_table_reset.argtypes = [POINTER(NotStislaAnchorTable)]
-    _lib.not_stisla_anchor_table_reset.restype = None
+    _lib.keystone_anchor_table_reset.argtypes = [POINTER(KeystoneAnchorTable)]
+    _lib.keystone_anchor_table_reset.restype = None
     
-    _lib.not_stisla_anchor_table_set_memory_limit.argtypes = [POINTER(NotStislaAnchorTable), c_size_t]
-    _lib.not_stisla_anchor_table_set_memory_limit.restype = c_int
+    _lib.keystone_anchor_table_set_memory_limit.argtypes = [POINTER(KeystoneAnchorTable), c_size_t]
+    _lib.keystone_anchor_table_set_memory_limit.restype = c_int
     
-    _lib.not_stisla_anchor_table_optimize_for_workload.argtypes = [POINTER(NotStislaAnchorTable), c_int]
-    _lib.not_stisla_anchor_table_optimize_for_workload.restype = c_int
+    _lib.keystone_anchor_table_optimize_for_workload.argtypes = [POINTER(KeystoneAnchorTable), c_int]
+    _lib.keystone_anchor_table_optimize_for_workload.restype = c_int
     
-    _lib.not_stisla_detect_cpu_features.argtypes = []
-    _lib.not_stisla_detect_cpu_features.restype = c_uint32
+    _lib.keystone_detect_cpu_features.argtypes = []
+    _lib.keystone_detect_cpu_features.restype = c_uint32
     
-    _lib.not_stisla_search.argtypes = [
+    _lib.keystone_search.argtypes = [
         POINTER(c_int64),  # arr
         c_size_t,          # n
         c_int64,           # key
-        POINTER(NotStislaAnchorTable),  # table
+        POINTER(KeystoneAnchorTable),  # table
         c_size_t           # tol
     ]
-    _lib.not_stisla_search.restype = c_size_t
+    _lib.keystone_search.restype = c_size_t
     
-    _lib.not_stisla_search_enhanced.argtypes = [
+    _lib.keystone_search_enhanced.argtypes = [
         POINTER(c_int64),  # arr
         c_size_t,          # n
         c_int64,           # key
-        POINTER(NotStislaAnchorTable),  # table
-        POINTER(NotStislaConfig)       # config
+        POINTER(KeystoneAnchorTable),  # table
+        POINTER(KeystoneConfig)       # config
     ]
-    _lib.not_stisla_search_enhanced.restype = c_size_t
+    _lib.keystone_search_enhanced.restype = c_size_t
     
-    _lib.not_stisla_search_batch.argtypes = [
+    _lib.keystone_search_batch.argtypes = [
         POINTER(c_int64),              # arr
         c_size_t,                      # n
-        POINTER(NotStislaBatchItem),   # items
+        POINTER(KeystoneBatchItem),   # items
         c_size_t,                      # num_items
-        POINTER(NotStislaAnchorTable), # table
+        POINTER(KeystoneAnchorTable), # table
         c_size_t                       # tol
     ]
-    _lib.not_stisla_search_batch.restype = c_size_t
+    _lib.keystone_search_batch.restype = c_size_t
     
-    _lib.not_stisla_search_parallel.argtypes = [
+    _lib.keystone_search_parallel.argtypes = [
         POINTER(c_int64),                  # arr
         c_size_t,                          # n
-        POINTER(NotStislaBatchItem),       # items
+        POINTER(KeystoneBatchItem),       # items
         c_size_t,                          # num_items
-        POINTER(NotStislaAnchorTable),     # table
+        POINTER(KeystoneAnchorTable),     # table
         c_size_t,                          # tol
-        POINTER(NotStislaParallelConfig)   # config
+        POINTER(KeystoneParallelConfig)   # config
     ]
-    _lib.not_stisla_search_parallel.restype = c_size_t
+    _lib.keystone_search_parallel.restype = c_size_t
     
-    _lib.not_stisla_anchor_table_get_stats.argtypes = [POINTER(NotStislaAnchorTable)]
-    _lib.not_stisla_anchor_table_get_stats.restype = POINTER(NotStislaStats)
+    _lib.keystone_anchor_table_get_stats.argtypes = [POINTER(KeystoneAnchorTable)]
+    _lib.keystone_anchor_table_get_stats.restype = POINTER(KeystoneStats)
     
-    _lib.not_stisla_version.argtypes = []
-    _lib.not_stisla_version.restype = ctypes.c_char_p
+    _lib.keystone_version.argtypes = []
+    _lib.keystone_version.restype = ctypes.c_char_p
     
-    _lib.not_stisla_build_info.argtypes = []
-    _lib.not_stisla_build_info.restype = ctypes.c_char_p
+    _lib.keystone_build_info.argtypes = []
+    _lib.keystone_build_info.restype = ctypes.c_char_p
 
 
-def not_stisla_available() -> bool:
-    """Check if NOT_STISLA library is available"""
+def keystone_available() -> bool:
+    """Check if KEYSTONE library is available"""
     return _lib is not None
 
 
-class NotStislaSearchEngine:
-    """Python interface for NOT_STISLA search operations"""
+class KeystoneSearchEngine:
+    """Python interface for KEYSTONE search operations"""
     
-    def __init__(self, workload_type: int = NOT_STISLA_WORKLOAD_TELEMETRY):
-        """Initialize NOT_STISLA search engine"""
-        if not not_stisla_available():
-            raise RuntimeError("NOT_STISLA library not available")
+    def __init__(self, workload_type: int = KEYSTONE_WORKLOAD_TELEMETRY):
+        """Initialize KEYSTONE search engine"""
+        if not keystone_available():
+            raise RuntimeError("KEYSTONE library not available")
         
         self.workload_type = workload_type
         self.anchor_table = None
@@ -247,24 +258,24 @@ class NotStislaSearchEngine:
         if _lib is None:
             return
         
-        self.anchor_table = _lib.not_stisla_anchor_table_create()
+        self.anchor_table = _lib.keystone_anchor_table_create()
         if not self.anchor_table:
-            raise RuntimeError("Failed to create NOT_STISLA anchor table")
+            raise RuntimeError("Failed to create KEYSTONE anchor table")
         
         # Set memory limit
-        _lib.not_stisla_anchor_table_set_memory_limit(self.anchor_table, NOT_STISLA_MAX_ANCHORS)
+        _lib.keystone_anchor_table_set_memory_limit(self.anchor_table, KEYSTONE_MAX_ANCHORS)
         
         # Optimize for workload
-        _lib.not_stisla_anchor_table_optimize_for_workload(self.anchor_table, self.workload_type)
+        _lib.keystone_anchor_table_optimize_for_workload(self.anchor_table, self.workload_type)
     
     def __del__(self):
         """Cleanup anchor table"""
         if self.anchor_table and _lib:
-            _lib.not_stisla_anchor_table_destroy(self.anchor_table)
+            _lib.keystone_anchor_table_destroy(self.anchor_table)
     
     def search(self, arr: List[int], key: int, tolerance: int = 8) -> Optional[int]:
         """
-        Search for key in sorted array using NOT_STISLA
+        Search for key in sorted array using KEYSTONE
         
         Args:
             arr: Sorted array of integers
@@ -282,11 +293,11 @@ class NotStislaSearchEngine:
         c_arr = (c_int64 * n)(*arr)
         
         # Perform search
-        result = _lib.not_stisla_search(
+        result = _lib.keystone_search(
             c_arr, n, c_int64(key), self.anchor_table, c_size_t(tolerance)
         )
         
-        if result == NOT_STISLA_NOT_FOUND:
+        if result == KEYSTONE_NOT_FOUND:
             return None
         
         return int(result)
@@ -307,22 +318,22 @@ class NotStislaSearchEngine:
             return None
         
         # Create config structure
-        not_stisla_config = NotStislaConfig()
+        keystone_config = KeystoneConfig()
         if config:
-            not_stisla_config.tol = config.get('tolerance', 8)
-            not_stisla_config.enable_anchor_learning = 1 if config.get('enable_learning', True) else 0
+            keystone_config.tol = config.get('tolerance', 8)
+            keystone_config.enable_anchor_learning = 1 if config.get('enable_learning', True) else 0
         else:
-            not_stisla_config.tol = 8
-            not_stisla_config.enable_anchor_learning = 1
+            keystone_config.tol = 8
+            keystone_config.enable_anchor_learning = 1
         
         n = len(arr)
         c_arr = (c_int64 * n)(*arr)
         
-        result = _lib.not_stisla_search_enhanced(
-            c_arr, n, c_int64(key), self.anchor_table, byref(not_stisla_config)
+        result = _lib.keystone_search_enhanced(
+            c_arr, n, c_int64(key), self.anchor_table, byref(keystone_config)
         )
         
-        if result == NOT_STISLA_NOT_FOUND:
+        if result == KEYSTONE_NOT_FOUND:
             return None
         
         return int(result)
@@ -349,20 +360,20 @@ class NotStislaSearchEngine:
         c_arr = (c_int64 * n)(*arr)
         
         # Create batch items
-        batch_items = (NotStislaBatchItem * num_keys)()
+        batch_items = (KeystoneBatchItem * num_keys)()
         for i, key in enumerate(keys):
             batch_items[i].key = c_int64(key)
             batch_items[i].ordinal = c_size_t(i)
         
         # Perform batch search
-        found_count = _lib.not_stisla_search_batch(
+        found_count = _lib.keystone_search_batch(
             c_arr, n, batch_items, num_keys, self.anchor_table, c_size_t(tolerance)
         )
         
         # Extract results
         results = []
         for i in range(num_keys):
-            if batch_items[i].result == NOT_STISLA_NOT_FOUND:
+            if batch_items[i].result == KEYSTONE_NOT_FOUND:
                 results.append(None)
             else:
                 results.append(int(batch_items[i].result))
@@ -393,19 +404,19 @@ class NotStislaSearchEngine:
         c_arr = (c_int64 * n)(*arr)
         
         # Create batch items
-        batch_items = (NotStislaBatchItem * num_keys)()
+        batch_items = (KeystoneBatchItem * num_keys)()
         for i, key in enumerate(keys):
             batch_items[i].key = c_int64(key)
             batch_items[i].ordinal = c_size_t(i)
         
         # Create parallel config
-        parallel_config = NotStislaParallelConfig()
+        parallel_config = KeystoneParallelConfig()
         parallel_config.num_threads = c_int(num_threads)
         parallel_config.use_thread_pool = c_int(0)
         parallel_config.batch_chunk = c_size_t(max(1, num_keys // (num_threads or 4)))
         
         # Perform parallel search
-        found_count = _lib.not_stisla_search_parallel(
+        found_count = _lib.keystone_search_parallel(
             c_arr, n, batch_items, num_keys, self.anchor_table, 
             c_size_t(tolerance), byref(parallel_config)
         )
@@ -413,7 +424,7 @@ class NotStislaSearchEngine:
         # Extract results
         results = []
         for i in range(num_keys):
-            if batch_items[i].result == NOT_STISLA_NOT_FOUND:
+            if batch_items[i].result == KEYSTONE_NOT_FOUND:
                 results.append(None)
             else:
                 results.append(int(batch_items[i].result))
@@ -425,7 +436,7 @@ class NotStislaSearchEngine:
         if not self.anchor_table:
             return {}
         
-        stats_ptr = _lib.not_stisla_anchor_table_get_stats(self.anchor_table)
+        stats_ptr = _lib.keystone_anchor_table_get_stats(self.anchor_table)
         if not stats_ptr:
             return {}
         
@@ -444,13 +455,13 @@ class NotStislaSearchEngine:
     def reset(self):
         """Reset anchor table (clear learned anchors)"""
         if self.anchor_table:
-            _lib.not_stisla_anchor_table_reset(self.anchor_table)
+            _lib.keystone_anchor_table_reset(self.anchor_table)
     
     def get_anchor_count(self) -> int:
         """Get number of anchors in table"""
         if not self.anchor_table:
             return 0
-        return int(_lib.not_stisla_anchor_table_size(self.anchor_table))
+        return int(_lib.keystone_anchor_table_size(self.anchor_table))
 
 
 def detect_cpu_features() -> dict:
@@ -458,7 +469,7 @@ def detect_cpu_features() -> dict:
     if not _lib:
         return {}
     
-    features = _lib.not_stisla_detect_cpu_features()
+    features = _lib.keystone_detect_cpu_features()
     return {
         'AVX2': bool(features & 0x01),
         'AVX512': bool(features & 0x02),
@@ -468,22 +479,22 @@ def detect_cpu_features() -> dict:
 
 
 def get_version() -> str:
-    """Get NOT_STISLA version string"""
+    """Get KEYSTONE version string"""
     if not _lib:
-        return "NOT_STISLA not available"
+        return "KEYSTONE not available"
     
-    version_ptr = _lib.not_stisla_version()
+    version_ptr = _lib.keystone_version()
     if version_ptr:
         return version_ptr.decode('utf-8')
     return "unknown"
 
 
 def get_build_info() -> str:
-    """Get NOT_STISLA build information"""
+    """Get KEYSTONE build information"""
     if not _lib:
-        return "NOT_STISLA not available"
+        return "KEYSTONE not available"
     
-    info_ptr = _lib.not_stisla_build_info()
+    info_ptr = _lib.keystone_build_info()
     if info_ptr:
         return info_ptr.decode('utf-8')
     return "unknown"
@@ -491,10 +502,10 @@ def get_build_info() -> str:
 
 # Convenience functions for common operations
 def search_timestamps(timestamps: List[int], target: int, 
-                     anchor_table: Optional[NotStislaSearchEngine] = None,
+                     anchor_table: Optional[KeystoneSearchEngine] = None,
                      tolerance: int = 8) -> Optional[int]:
     """
-    Search sorted timestamp array using NOT_STISLA
+    Search sorted timestamp array using KEYSTONE
     
     Args:
         timestamps: Sorted list of Unix timestamps
@@ -505,7 +516,7 @@ def search_timestamps(timestamps: List[int], target: int,
     Returns:
         Index of found timestamp, or None if not found
     """
-    if not not_stisla_available():
+    if not keystone_available():
         # Fallback to binary search
         import bisect
         idx = bisect.bisect_left(timestamps, target)
@@ -514,7 +525,7 @@ def search_timestamps(timestamps: List[int], target: int,
         return None
     
     if anchor_table is None:
-        engine = NotStislaSearchEngine(NOT_STISLA_WORKLOAD_TELEMETRY)
+        engine = KeystoneSearchEngine(KEYSTONE_WORKLOAD_TELEMETRY)
         result = engine.search(timestamps, target, tolerance)
         del engine
         return result
@@ -523,10 +534,10 @@ def search_timestamps(timestamps: List[int], target: int,
 
 
 def search_message_ids(message_ids: List[int], target_id: int,
-                      anchor_table: Optional[NotStislaSearchEngine] = None,
+                      anchor_table: Optional[KeystoneSearchEngine] = None,
                       tolerance: int = 8) -> Optional[int]:
     """
-    Search sorted message ID array using NOT_STISLA
+    Search sorted message ID array using KEYSTONE
     
     Args:
         message_ids: Sorted list of message IDs
@@ -537,7 +548,7 @@ def search_message_ids(message_ids: List[int], target_id: int,
     Returns:
         Index of found message ID, or None if not found
     """
-    if not not_stisla_available():
+    if not keystone_available():
         import bisect
         idx = bisect.bisect_left(message_ids, target_id)
         if idx < len(message_ids) and message_ids[idx] == target_id:
@@ -545,7 +556,7 @@ def search_message_ids(message_ids: List[int], target_id: int,
         return None
     
     if anchor_table is None:
-        engine = NotStislaSearchEngine(NOT_STISLA_WORKLOAD_IDS)
+        engine = KeystoneSearchEngine(KEYSTONE_WORKLOAD_IDS)
         result = engine.search(message_ids, target_id, tolerance)
         del engine
         return result
@@ -554,10 +565,10 @@ def search_message_ids(message_ids: List[int], target_id: int,
 
 
 def search_offsets(offsets: List[int], target_offset: int,
-                  anchor_table: Optional[NotStislaSearchEngine] = None,
+                  anchor_table: Optional[KeystoneSearchEngine] = None,
                   tolerance: int = 16) -> Optional[int]:
     """
-    Search sorted file offset array using NOT_STISLA
+    Search sorted file offset array using KEYSTONE
     
     Args:
         offsets: Sorted list of file offsets
@@ -568,7 +579,7 @@ def search_offsets(offsets: List[int], target_offset: int,
     Returns:
         Index of found offset, or None if not found
     """
-    if not not_stisla_available():
+    if not keystone_available():
         import bisect
         idx = bisect.bisect_left(offsets, target_offset)
         if idx < len(offsets) and offsets[idx] == target_offset:
@@ -576,7 +587,7 @@ def search_offsets(offsets: List[int], target_offset: int,
         return None
     
     if anchor_table is None:
-        engine = NotStislaSearchEngine(NOT_STISLA_WORKLOAD_OFFSETS)
+        engine = KeystoneSearchEngine(KEYSTONE_WORKLOAD_OFFSETS)
         result = engine.search(offsets, target_offset, tolerance)
         del engine
         return result

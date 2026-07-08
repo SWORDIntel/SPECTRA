@@ -7,6 +7,7 @@ Account CRUD and management endpoints.
 
 import asyncio
 import logging
+import re
 from flask import request, jsonify
 from pathlib import Path
 
@@ -21,6 +22,63 @@ logger = logging.getLogger(__name__)
 # Global service instances
 _config: Config = None
 _group_manager: GroupManager = None
+
+_SESSION_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
+
+
+def _public_account(account: dict) -> dict:
+    """Return account metadata without reusable Telegram credentials."""
+    public = {
+        "session_name": account.get("session_name"),
+        "api_id": account.get("api_id"),
+    }
+    if account.get("phone_number"):
+        public["phone_number"] = account.get("phone_number")
+    if account.get("api_hash"):
+        public["api_hash_configured"] = True
+    if account.get("password"):
+        public["password_configured"] = True
+    return public
+
+
+def _refresh_group_manager() -> None:
+    """Rebuild account rotation state after config account mutations."""
+    global _group_manager
+
+    db_path = Path(_config.data.get("db_path", "spectra.db"))
+    _group_manager = GroupManager(_config, db_path=db_path)
+
+
+def _validate_account_payload(data: dict, require_all: bool = True):
+    required = ("api_id", "api_hash", "session_name")
+    if require_all and not all(data.get(field) for field in required):
+        return "api_id, api_hash, and session_name are required"
+
+    if "api_id" in data:
+        try:
+            api_id = int(data["api_id"])
+        except (TypeError, ValueError):
+            return "api_id must be an integer"
+        if api_id <= 0:
+            return "api_id must be a positive integer"
+        data["api_id"] = api_id
+
+    if "api_hash" in data and data.get("api_hash") is not None:
+        api_hash = str(data["api_hash"]).strip()
+        if not api_hash:
+            return "api_hash cannot be empty"
+        data["api_hash"] = api_hash
+
+    if "session_name" in data:
+        session_name = str(data["session_name"]).strip()
+        if not _SESSION_NAME_RE.fullmatch(session_name):
+            return "session_name may only contain letters, numbers, dot, dash, and underscore"
+        data["session_name"] = session_name
+
+    if "phone_number" in data and data.get("phone_number") is not None:
+        data["phone_number"] = str(data["phone_number"]).strip()
+
+    return None
 
 
 def init_accounts_routes(app, config: Config):
@@ -127,29 +185,38 @@ def add_account():
     """
     try:
         data = request.get_json() or {}
+        validation_error = _validate_account_payload(data, require_all=True)
+        if validation_error:
+            return jsonify({'error': validation_error}), 400
+
         api_id = data.get('api_id')
         api_hash = data.get('api_hash')
         session_name = data.get('session_name')
         
-        if not all([api_id, api_hash, session_name]):
-            return jsonify({'error': 'api_id, api_hash, and session_name are required'}), 400
-        
         # Add account to config
         if 'accounts' not in _config.data:
             _config.data['accounts'] = []
+
+        if any(acc.get("session_name") == session_name for acc in _config.data["accounts"]):
+            return jsonify({'error': 'Account session_name already exists'}), 409
         
         new_account = {
             "api_id": api_id,
             "api_hash": api_hash,
             "session_name": session_name
         }
+        if data.get("phone_number"):
+            new_account["phone_number"] = data["phone_number"]
+        if data.get("password"):
+            new_account["password"] = data["password"]
         
         _config.data['accounts'].append(new_account)
         _config.save()
+        _refresh_group_manager()
         
         return jsonify({
             "message": "Account added successfully",
-            "account": new_account
+            "account": _public_account(new_account)
         }), 201
     except Exception as e:
         logger.error(f"Failed to add account: {e}", exc_info=True)
@@ -177,6 +244,9 @@ def update_account(account_id):
     """
     try:
         data = request.get_json() or {}
+        validation_error = _validate_account_payload(data, require_all=False)
+        if validation_error:
+            return jsonify({'error': validation_error}), 400
         
         if 'accounts' not in _config.data:
             return jsonify({'error': 'No accounts configured'}), 404
@@ -188,11 +258,16 @@ def update_account(account_id):
                     account['api_id'] = data['api_id']
                 if 'api_hash' in data:
                     account['api_hash'] = data['api_hash']
+                if 'phone_number' in data:
+                    account['phone_number'] = data['phone_number']
+                if 'password' in data:
+                    account['password'] = data['password']
                 
                 _config.save()
+                _refresh_group_manager()
                 return jsonify({
                     "message": "Account updated successfully",
-                    "account": account
+                    "account": _public_account(account)
                 }), 200
         
         return jsonify({'error': 'Account not found'}), 404
@@ -229,6 +304,7 @@ def remove_account(account_id):
             return jsonify({'error': 'Account not found'}), 404
         
         _config.save()
+        _refresh_group_manager()
         return jsonify({'message': 'Account removed successfully'}), 200
     except Exception as e:
         logger.error(f"Failed to remove account: {e}", exc_info=True)

@@ -2,7 +2,7 @@
 Anchor Table Persistence
 ========================
 
-Save and load NOT_STISLA anchor tables across sessions for faster learning
+Save and load KEYSTONE anchor tables across sessions for faster learning
 and improved performance over time.
 """
 
@@ -13,14 +13,14 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from .not_stisla_bindings import (
-    NotStislaSearchEngine,
-    NotStislaAnchorTable,
-    not_stisla_available,
-    NOT_STISLA_WORKLOAD_TELEMETRY,
-    NOT_STISLA_WORKLOAD_IDS,
-    NOT_STISLA_WORKLOAD_OFFSETS,
-    NOT_STISLA_WORKLOAD_EVENTS,
+from .keystone_bindings import (
+    KeystoneSearchEngine,
+    KeystoneAnchorTable,
+    keystone_available,
+    KEYSTONE_WORKLOAD_TELEMETRY,
+    KEYSTONE_WORKLOAD_IDS,
+    KEYSTONE_WORKLOAD_OFFSETS,
+    KEYSTONE_WORKLOAD_EVENTS,
 )
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 class AnchorPersistenceManager:
     """
-    Manages persistence of NOT_STISLA anchor tables.
+    Manages persistence of KEYSTONE anchor tables.
     
     Anchor tables learn from search patterns, so persisting them across sessions
     allows the system to start with optimized anchor positions, improving
@@ -47,7 +47,7 @@ class AnchorPersistenceManager:
     
     def save_anchor_table(
         self,
-        anchor_table: NotStislaSearchEngine,
+        anchor_table: KeystoneSearchEngine,
         workload_type: int,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> bool:
@@ -55,7 +55,7 @@ class AnchorPersistenceManager:
         Save anchor table to disk.
         
         Args:
-            anchor_table: NOT_STISLA search engine with anchor table
+            anchor_table: KEYSTONE search engine with anchor table
             workload_type: Workload type identifier
             metadata: Optional metadata to store
         
@@ -133,7 +133,7 @@ class AnchorPersistenceManager:
     
     def save_all_anchor_tables(
         self,
-        anchor_tables: Dict[int, NotStislaSearchEngine],
+        anchor_tables: Dict[int, KeystoneSearchEngine],
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[int, bool]:
         """

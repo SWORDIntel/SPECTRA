@@ -3,8 +3,8 @@ Integration Tests for Search Algorithms
 ========================================
 
 Comprehensive integration tests for all search paths:
-- NOT_STISLA timestamp searches
-- NOT_STISLA message ID lookups
+- KEYSTONE timestamp searches
+- KEYSTONE message ID lookups
 - QIHSE semantic searches
 - Hybrid search combinations
 - Temporal-semantic correlation
@@ -59,8 +59,8 @@ class TestSearchIntegration(unittest.TestCase):
         import shutil
         shutil.rmtree(self.temp_dir)
     
-    def test_not_stisla_timestamp_search(self):
-        """Test NOT_STISLA timestamp search integration"""
+    def test_keystone_timestamp_search(self):
+        """Test KEYSTONE timestamp search integration"""
         try:
             from tgarchive.db import SpectraDB
             
@@ -74,10 +74,10 @@ class TestSearchIntegration(unittest.TestCase):
                 self.assertGreater(len(message_ids), 0)
                 
         except ImportError:
-            self.skipTest("NOT_STISLA not available")
+            self.skipTest("KEYSTONE not available")
     
-    def test_not_stisla_message_id_lookup(self):
-        """Test NOT_STISLA message ID lookup"""
+    def test_keystone_message_id_lookup(self):
+        """Test KEYSTONE message ID lookup"""
         try:
             from tgarchive.db import SpectraDB
             
@@ -88,7 +88,7 @@ class TestSearchIntegration(unittest.TestCase):
                 self.assertEqual(msg_data['id'], 500)
                 
         except ImportError:
-            self.skipTest("NOT_STISLA not available")
+            self.skipTest("KEYSTONE not available")
     
     def test_qihse_semantic_search(self):
         """Test QIHSE semantic search integration"""
@@ -106,13 +106,13 @@ class TestSearchIntegration(unittest.TestCase):
             self.skipTest(f"QIHSE test skipped: {e}")
     
     def test_hybrid_search_combination(self):
-        """Test hybrid search combining NOT_STISLA + QIHSE + FTS5"""
+        """Test hybrid search combining KEYSTONE + QIHSE + FTS5"""
         try:
             from tgarchive.search.hybrid_search import HybridSearchEngine
             from tgarchive.db import SpectraDB
             
             with SpectraDB(self.db_path) as db:
-                hybrid = HybridSearchEngine(db, use_not_stisla=True, use_qihse=True)
+                hybrid = HybridSearchEngine(db, use_keystone=True, use_qihse=True)
                 
                 results = hybrid.search(
                     "test query",
@@ -170,13 +170,13 @@ class TestSearchIntegration(unittest.TestCase):
             self.skipTest(f"Unified search test skipped: {e}")
     
     def test_batch_search_optimization(self):
-        """Test batch search with NOT_STISLA parallel search"""
+        """Test batch search with KEYSTONE parallel search"""
         try:
             from tgarchive.search.hybrid_search import HybridSearchEngine
             from tgarchive.db import SpectraDB
             
             with SpectraDB(self.db_path) as db:
-                hybrid = HybridSearchEngine(db, use_not_stisla=True)
+                hybrid = HybridSearchEngine(db, use_keystone=True)
                 
                 queries = ["100", "200", "300", "400", "500"]
                 results = hybrid.search_batch(queries, limit_per_query=5)

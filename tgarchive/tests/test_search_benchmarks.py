@@ -3,7 +3,7 @@ Performance Benchmarks for Search Algorithms
 ============================================
 
 Comprehensive benchmark suite for validating performance improvements
-from NOT_STISLA and QIHSE integrations.
+from KEYSTONE and QIHSE integrations.
 """
 
 import time
@@ -15,23 +15,23 @@ import bisect
 logger = logging.getLogger(__name__)
 
 
-def benchmark_not_stisla_vs_binary(
+def benchmark_keystone_vs_binary(
     timestamps: List[int],
     target: int,
     anchor_table=None,
     tolerance: int = 8,
 ) -> Tuple[float, float, float]:
     """
-    Benchmark NOT_STISLA vs Python binary search.
+    Benchmark KEYSTONE vs Python binary search.
     
     Args:
         timestamps: Sorted list of timestamps
         target: Target timestamp to find
-        anchor_table: Optional NOT_STISLA anchor table
+        anchor_table: Optional KEYSTONE anchor table
         tolerance: Search tolerance
     
     Returns:
-        Tuple of (binary_time, not_stisla_time, speedup)
+        Tuple of (binary_time, keystone_time, speedup)
     """
     # Binary search
     start = time.perf_counter_ns()
@@ -42,25 +42,25 @@ def benchmark_not_stisla_vs_binary(
         found_binary = False
     time_binary = time.perf_counter_ns() - start
     
-    # NOT_STISLA search
-    time_not_stisla = None
-    found_not_stisla = False
+    # KEYSTONE search
+    time_keystone = None
+    found_keystone = False
     
     try:
-        from ..search.not_stisla_bindings import search_timestamps
+        from ..search.keystone_bindings import search_timestamps
         
         start = time.perf_counter_ns()
-        idx_not_stisla = search_timestamps(timestamps, target, anchor_table, tolerance)
-        time_not_stisla = time.perf_counter_ns() - start
+        idx_keystone = search_timestamps(timestamps, target, anchor_table, tolerance)
+        time_keystone = time.perf_counter_ns() - start
         
-        found_not_stisla = idx_not_stisla is not None
+        found_keystone = idx_keystone is not None
     except ImportError:
-        logger.warning("NOT_STISLA not available for benchmarking")
+        logger.warning("KEYSTONE not available for benchmarking")
         return time_binary / 1e9, None, None
     
-    if time_not_stisla:
-        speedup = time_binary / time_not_stisla if time_not_stisla > 0 else 0
-        return time_binary / 1e9, time_not_stisla / 1e9, speedup
+    if time_keystone:
+        speedup = time_binary / time_keystone if time_keystone > 0 else 0
+        return time_binary / 1e9, time_keystone / 1e9, speedup
     
     return time_binary / 1e9, None, None
 
@@ -121,7 +121,7 @@ def benchmark_qihse_vs_qdrant(
 def run_comprehensive_benchmarks():
     """Run comprehensive benchmark suite"""
     results = {
-        'not_stisla': {},
+        'keystone': {},
         'qihse': {},
         'hybrid': {},
     }
@@ -131,21 +131,21 @@ def run_comprehensive_benchmarks():
     timestamps = sorted([int((datetime.now() - timedelta(days=i)).timestamp()) for i in range(1000000)])
     target = timestamps[500000]
     
-    # Benchmark NOT_STISLA
-    print("Benchmarking NOT_STISLA vs binary search...")
-    binary_time, not_stisla_time, speedup = benchmark_not_stisla_vs_binary(timestamps, target)
+    # Benchmark KEYSTONE
+    print("Benchmarking KEYSTONE vs binary search...")
+    binary_time, keystone_time, speedup = benchmark_keystone_vs_binary(timestamps, target)
     
-    results['not_stisla'] = {
+    results['keystone'] = {
         'binary_time_ns': binary_time * 1e9,
-        'not_stisla_time_ns': not_stisla_time * 1e9 if not_stisla_time else None,
+        'keystone_time_ns': keystone_time * 1e9 if keystone_time else None,
         'speedup': speedup,
         'array_size': len(timestamps),
     }
     
-    print(f"NOT_STISLA Results:")
+    print(f"KEYSTONE Results:")
     print(f"  Binary search: {binary_time*1e6:.2f} μs")
-    if not_stisla_time:
-        print(f"  NOT_STISLA: {not_stisla_time*1e6:.2f} μs")
+    if keystone_time:
+        print(f"  KEYSTONE: {keystone_time*1e6:.2f} μs")
         print(f"  Speedup: {speedup:.2f}x")
     
     return results

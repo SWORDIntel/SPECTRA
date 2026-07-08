@@ -5,7 +5,7 @@
 ### Unit Tests (`test_enhancements.py`)
 - **17 test classes** covering all 20 enhancements
 - **50+ individual test methods**
-- Tests use real APIs (NOT_STISLA, QIHSE, SQLite)
+- Tests use real APIs (KEYSTONE, QIHSE, SQLite)
 - No fake implementations per cursorrules
 
 ### Integration Tests (`test_integration_full.py`)

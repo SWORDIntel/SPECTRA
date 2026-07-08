@@ -36,7 +36,7 @@ class SearchNode:
     
     Each node manages:
     - Local database connection
-    - Search engines (NOT_STISLA, QIHSE, FTS5)
+    - Search engines (KEYSTONE, QIHSE, FTS5)
     - Node-specific data shard
     - Health monitoring
     """
@@ -64,7 +64,7 @@ class SearchNode:
         
         # Initialize search engines
         self.hybrid_engine = HybridSearchEngine(
-            db_connection, qdrant_url, use_not_stisla=True, use_qihse=True
+            db_connection, qdrant_url, use_keystone=True, use_qihse=True
         )
         self.unified_engine = UnifiedSearchEngine(db_connection, qdrant_url)
         
@@ -96,7 +96,7 @@ class SearchNode:
         
         Args:
             query: Search query
-            search_type: Search type (auto, not_stisla, qihse, fts5, hybrid)
+            search_type: Search type (auto, keystone, qihse, fts5, hybrid)
             limit: Maximum results
             **kwargs: Additional search parameters
         

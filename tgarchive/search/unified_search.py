@@ -2,7 +2,7 @@
 Unified Search Engine with Intelligent Algorithm Selection
 =========================================================
 
-Intelligently selects optimal search algorithm (NOT_STISLA, QIHSE, FTS5, or hybrid)
+Intelligently selects optimal search algorithm (KEYSTONE, QIHSE, FTS5, or hybrid)
 based on query characteristics for maximum performance.
 """
 
@@ -21,11 +21,11 @@ from .hybrid_search import (
 )
 
 QdrantVectorManager = QIHSEVectorManager
-from .not_stisla_bindings import (
-    NotStislaSearchEngine,
-    not_stisla_available,
-    NOT_STISLA_WORKLOAD_TELEMETRY,
-    NOT_STISLA_WORKLOAD_IDS,
+from .keystone_bindings import (
+    KeystoneSearchEngine,
+    keystone_available,
+    KEYSTONE_WORKLOAD_TELEMETRY,
+    KEYSTONE_WORKLOAD_IDS,
 )
 from .qihse_bindings import (
     QihseSearchEngine,
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 class SearchAlgorithm(Enum):
     """Available search algorithms"""
-    NOT_STISLA = "not_stisla"
+    KEYSTONE = "keystone"
     QIHSE = "qihse"
     FTS5 = "fts5"
     HYBRID = "hybrid"
@@ -49,7 +49,7 @@ class UnifiedSearchEngine:
     Intelligent search engine that automatically selects optimal algorithm.
     
     Selection logic:
-    - NOT_STISLA: Sorted numeric data (timestamps, IDs, offsets)
+    - KEYSTONE: Sorted numeric data (timestamps, IDs, offsets)
     - QIHSE: Vector/semantic queries
     - FTS5: Keyword/text queries
     - Hybrid: Complex multi-criteria queries
@@ -79,16 +79,16 @@ class UnifiedSearchEngine:
         self.vector = QIHSEVectorManager(vector_store_path=vector_store_path)
         self.hybrid = HybridSearchEngine(db_connection, vector_store_path=vector_store_path, cache_manager=cache_manager)
         
-        # Initialize NOT_STISLA engines
-        self.not_stisla_timestamp = None
-        self.not_stisla_message_id = None
-        if not_stisla_available():
+        # Initialize KEYSTONE engines
+        self.keystone_timestamp = None
+        self.keystone_message_id = None
+        if keystone_available():
             try:
-                self.not_stisla_timestamp = NotStislaSearchEngine(NOT_STISLA_WORKLOAD_TELEMETRY)
-                self.not_stisla_message_id = NotStislaSearchEngine(NOT_STISLA_WORKLOAD_IDS)
-                logger.info("NOT_STISLA engines initialized")
+                self.keystone_timestamp = KeystoneSearchEngine(KEYSTONE_WORKLOAD_TELEMETRY)
+                self.keystone_message_id = KeystoneSearchEngine(KEYSTONE_WORKLOAD_IDS)
+                logger.info("KEYSTONE engines initialized")
             except Exception as e:
-                logger.warning(f"Failed to initialize NOT_STISLA: {e}")
+                logger.warning(f"Failed to initialize KEYSTONE: {e}")
         
         # Initialize QIHSE engine
         self.qihse = None
@@ -105,7 +105,7 @@ class UnifiedSearchEngine:
         
         Args:
             query: Search query
-            search_type: Algorithm to use ("auto", "not_stisla", "qihse", "fts5", "hybrid")
+            search_type: Algorithm to use ("auto", "keystone", "qihse", "fts5", "hybrid")
             limit: Maximum results
             **kwargs: Additional filters (date_from, date_to, channel_id, user_id, etc.)
         
@@ -127,8 +127,8 @@ class UnifiedSearchEngine:
         logger.debug(f"Using search algorithm: {search_type}")
         
         # Route to appropriate algorithm
-        if search_type == "not_stisla" or search_type == "timestamp":
-            return self._search_not_stisla(query, limit, **kwargs)
+        if search_type == "keystone" or search_type == "timestamp":
+            return self._search_keystone(query, limit, **kwargs)
         
         elif search_type == "qihse" or search_type == "semantic":
             return self._search_qihse(query, limit, **kwargs)
@@ -156,13 +156,13 @@ class UnifiedSearchEngine:
         Returns:
             Algorithm name
         """
-        # Check for timestamp filters (NOT_STISLA)
+        # Check for timestamp filters (KEYSTONE)
         if 'date_from' in filters or 'date_to' in filters or 'timestamp' in query.lower():
-            return "not_stisla"
+            return "keystone"
         
-        # Check for message ID lookup (NOT_STISLA)
+        # Check for message ID lookup (KEYSTONE)
         if 'message_id' in filters or query.isdigit():
-            return "not_stisla"
+            return "keystone"
         
         # Check for semantic intent (QIHSE)
         semantic_keywords = ['similar', 'related', 'like', 'find similar', 'semantic', 'meaning']
@@ -176,8 +176,8 @@ class UnifiedSearchEngine:
         # Default to keyword search (FTS5)
         return "fts5"
     
-    def _search_not_stisla(self, query: str, limit: int, **kwargs) -> List[SearchResult]:
-        """Search using NOT_STISLA for sorted numeric data"""
+    def _search_keystone(self, query: str, limit: int, **kwargs) -> List[SearchResult]:
+        """Search using KEYSTONE for sorted numeric data"""
         results = []
         
         # Timestamp range search
@@ -199,8 +199,8 @@ class UnifiedSearchEngine:
             else:
                 end_timestamp = None
             
-            if start_timestamp and end_timestamp and self.not_stisla_timestamp:
-                # Use NOT_STISLA for fast timestamp range search
+            if start_timestamp and end_timestamp and self.keystone_timestamp:
+                # Use KEYSTONE for fast timestamp range search
                 from ..db import SpectraDB
                 if isinstance(self.db, SpectraDB):
                     message_ids = self.db.find_messages_by_timestamp_range(
@@ -219,11 +219,11 @@ class UnifiedSearchEngine:
                                 date=datetime.fromisoformat(msg_data['date']) if isinstance(msg_data['date'], str) else msg_data['date'],
                                 relevance_score=1.0,
                                 match_type=SearchType.KEYWORD,
-                                metadata={'algorithm': 'not_stisla', 'search_type': 'timestamp_range'},
+                                metadata={'algorithm': 'keystone', 'search_type': 'timestamp_range'},
                             ))
         
         # Message ID lookup
-        elif query.isdigit() and self.not_stisla_message_id:
+        elif query.isdigit() and self.keystone_message_id:
             msg_id = int(query)
             from ..db import SpectraDB
             if isinstance(self.db, SpectraDB):
@@ -237,7 +237,7 @@ class UnifiedSearchEngine:
                         date=datetime.fromisoformat(msg_data['date']) if isinstance(msg_data['date'], str) else msg_data['date'],
                         relevance_score=1.0,
                         match_type=SearchType.KEYWORD,
-                        metadata={'algorithm': 'not_stisla', 'search_type': 'message_id'},
+                        metadata={'algorithm': 'keystone', 'search_type': 'message_id'},
                     ))
         
         return results
@@ -285,10 +285,10 @@ class UnifiedSearchEngine:
             'vector': self.vector.get_statistics(),
         }
         
-        if self.not_stisla_timestamp:
-            stats['not_stisla_timestamp'] = self.not_stisla_timestamp.get_stats()
-        if self.not_stisla_message_id:
-            stats['not_stisla_message_id'] = self.not_stisla_message_id.get_stats()
+        if self.keystone_timestamp:
+            stats['keystone_timestamp'] = self.keystone_timestamp.get_stats()
+        if self.keystone_message_id:
+            stats['keystone_message_id'] = self.keystone_message_id.get_stats()
         if self.qihse:
             stats['qihse'] = self.qihse.get_performance_stats()
         

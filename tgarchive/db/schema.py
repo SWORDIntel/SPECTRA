@@ -164,7 +164,8 @@ CREATE TABLE IF NOT EXISTS sorting_audit_log (
     file_id             TEXT NOT NULL,
     category            TEXT NOT NULL,
     group_id            INTEGER NOT NULL,
-    created_at          TEXT NOT NULL
+    created_at          TEXT NOT NULL,
+    signature           TEXT
 );
 
 CREATE TABLE IF NOT EXISTS attribution_stats (

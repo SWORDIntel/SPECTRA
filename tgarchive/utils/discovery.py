@@ -18,7 +18,7 @@ import re
 import time
 import random
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
@@ -428,12 +428,11 @@ class AccountRotator:
                         """
                         INSERT INTO account_rotation 
                         (session_name, api_id, api_hash, usage_count, last_used)
-                        VALUES (?, ?, ?, 0, ?)
+                        VALUES (?, ?, NULL, 0, ?)
                         """,
                         (
                             acc["session_name"], 
                             acc.get("api_id", 0), 
-                            acc.get("api_hash", ""), 
                             datetime.now(TZ).isoformat()
                         )
                     )
@@ -492,15 +491,19 @@ class AccountRotator:
         except Exception as e:
             logger.error(f"Failed to save account statistics: {e}")
     
-    def get_next_account(self) -> Dict[str, Any]:
+    def get_next_account(self) -> Optional[Dict[str, Any]]:
         """Get the next account based on rotation mode"""
+        if not self.accounts:
+            logger.error("No accounts configured for rotation")
+            return None
+
         if self.rotation_mode == "random":
             # Randomly select from available accounts
             available_idx = [idx for idx, count in self.usage_counts.items() 
                             if count < float('inf')]
             if not available_idx:
                 logger.error("No accounts available for rotation")
-                return self.accounts[0]  # Return first account as fallback
+                return None
                 
             selected_idx = random.choice(available_idx)
             
@@ -510,7 +513,7 @@ class AccountRotator:
                             if count < float('inf')]
             if not available_idx:
                 logger.error("No accounts available for rotation")
-                return self.accounts[0]  # Return first account as fallback
+                return None
                 
             selected_idx = min(available_idx, key=lambda idx: self.usage_counts[idx])
             
@@ -521,7 +524,7 @@ class AccountRotator:
             
             if not available_idx:
                 logger.error("No accounts available for rotation")
-                return self.accounts[0]  # Return first account as fallback
+                return None
             
             # Calculate a score based on time since last use and usage count
             now = datetime.now(TZ)
@@ -534,11 +537,20 @@ class AccountRotator:
             selected_idx = max(scores, key=scores.get)
             
         else:  # sequential (default)
-            # Get next in cycle
-            selected_idx = next(self._iterator)
-            # Skip accounts marked as unusable
-            while self.usage_counts[selected_idx] == float('inf'):
+            available_idx = [idx for idx, count in self.usage_counts.items()
+                             if count < float('inf')]
+            if not available_idx:
+                logger.error("No accounts available for rotation")
+                return None
+
+            # Advance through the cycle at most once, so an all-disabled pool cannot hang.
+            for _ in range(len(self.accounts)):
                 selected_idx = next(self._iterator)
+                if selected_idx in available_idx:
+                    break
+            else:
+                logger.error("No accounts available for rotation")
+                return None
         
         # Update usage stats
         self.usage_counts[selected_idx] += 1
@@ -562,6 +574,9 @@ class AccountRotator:
         """
         if idx is None:
             idx = self.current_index
+        if idx < 0 or idx >= len(self.accounts):
+            logger.warning(f"Cannot mark unknown account index {idx} as failed")
+            return
             
         # Update local state
         self.usage_counts[idx] = float('inf')
@@ -571,7 +586,7 @@ class AccountRotator:
             try:
                 cooldown_until = None
                 if cooldown_hours:
-                    cooldown_until = (datetime.now(TZ) + datetime.timedelta(hours=cooldown_hours)).isoformat()
+                    cooldown_until = (datetime.now(TZ) + timedelta(hours=cooldown_hours)).isoformat()
                 
                 self.db.conn.execute(
                     """
@@ -597,6 +612,9 @@ class AccountRotator:
         """Record a successful operation for an account"""
         if idx is None:
             idx = self.current_index
+        if idx < 0 or idx >= len(self.accounts):
+            logger.warning(f"Cannot mark unknown account index {idx} as successful")
+            return
             
         if self.db and idx < len(self.accounts) and "session_name" in self.accounts[idx]:
             try:
@@ -750,6 +768,8 @@ class GroupManager:
             
         # Get next account from rotator
         next_account = self.account_rotator.get_next_account()
+        if not next_account:
+            return None
         session_name = next_account["session_name"]
         
         # Check if we have a client for this account
@@ -952,6 +972,9 @@ class GroupManager:
                 
                 # Run archiver with account rotation
                 next_account = self.account_rotator.get_next_account()
+                if not next_account:
+                    logger.error("No account available for archiving")
+                    return False
                 await runner(self.config, next_account)
                 logger.info(f"Archived {entity_to_archive}")
                 return True

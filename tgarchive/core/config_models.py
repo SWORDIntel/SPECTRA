@@ -4,6 +4,7 @@ import json
 import logging
 import os # Import os module
 import sys
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -126,12 +127,12 @@ DEFAULT_CFG: Dict[str, Any] = {
 @dataclass
 class Config:
     path: Path = Path("spectra_config.json")
-    data: Dict[str, Any] = field(default_factory=lambda: DEFAULT_CFG.copy())
+    data: Dict[str, Any] = field(default_factory=lambda: deepcopy(DEFAULT_CFG))
 
     def __post_init__(self):
-        auto_config_loaded = self._try_load_generated_configs()
+        generated_config_loaded = self._try_load_generated_configs()
         loaded_from_file = False
-        if not auto_config_loaded and self.path.exists():
+        if self.path.exists():
             try:
                 file_data = json.loads(self.path.read_text())
                 self.data.update(file_data)
@@ -140,7 +141,7 @@ class Config:
             except json.JSONDecodeError as exc:
                 logger.warning("Bad JSON in config – using defaults (%s)", exc)
 
-        if not loaded_from_file and not auto_config_loaded:
+        if not loaded_from_file and not generated_config_loaded:
             self.save()
             console.print(
                 f"[yellow]Config not found; default created at {self.path}. Edit credentials then rerun.[/yellow]"

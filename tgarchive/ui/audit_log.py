@@ -1,4 +1,4 @@
-"""Enhanced audit logging with NOT_STISLA indexing and export capabilities"""
+"""Enhanced audit logging with KEYSTONE indexing and export capabilities"""
 
 import csv
 import json
@@ -13,10 +13,10 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 try:
-    from ..search.not_stisla_bindings import NotStislaSearchEngine, NOT_STISLA_WORKLOAD_TELEMETRY, not_stisla_available
-    NOT_STISLA_ENABLED = not_stisla_available()
+    from ..search.keystone_bindings import KeystoneSearchEngine, KEYSTONE_WORKLOAD_TELEMETRY, keystone_available
+    KEYSTONE_ENABLED = keystone_available()
 except ImportError:
-    NOT_STISLA_ENABLED = False
+    KEYSTONE_ENABLED = False
 
 
 @dataclass
@@ -38,7 +38,7 @@ class AuditLogEntry:
 
 
 class AuditLogger:
-    """Enhanced audit logging with NOT_STISLA indexing"""
+    """Enhanced audit logging with KEYSTONE indexing"""
     
     def __init__(self, log_dir: Optional[Path] = None, max_memory: int = 10000):
         if log_dir is None:
@@ -47,14 +47,14 @@ class AuditLogger:
         self.log_dir.mkdir(parents=True, exist_ok=True)
         
         self.memory_log: deque = deque(maxlen=max_memory)
-        self.not_stisla_engine = None
+        self.keystone_engine = None
         self.timestamp_array: List[int] = []
         
-        if NOT_STISLA_ENABLED:
+        if KEYSTONE_ENABLED:
             try:
-                self.not_stisla_engine = NotStislaSearchEngine(NOT_STISLA_WORKLOAD_TELEMETRY)
+                self.keystone_engine = KeystoneSearchEngine(KEYSTONE_WORKLOAD_TELEMETRY)
             except Exception as e:
-                logger.debug(f"NOT_STISLA not available for audit log: {e}")
+                logger.debug(f"KEYSTONE not available for audit log: {e}")
     
     def log(self, event_type: str, user: str, action: str, details: Dict[str, Any], result: str = "success"):
         """Log an audit event"""
@@ -69,8 +69,8 @@ class AuditLogger:
         
         self.memory_log.append(entry)
         
-        # Update NOT_STISLA index
-        if self.not_stisla_engine:
+        # Update KEYSTONE index
+        if self.keystone_engine:
             timestamp_int = int(entry.timestamp)
             import bisect
             bisect.insort(self.timestamp_array, timestamp_int)
@@ -90,15 +90,15 @@ class AuditLogger:
             logger.error(f"Failed to flush audit log: {e}")
     
     def search_by_time(self, start_time: float, end_time: float) -> List[AuditLogEntry]:
-        """Search logs by time range using NOT_STISLA"""
+        """Search logs by time range using KEYSTONE"""
         results = []
         start_int = int(start_time)
         end_int = int(end_time)
         
-        if self.not_stisla_engine and self.timestamp_array:
-            # Use NOT_STISLA for fast search
-            start_idx = self.not_stisla_engine.search(self.timestamp_array, start_int, tolerance=3600)
-            end_idx = self.not_stisla_engine.search(self.timestamp_array, end_int, tolerance=3600)
+        if self.keystone_engine and self.timestamp_array:
+            # Use KEYSTONE for fast search
+            start_idx = self.keystone_engine.search(self.timestamp_array, start_int, tolerance=3600)
+            end_idx = self.keystone_engine.search(self.timestamp_array, end_int, tolerance=3600)
             
             if start_idx is not None and end_idx is not None:
                 for idx in range(start_idx, min(end_idx + 1, len(self.timestamp_array))):

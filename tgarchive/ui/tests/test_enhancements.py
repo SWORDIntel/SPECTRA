@@ -175,7 +175,7 @@ class TestKeyboardShortcuts(unittest.TestCase):
 
 
 class TestCommandHistory(unittest.TestCase):
-    """Test command history with NOT_STISLA and SQLite"""
+    """Test command history with KEYSTONE and SQLite"""
     
     def setUp(self):
         if not IMPORTS_AVAILABLE or CommandHistory is None:

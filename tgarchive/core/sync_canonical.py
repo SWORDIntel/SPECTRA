@@ -241,6 +241,29 @@ async def archive_messages_canonical(client: TelegramClient, entity: Any, topic_
                         "file_path": str(downloaded),
                     }
                 )
+                
+                # Check if downloaded media is an image. If so, apply OCR
+                if msg.file.mime_type and msg.file.mime_type.startswith("image/"):
+                    try:
+                        from tgarchive.osint.caas.ocr_extractor import extract_text_from_image
+                        ocr_text = extract_text_from_image(str(downloaded))
+                        if ocr_text:
+                            # Append the OCR text to the profile candidate queue
+                            combined_content = (msg.message or "") + "\n\n[OCR EXTRACTED]:\n" + ocr_text
+                            
+                            # Replace the existing entry if we already enqueued it (or just enqueue if msg.message was empty)
+                            enqueue_profile_candidate(
+                                db,
+                                channel_id=channel_id,
+                                message_id=msg.id,
+                                topic_id=topic_id,
+                                sender_id=msg.sender_id,
+                                sender_username=getattr(msg.sender, "username", None) if msg.sender else None,
+                                date=row_data["date"],
+                                content=combined_content,
+                            )
+                    except Exception as e:
+                        logger.error("Error running OCR on %s: %s", downloaded, e)
 
         progress.update(task, advance=1)
 

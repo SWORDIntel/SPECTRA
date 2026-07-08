@@ -7,21 +7,21 @@ import logging
 from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
-# ── NOT_STISLA Integration ────────────────────────────────────────────────
+# ── KEYSTONE Integration ────────────────────────────────────────────────
 try:
-    from ..search.not_stisla_bindings import (
-        NotStislaSearchEngine,
-        not_stisla_available,
+    from ..search.keystone_bindings import (
+        KeystoneSearchEngine,
+        keystone_available,
         search_offsets,
-        NOT_STISLA_WORKLOAD_OFFSETS,
+        KEYSTONE_WORKLOAD_OFFSETS,
     )
-    from ..search.not_stisla_config import (
+    from ..search.keystone_config import (
         get_optimal_tolerance,
         create_spectra_anchor_table,
     )
-    NOT_STISLA_ENABLED = True
+    KEYSTONE_ENABLED = True
 except ImportError:
-    NOT_STISLA_ENABLED = False
+    KEYSTONE_ENABLED = False
 
 logger = logging.getLogger(__name__)
 
@@ -34,14 +34,14 @@ class SortingHashOperations:
         self.cur = db.cur
         self._exec_retry = db._exec_retry
         
-        # Initialize NOT_STISLA anchor table for file offset searches
+        # Initialize KEYSTONE anchor table for file offset searches
         self.offset_anchor_table = None
-        if NOT_STISLA_ENABLED and not_stisla_available():
+        if KEYSTONE_ENABLED and keystone_available():
             try:
-                self.offset_anchor_table = create_spectra_anchor_table(NOT_STISLA_WORKLOAD_OFFSETS)
-                logger.info("NOT_STISLA offset anchor table initialized")
+                self.offset_anchor_table = create_spectra_anchor_table(KEYSTONE_WORKLOAD_OFFSETS)
+                logger.info("KEYSTONE offset anchor table initialized")
             except Exception as e:
-                logger.warning(f"Failed to initialize NOT_STISLA offset table: {e}")
+                logger.warning(f"Failed to initialize KEYSTONE offset table: {e}")
                 self.offset_anchor_table = None
 
     # Category and Group Mapping -------------------------------------------
@@ -92,9 +92,21 @@ class SortingHashOperations:
         self.db.commit()
 
     def add_sorting_audit_log(self, source: str, message_id: int, file_id: str, category: str, group_id: int) -> None:
+        # Cryptographic logging integration: hash chain
+        try:
+            self.cur.execute("SELECT signature FROM sorting_audit_log ORDER BY id DESC LIMIT 1")
+            row = self.cur.fetchone()
+            prev_sig = row[0] if row and row[0] else "0" * 64
+        except Exception:
+            prev_sig = "0" * 64
+            
+        data_to_hash = f"{prev_sig}{source}{message_id}{file_id}{category}{group_id}"
+        import hashlib
+        signature = hashlib.sha256(data_to_hash.encode('utf-8')).hexdigest()
+        
         self._exec_retry(
-            "INSERT INTO sorting_audit_log(source, message_id, file_id, category, group_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (source, message_id, file_id, category, group_id, datetime.now(timezone.utc).isoformat()),
+            "INSERT INTO sorting_audit_log(source, message_id, file_id, category, group_id, created_at, signature) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (source, message_id, file_id, category, group_id, datetime.now(timezone.utc).isoformat(), signature),
         )
         self.db.commit()
 
@@ -175,12 +187,12 @@ class SortingHashOperations:
         )
         self.db.commit()
     
-    # ── NOT_STISLA Optimized File Offset Search ────────────────────────────
+    # ── KEYSTONE Optimized File Offset Search ────────────────────────────
     
     def find_file_segment_by_offset(self, file_id: int, target_offset: int, 
                                     channel_id: Optional[int] = None) -> Optional[dict]:
         """
-        Find file segment containing offset using NOT_STISLA (20-25x speedup).
+        Find file segment containing offset using KEYSTONE (20-25x speedup).
         
         Args:
             file_id: File ID to search
@@ -216,10 +228,10 @@ class SortingHashOperations:
         # Use message IDs as offsets (they're sorted and represent file segments)
         message_ids = [row[0] for row in rows]
         
-        # Use NOT_STISLA to find segment
-        if NOT_STISLA_ENABLED and not_stisla_available() and self.offset_anchor_table:
+        # Use KEYSTONE to find segment
+        if KEYSTONE_ENABLED and keystone_available() and self.offset_anchor_table:
             try:
-                tolerance = get_optimal_tolerance(NOT_STISLA_WORKLOAD_OFFSETS)
+                tolerance = get_optimal_tolerance(KEYSTONE_WORKLOAD_OFFSETS)
                 idx = self.offset_anchor_table.search(message_ids, target_offset, tolerance)
                 
                 if idx is not None and 0 <= idx < len(rows):
@@ -231,7 +243,7 @@ class SortingHashOperations:
                         'content': row[3],
                     }
             except Exception as e:
-                logger.warning(f"NOT_STISLA offset search failed, using fallback: {e}")
+                logger.warning(f"KEYSTONE offset search failed, using fallback: {e}")
         
         # Fallback to binary search
         import bisect

@@ -515,10 +515,10 @@ class QIHSEVectorManager:
 
 class HybridSearchEngine:
     """
-    Enhanced hybrid search engine combining NOT_STISLA + QIHSE + FTS5.
+    Enhanced hybrid search engine combining KEYSTONE + QIHSE + FTS5.
 
     Strategy:
-    1. Execute NOT_STISLA for structured data (timestamps, IDs)
+    1. Execute KEYSTONE for structured data (timestamps, IDs)
     2. Execute QIHSE for semantic/vector searches
     3. Execute FTS5 for keyword searches
     4. Intelligently combine and rank results
@@ -529,7 +529,7 @@ class HybridSearchEngine:
         self,
         db_connection,
         vector_store_path: str = "./data/qihse_vectors",
-        use_not_stisla: bool = True,
+        use_keystone: bool = True,
         use_qihse: bool = True,  # QIHSE is primary, always enabled
         cache_manager=None,
     ):
@@ -539,7 +539,7 @@ class HybridSearchEngine:
         Args:
             db_connection: SQLite connection
             vector_store_path: Path to QIHSE vector store
-            use_not_stisla: Enable NOT_STISLA optimizations
+            use_keystone: Enable KEYSTONE optimizations
             use_qihse: Enable QIHSE (always True, QIHSE is primary)
             cache_manager: Optional CacheManager instance
         """
@@ -547,23 +547,23 @@ class HybridSearchEngine:
         self.vector = QIHSEVectorManager(vector_store_path=vector_store_path)
         self.cache = cache_manager
         
-        # Initialize NOT_STISLA engines
-        self.not_stisla_timestamp = None
-        self.not_stisla_message_id = None
-        if use_not_stisla:
+        # Initialize KEYSTONE engines
+        self.keystone_timestamp = None
+        self.keystone_message_id = None
+        if use_keystone:
             try:
-                from .not_stisla_bindings import (
-                    NotStislaSearchEngine,
-                    not_stisla_available,
-                    NOT_STISLA_WORKLOAD_TELEMETRY,
-                    NOT_STISLA_WORKLOAD_IDS,
+                from .keystone_bindings import (
+                    KeystoneSearchEngine,
+                    keystone_available,
+                    KEYSTONE_WORKLOAD_TELEMETRY,
+                    KEYSTONE_WORKLOAD_IDS,
                 )
-                if not_stisla_available():
-                    self.not_stisla_timestamp = NotStislaSearchEngine(NOT_STISLA_WORKLOAD_TELEMETRY)
-                    self.not_stisla_message_id = NotStislaSearchEngine(NOT_STISLA_WORKLOAD_IDS)
-                    logger.info("NOT_STISLA engines initialized for hybrid search")
+                if keystone_available():
+                    self.keystone_timestamp = KeystoneSearchEngine(KEYSTONE_WORKLOAD_TELEMETRY)
+                    self.keystone_message_id = KeystoneSearchEngine(KEYSTONE_WORKLOAD_IDS)
+                    logger.info("KEYSTONE engines initialized for hybrid search")
             except ImportError:
-                logger.warning("NOT_STISLA not available for hybrid search")
+                logger.warning("KEYSTONE not available for hybrid search")
 
     def search(
         self,
@@ -576,7 +576,7 @@ class HybridSearchEngine:
         date_to: Optional[datetime] = None,
     ) -> List[SearchResult]:
         """
-        Enhanced hybrid search with NOT_STISLA + QIHSE + FTS5.
+        Enhanced hybrid search with KEYSTONE + QIHSE + FTS5.
 
         Args:
             query: Search query (handles keyword, semantic, timestamp, ID)
@@ -610,8 +610,8 @@ class HybridSearchEngine:
         
         results = {}
 
-        # 1. NOT_STISLA for structured data (timestamps, IDs)
-        if (date_from or date_to) and self.not_stisla_timestamp:
+        # 1. KEYSTONE for structured data (timestamps, IDs)
+        if (date_from or date_to) and self.keystone_timestamp:
             try:
                 from ..db import SpectraDB
                 if isinstance(self.fts5.db, SpectraDB):
@@ -633,13 +633,13 @@ class HybridSearchEngine:
                                     "user_id": msg_data.get('user_id'),
                                     "content": msg_data.get('content', ''),
                                     "date": msg_data['date'],
-                                    "not_stisla_score": 1.0,  # Perfect match for temporal
+                                    "keystone_score": 1.0,  # Perfect match for temporal
                                 }
             except Exception as e:
-                logger.debug(f"NOT_STISLA temporal search failed: {e}")
+                logger.debug(f"KEYSTONE temporal search failed: {e}")
 
-        # Message ID lookup with NOT_STISLA
-        if query.isdigit() and self.not_stisla_message_id:
+        # Message ID lookup with KEYSTONE
+        if query.isdigit() and self.keystone_message_id:
             try:
                 from ..db import SpectraDB
                 if isinstance(self.fts5.db, SpectraDB):
@@ -652,10 +652,10 @@ class HybridSearchEngine:
                             "user_id": msg_data.get('user_id'),
                             "content": msg_data.get('content', ''),
                             "date": msg_data['date'],
-                            "not_stisla_score": 1.0,
+                            "keystone_score": 1.0,
                         }
             except Exception as e:
-                logger.debug(f"NOT_STISLA ID search failed: {e}")
+                logger.debug(f"KEYSTONE ID search failed: {e}")
 
         # 2. FTS5 keyword search
         if search_type in (SearchType.KEYWORD, SearchType.HYBRID):
@@ -703,12 +703,12 @@ class HybridSearchEngine:
         combined = []
         for msg_id, data in results.items():
             # Normalize scores
-            not_stisla_score = data.get("not_stisla_score", 0) * 0.2
+            keystone_score = data.get("keystone_score", 0) * 0.2
             keyword_score = data.get("keyword_score", 0) / 100.0 * 0.3
             qihse_score = data.get("qihse_score", 0) * 0.5
 
             # Combined relevance score
-            combined_score = not_stisla_score + keyword_score + qihse_score
+            combined_score = keystone_score + keyword_score + qihse_score
 
             combined.append(SearchResult(
                 message_id=data["message_id"],
@@ -719,11 +719,11 @@ class HybridSearchEngine:
                 relevance_score=combined_score,
                 match_type=search_type,
                 metadata={
-                    "not_stisla_score": not_stisla_score,
+                    "keystone_score": keystone_score,
                     "keyword_score": keyword_score,
                     "qihse_score": qihse_score,
                     "algorithms": [
-                        "not_stisla" if data.get("not_stisla_score") else None,
+                        "keystone" if data.get("keystone_score") else None,
                         "fts5" if data.get("keyword_score") else None,
                         "qihse" if data.get("qihse_score") else None,
                     ],
@@ -762,7 +762,7 @@ class HybridSearchEngine:
         filter_user: Optional[int] = None,
     ) -> Dict[str, List[SearchResult]]:
         """
-        Batch search using NOT_STISLA parallel search for timestamp queries
+        Batch search using KEYSTONE parallel search for timestamp queries
         and QIHSE batch search for semantic queries.
         
         Args:
@@ -791,8 +791,8 @@ class HybridSearchEngine:
             else:
                 keyword_queries.append(query)
         
-        # Process timestamp queries with NOT_STISLA parallel search
-        if timestamp_queries and self.not_stisla_timestamp:
+        # Process timestamp queries with KEYSTONE parallel search
+        if timestamp_queries and self.keystone_timestamp:
             try:
                 from ..db import SpectraDB
                 if isinstance(self.fts5.db, SpectraDB):
@@ -815,7 +815,7 @@ class HybridSearchEngine:
                         except:
                             continue
                     
-                    # Use NOT_STISLA batch parallel search
+                    # Use KEYSTONE batch parallel search
                     for query in timestamp_queries:
                         try:
                             if query.isdigit():
@@ -829,7 +829,7 @@ class HybridSearchEngine:
                                     target = int(datetime.now().timestamp())
                             
                             # Use parallel batch search
-                            batch_results = self.not_stisla_timestamp.search_parallel(
+                            batch_results = self.keystone_timestamp.search_parallel(
                                 timestamps, [target], num_threads=0
                             )
                             
@@ -847,15 +847,15 @@ class HybridSearchEngine:
                                             date=datetime.fromisoformat(msg_data['date']) if isinstance(msg_data['date'], str) else msg_data['date'],
                                             relevance_score=1.0,
                                             match_type=SearchType.KEYWORD,
-                                            metadata={'algorithm': 'not_stisla_batch'},
+                                            metadata={'algorithm': 'keystone_batch'},
                                         ))
                             
                             results[query] = query_results[:limit_per_query]
                         except Exception as e:
-                            logger.debug(f"NOT_STISLA batch search failed for {query}: {e}")
+                            logger.debug(f"KEYSTONE batch search failed for {query}: {e}")
                             results[query] = []
             except Exception as e:
-                logger.warning(f"NOT_STISLA batch processing failed: {e}")
+                logger.warning(f"KEYSTONE batch processing failed: {e}")
         
         # Process semantic queries with QIHSE batch search
         if semantic_queries:
@@ -902,9 +902,9 @@ class HybridSearchEngine:
             "vector": self.vector.get_statistics(),
         }
         
-        if self.not_stisla_timestamp:
-            stats["not_stisla_timestamp"] = self.not_stisla_timestamp.get_stats()
-        if self.not_stisla_message_id:
-            stats["not_stisla_message_id"] = self.not_stisla_message_id.get_stats()
+        if self.keystone_timestamp:
+            stats["keystone_timestamp"] = self.keystone_timestamp.get_stats()
+        if self.keystone_message_id:
+            stats["keystone_message_id"] = self.keystone_message_id.get_stats()
         
         return stats

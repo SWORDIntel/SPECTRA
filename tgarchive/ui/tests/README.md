@@ -8,7 +8,7 @@ Comprehensive test suite for all 20 operator-friendly enhancements implemented f
 
 ### Phase 1: Core Enhancements
 - ✅ Keyboard shortcuts system
-- ✅ Command history (NOT_STISLA + SQLite hybrid)
+- ✅ Command history (KEYSTONE + SQLite hybrid)
 - ✅ Progress feedback widgets
 - ✅ Contextual help system
 - ✅ Auto-completion (QIHSE + ML)
@@ -31,7 +31,7 @@ Comprehensive test suite for all 20 operator-friendly enhancements implemented f
 - ✅ Quick access menu (Ctrl+K)
 
 ### Final Phase: Enterprise Features
-- ✅ Audit logging (NOT_STISLA indexed)
+- ✅ Audit logging (KEYSTONE indexed)
 - ✅ Multitasking support
 - ✅ Smart defaults (ML-enhanced)
 - ✅ Remote-friendly (SSH optimizations)
@@ -91,7 +91,7 @@ Each enhancement has a dedicated test class:
 - Python 3.8+
 - unittest (standard library)
 - pytest (optional, for pytest runner)
-- All SPECTRA dependencies (NOT_STISLA, QIHSE, etc.)
+- All SPECTRA dependencies (KEYSTONE, QIHSE, etc.)
 
 ## Notes
 

@@ -53,7 +53,8 @@ try:
     QDRANT_AVAILABLE = True
 except ImportError:
     QDRANT_AVAILABLE = False
-    logger.debug("Qdrant not available (optional fallback)")
+    Filter = None # Mock the Filter object if Qdrant isn't installed
+    logger.debug("qdrant-client not installed. QIHSE will be used natively.")
 
 # Fallback to ChromaDB if available
 try:

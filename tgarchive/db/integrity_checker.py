@@ -90,6 +90,7 @@ class DatabaseIntegrityChecker:
             self._check_foreign_keys(conn)
             self._check_sqlite_integrity(conn)
             self._check_performance_stats(conn)
+            self._check_cryptographic_logs(conn)
 
             conn.close()
 
@@ -382,6 +383,55 @@ class DatabaseIntegrityChecker:
                 check_name="performance_stats",
                 passed=False,
                 message=f"Error collecting stats: {e}"
+            ))
+
+    def _check_cryptographic_logs(self, conn: sqlite3.Connection) -> None:
+        """Validate cryptographic integrity hash chain of audit logs."""
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, source, message_id, file_id, category, group_id, signature FROM sorting_audit_log ORDER BY id ASC")
+            rows = cursor.fetchall()
+
+            if not rows:
+                self.results.append(IntegrityCheckResult(
+                    check_name="cryptographic_audit_logs",
+                    passed=True,
+                    message="No audit logs to verify."
+                ))
+                return
+
+            prev_sig = "0" * 64
+            tampered = []
+            
+            for row in rows:
+                row_id, source, message_id, file_id, category, group_id, signature = row
+                data_to_hash = f"{prev_sig}{source}{message_id}{file_id}{category}{group_id}"
+                
+                expected_sig = hashlib.sha256(data_to_hash.encode('utf-8')).hexdigest()
+                if signature != expected_sig:
+                    tampered.append(row_id)
+                
+                prev_sig = signature
+
+            if tampered:
+                self.results.append(IntegrityCheckResult(
+                    check_name="cryptographic_audit_logs",
+                    passed=False,
+                    message=f"Tampering detected in {len(tampered)} audit logs!",
+                    details={"tampered_ids": tampered[:10]}
+                ))
+            else:
+                self.results.append(IntegrityCheckResult(
+                    check_name="cryptographic_audit_logs",
+                    passed=True,
+                    message=f"Cryptographic hash chain verified for {len(rows)} audit logs."
+                ))
+                
+        except sqlite3.Error as e:
+            self.results.append(IntegrityCheckResult(
+                check_name="cryptographic_audit_logs",
+                passed=False,
+                message=f"Failed to verify cryptographic logs: {e}"
             ))
 
     def get_summary(self) -> Dict[str, Any]:

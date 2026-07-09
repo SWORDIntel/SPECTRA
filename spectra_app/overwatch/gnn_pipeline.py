@@ -9,8 +9,8 @@ class GNNIngestionPipeline:
     This component bridges raw ingestion from QIHSE with the mathematical matrix formulation.
     """
 
-    def __init__(self, use_npu_acceleration: bool = True):
-        self.use_npu_acceleration = use_npu_acceleration
+    def __init__(self, use_gpu_acceleration: bool = True):
+        self.use_gpu_acceleration = use_gpu_acceleration
         self.node_registry: Dict[str, IntelligenceNode] = {}
         self.edge_registry: List[RelationalEdge] = []
 
@@ -69,11 +69,11 @@ class GNNIngestionPipeline:
 
     def export_graph_matrix(self) -> dict:
         """
-        Serializes the current relational state for OpenVINO/NPU inference execution.
+        Serializes the current relational state for GPU inference execution (e.g., via CUDA/PyTorch).
         """
         return {
             "timestamp": datetime.utcnow().isoformat(),
             "nodes": [node.__dict__ for node in self.node_registry.values()],
             "edges": [edge.__dict__ for edge in self.edge_registry],
-            "npu_target": "Meteor_Lake_OpenVINO" if self.use_npu_acceleration else "CPU"
+            "compute_target": "GPU (CUDA)" if self.use_gpu_acceleration else "CPU"
         }

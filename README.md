@@ -18,7 +18,7 @@ SPECTRA is a forensic-grade intelligence framework for Telegram network discover
 - 📱 **Topic/thread support** for complete conversation capture
 - 🗄️ **SQL database storage** for all discovered groups, relationships, and archive metadata
 - ⚡ **Parallel processing** leveraging multiple accounts and proxies simultaneously
-- 🖥️ **Modern TUI** (npyscreen) and CLI, both using the same modular backend
+- 🖥️ **Modern TUI** (npyscreen) and CLI, both using the same modular backend. TUI capabilities include real-time operational monitoring and interactive dashboards.
 - ⚙️ **Streamlined Account Management** - Full CRUD operations directly in the TUI with keyboard shortcuts
 - ☁️ **Forwarding Mode:** Traverse a series of channels, discover related channels, and download text/archive files with specific rules.
 - 🔐 **Dockerized web console** with first-run bootstrap admin enrollment and YubiKey/passkey WebAuthn sign-in
@@ -33,6 +33,13 @@ SPECTRA is a forensic-grade intelligence framework for Telegram network discover
 - 🚀 **One-Command Deployment**: Production-ready Docker orchestration with automated SSL via **Caddy**.
 - 🛡️ **OPSEC Core**: Multi-account/API rotation and proxy support for anti-detection and persistent collection.
 - 🧠 **MEMSHADOW Integration Ready**: Sidecar is optional and can be reconnected via `SPECTRA_MEMSHADOW_URL` without changing route contracts.
+- 📤 **Automated STIX/TAXII Exports**: Telemetry exports for direct MISP/OpenCTI integration.
+- 🎙️ **Heuristic Audio Processing**: Transcription and translation pipelines for publicly accessible and archived Telegram voice notes.
+- 🔗 **Cross-Platform Correlation**: Maps Telegram UUIDs to TOX, Session, and Jabber/XMPP identifiers.
+- 🧠 **Behavioral Profiling**: NLP-driven sentiment and behavioral profiling to map threat actor operational tempo.
+- 📸 **EXIF Metadata Extraction**: Automated EXIF extraction from scraped media for location tracking.
+- 🕸️ **Link Analysis Visualization**: Network link analysis visualization for identifying target clusters.
+- 🔑 **Regex Threat Hunting**: Automated regular expression matching for cryptocurrency addresses and credential dumps.
 
 ## ⚡ Quick Start (Docker)
 
@@ -66,7 +73,10 @@ export SPECTRA_SESSION_SECRET="change-me-in-production"
 export SPECTRA_WEBAUTHN_ORIGIN="http://localhost:5000"
 export SPECTRA_WEBAUTHN_RP_ID="localhost"
 ./spectra
+```
+
 ### Operational API Keys
+
 Secure the interface for remote access or update your local `spectra_config.json`:
 ```json
 {
@@ -74,6 +84,7 @@ Secure the interface for remote access or update your local `spectra_config.json
     "api_hash": "b7188bbfe84dda5fce97f40faecfef6d"
 }
 ```
+
 You can also launch with a GUI key:
 ```bash
 export SPECTRA_GUI_API_KEY="your-secure-key"
@@ -91,11 +102,32 @@ Pivot through the criminal network using CaaS-aware scoring to identify high-val
 ### Layer 1: Forensic Profiling
 Extract pricing, services, and aliases from canonical archives into structured dossiers.
 ```bash
-cd docs
-npm install          # Install Docusaurus dependencies
-npm start            # Start development server (http://localhost:3000)
-npm run build        # Build static HTML to docs/html/
+./spectra --profile @target_channel
 ```
+
+### Layer 1.5: Job Queue Processing
+Process bulk intelligence extraction requests through the automated worker queue.
+```bash
+./spectra process-queue --batch-size 250
+```
+
+### Layer 2: Nexus & Wallet Analysis
+Automatically map infrastructure links and crypto-financial footprints across the entire repository.
+
+## 📁 System Status & Architecture
+
+* ✅ **Cipher-Ops Dashboard**: High-contrast operational control surface.
+* ✅ **Economic Intel**: USD-normalized GMV tracking and profitability rankings.
+* ✅ **Forensic Dossiers**: Narrative summaries, wallet sightings, and nexus alerts.
+* ✅ **Production Ready**: Docker + Caddy integration for secure remote ops.
+
+## 📚 Documentation
+
+Detailed technical reference and guides are available at:
+* **Dashboard API**: `/docs` (OpenAPI 3.1 / Swagger)
+* **Full Manual**: `/readme` or [GitHub Pages](https://swordintel.github.io/SPECTRA/)
+
+### Building Documentation
 
 **Documentation Framework:**
 - Built with Docusaurus 3.x
@@ -103,6 +135,13 @@ npm run build        # Build static HTML to docs/html/
 - Configuration: `docs/docusaurus.config.js`
 - Build output: `docs/html/` (generated HTML files)
 - Root entry point: `index.html` (redirects to documentation)
+
+```bash
+cd docs
+npm install          # Install Docusaurus dependencies
+npm start            # Start development server (http://localhost:3000)
+npm run build        # Build static HTML to docs/html/
+```
 
 ### Quick Links
 
@@ -128,27 +167,6 @@ Original markdown files are still available in:
 - `docs/reports/` — Security summaries and integration reports
 - `docs/roadmap/` — Long-term initiatives and backlog
 - `docs/research/` — Strategic research documents
-
-## Project Layout
-
-./spectra process-queue --batch-size 250
-```
-
-### Layer 2: Nexus & Wallet Analysis
-Automatically map infrastructure links and crypto-financial footprints across the entire repository.
-
-## 📁 System Status & Architecture
-
-* ✅ **Cipher-Ops Dashboard**: High-contrast operational control surface.
-* ✅ **Economic Intel**: USD-normalized GMV tracking and profitability rankings.
-* ✅ **Forensic Dossiers**: Narrative summaries, wallet sightings, and nexus alerts.
-* ✅ **Production Ready**: Docker + Caddy integration for secure remote ops.
-
-## 📚 Documentation
-
-Detailed technical reference and guides are available at:
-* **Dashboard API**: `/docs` (OpenAPI 3.1 / Swagger)
-* **Full Manual**: `/readme` or [GitHub Pages](https://swordintel.github.io/SPECTRA/)
 
 ## 📜 License
 

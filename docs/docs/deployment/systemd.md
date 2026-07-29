@@ -8,150 +8,336 @@ tags: [deployment, systemd, linux, services]
 
 # SPECTRA Systemd Service Configuration
 
-Production-ready systemd service units for SPECTRA deployment on Linux systems.
+SPECTRA ships five systemd service units covering three functional areas: the
+main archiver stack, the live index workers, and a health endpoint. All units
+are in `deployment/systemd/`.
 
-## Services
+## Service Overview
+
+| Unit | Mode | Purpose |
+|---|---|---|
+| `spectra.service` | system | Main archiver — Telegram collection, forwarding, REST API |
+| `spectra-scheduler.service` | system | Background cron-style job scheduler |
+| `spectra-health.service` | system | Lightweight HTTP health endpoint on port 8080 |
+| `spectra-index.service` | system *or* user | Continuous index watcher — primary database (`spectra.db`) |
+| `spectra-index-tasks.service` | system *or* user | Continuous index watcher — task/audit sidecar (`spectra.tasks.sqlite3`) |
+
+The two index services are independent of the archiver stack and can be run as
+**system units** (multi-user server) or **user units** (workstation/developer).
+
+---
+
+## Index Watcher Services (spectra-index + spectra-index-tasks)
+
+These services drain the `index_outbox` and keep KEYSTONE, QIHSE, FTS, and
+graph projections current. They must be running whenever the downloader,
+crawler, or archiver is active.
+
+### Automated Installation (system units)
+
+Use the bundled installer for system-wide deployment:
+
+```bash
+sudo bash deployment/systemd/install-index-services.sh \
+  --project-dir /opt/spectra \
+  --config     /etc/spectra/config.json \
+  --database   /opt/spectra/data/spectra.db \
+  --task-database /opt/spectra/data/spectra.tasks.sqlite3 \
+  --python     /opt/spectra/.venv/bin/python \
+  --user       spectra \
+  --group      spectra \
+  --environment-file /etc/spectra/environment
+```
+
+The installer:
+- Substitutes all `@PLACEHOLDER@` values in the template unit files.
+- Writes the filled units to `/etc/systemd/system/` (or `--unit-dir`).
+- Runs `systemctl daemon-reload`, enables, and starts the units.
+- **Never touches** the transient `spectra-index-live.service` /
+  `spectra-index-tasks-live.service` units if they are active. Pass
+  `--force-start` to override the deferral.
+
+**Installer options:**
+
+| Flag | Default | Description |
+|---|---|---|
+| `--project-dir PATH` | *(required)* | SPECTRA checkout or install root |
+| `--config PATH` | *(required)* | JSON config file |
+| `--database PATH` | *(required)* | Primary SQLite database |
+| `--task-database PATH` | *(required)* | Task/audit SQLite database |
+| `--python PATH` | `PROJECT/.venv/bin/python` | Python interpreter |
+| `--user USER` | `spectra` | Service account |
+| `--group GROUP` | `spectra` | Service group |
+| `--environment-file PATH` | — | Credentials env file (`EnvironmentFile=`) |
+| `--unit-dir PATH` | `/etc/systemd/system` | Unit destination |
+| `--no-enable` | — | Install but do not enable |
+| `--no-start` | — | Install and enable but do not start |
+| `--force-start` | — | Start even with active transient units |
+| `--uninstall` | — | Stop, disable, and remove the durable units |
+
+To uninstall:
+
+```bash
+sudo bash deployment/systemd/install-index-services.sh --uninstall
+```
+
+### User-Unit Installation (workstation / developer)
+
+For single-operator workstations where SPECTRA runs as your own user:
+
+```bash
+# 1. Copy the pre-filled units (already done for this checkout)
+mkdir -p ~/.config/systemd/user
+
+cat > ~/.config/systemd/user/spectra-index.service << 'EOF'
+[Unit]
+Description=SPECTRA index watcher — primary database (spectra.db)
+Documentation=file:///fast/SPECTRA/docs/docs/api/indexing-architecture.md
+After=network.target
+Wants=spectra-index-tasks.service
+
+[Service]
+Type=simple
+WorkingDirectory=/fast/SPECTRA
+ExecStart=/usr/bin/python -m tgarchive \
+    --config /fast/SPECTRA/spectra_config.json \
+    --db /fast/SPECTRA/spectra.db \
+    --output json \
+    index watch \
+    --batch-size 1000 \
+    --poll-interval 0.1 \
+    --max-backoff 60
+
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+Environment=PYTHONPATH=/fast/SPECTRA
+EnvironmentFile=-/fast/SPECTRA/.env
+
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=spectra-index
+
+[Install]
+WantedBy=default.target
+EOF
+
+cat > ~/.config/systemd/user/spectra-index-tasks.service << 'EOF'
+[Unit]
+Description=SPECTRA index watcher — task sidecar (spectra.tasks.sqlite3)
+Documentation=file:///fast/SPECTRA/docs/docs/api/indexing-architecture.md
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/fast/SPECTRA
+ExecStart=/usr/bin/python -m tgarchive \
+    --config /fast/SPECTRA/spectra_config.json \
+    --db /fast/SPECTRA/spectra.tasks.sqlite3 \
+    --output json \
+    index watch \
+    --batch-size 1000 \
+    --poll-interval 0.1 \
+    --max-backoff 60
+
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+Environment=PYTHONPATH=/fast/SPECTRA
+EnvironmentFile=-/fast/SPECTRA/.env
+
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=spectra-index-tasks
+
+[Install]
+WantedBy=default.target
+EOF
+
+# 2. Enable linger so user units survive logout
+loginctl enable-linger "$USER"
+
+# 3. Reload, enable, and start
+systemctl --user daemon-reload
+systemctl --user enable spectra-index.service spectra-index-tasks.service
+systemctl --user start  spectra-index.service spectra-index-tasks.service
+```
+
+:::note
+If the transient `spectra-index-live.service` / `spectra-index-tasks-live.service`
+units are already running (started via `systemd-run`), the persistent units will
+be enabled but not started. Stop the transient units first or wait for them to
+exit, then start the persistent ones:
+
+```bash
+systemctl --user stop spectra-index-live.service spectra-index-tasks-live.service
+systemctl --user start spectra-index.service spectra-index-tasks.service
+```
+:::
+
+### Index Worker Key Behaviours
+
+- **Drain loop** — claims up to `--batch-size` outbox events per cycle, projects
+  each one with a per-event savepoint, and acknowledges the batch in a single
+  follow-up transaction.
+- **Claim tokens** — opaque per-lease tokens prevent an expired worker from
+  overwriting the current owner's acknowledgement.
+- **Backoff** — failed projection batches use capped exponential backoff up to
+  `--max-backoff` seconds; clean cycles reset immediately to `--poll-interval`.
+- **Graceful drain** — `SIGINT` triggers a clean drain of the current batch
+  before exit; `TimeoutStopSec=30` allows this before a forced `SIGKILL`.
+- **Verification drift** — `spectra index verify` exits `7` if projection
+  checksums drift; the watcher emits a redacted JSON diagnostic to stderr.
+- **Restart policy** — `Restart=on-failure`, `RestartSec=5`, up to 5 attempts
+  per 60-second window (system units: 10 bursts per 5 minutes).
+
+### Index Worker Management
+
+```bash
+# Status
+systemctl --user status spectra-index.service spectra-index-tasks.service
+
+# Live logs
+journalctl --user -u spectra-index -f
+journalctl --user -u spectra-index-tasks -f
+
+# Manual one-shot operations (no service required)
+spectra index status --output json
+spectra index drain
+spectra index verify --projection all --native
+spectra index rebuild --projection all
+```
+
+---
+
+## Archiver Services (spectra + spectra-scheduler + spectra-health)
+
+These system units run the main SPECTRA collection and API stack under a
+dedicated `spectra` service account.
 
 ### spectra.service
-Main SPECTRA archiver service with comprehensive security hardening and resource limits.
 
-**Features:**
-- TEMPEST Class C security controls
-- Resource limits (4GB RAM, 200% CPU)
-- Automatic restart on failure
-- Graceful shutdown handling
-- Protected system directories
-- Credential isolation via environment files
+Main archiver service with security hardening and resource limits.
+
+**Key settings:** `MemoryMax=4G`, `CPUQuota=200%`, `NoNewPrivileges=true`,
+`ProtectSystem=strict`, `PrivateTmp=true`, `KillSignal=SIGINT`.
 
 ### spectra-scheduler.service
-Background scheduler for automated archiving tasks.
 
-**Features:**
-- Depends on main service
-- Reduced resource limits (1GB RAM, 50% CPU)
-- Automatic restart
-- Cron-based job execution
+Background scheduler for automated archiving jobs.
+
+**Key settings:** `MemoryMax=1G`, `CPUQuota=50%`, depends on `spectra.service`.
 
 ### spectra-health.service
-Health check HTTP endpoint for monitoring.
 
-**Features:**
-- Lightweight service (always running)
-- Provides /health endpoint on port 8080
-- Real-time resource metrics
-- Integration with monitoring systems
+Lightweight HTTP health endpoint on port 8080.
 
-## Installation
+**Key settings:** Always running; provides `/health` for monitoring integration.
 
-### 1. Create Service User
+### Installation
+
+#### 1. Create service user and directories
 
 ```bash
 sudo useradd -r -s /bin/false -d /opt/spectra spectra
-```
-
-### 2. Setup Directory Structure
-
-```bash
 sudo mkdir -p /opt/spectra/{data,logs,media,venv}
 sudo mkdir -p /etc/spectra
 sudo chown -R spectra:spectra /opt/spectra
 sudo chmod 750 /etc/spectra
 ```
 
-### 3. Install SPECTRA
+#### 2. Install SPECTRA
 
 ```bash
-cd /opt/spectra
-sudo -u spectra python3 -m venv venv
-sudo -u spectra venv/bin/pip install -e /path/to/SPECTRA
+sudo -u spectra python3 -m venv /opt/spectra/venv
+sudo -u spectra /opt/spectra/venv/bin/pip install -e /path/to/SPECTRA
 ```
 
-### 4. Create Environment File
+#### 3. Create environment and config files
 
-Create `/etc/spectra/environment`:
-
+`/etc/spectra/environment`:
 ```bash
-# Telegram API Credentials
 TG_API_ID=your_api_id
 TG_API_HASH=your_api_hash
-
-# Optional: Database path
 SPECTRA_DB_PATH=/opt/spectra/data/spectra.db
-
-# Optional: Log level
 LOG_LEVEL=INFO
 ```
-
-Secure the file:
 
 ```bash
 sudo chmod 600 /etc/spectra/environment
 sudo chown spectra:spectra /etc/spectra/environment
-```
-
-### 5. Create Configuration File
-
-Copy your config to `/etc/spectra/config.json` and secure it:
-
-```bash
 sudo cp spectra_config.json /etc/spectra/config.json
 sudo chmod 600 /etc/spectra/config.json
 sudo chown spectra:spectra /etc/spectra/config.json
 ```
 
-### 6. Install Service Files
+#### 4. Install and enable archiver units
 
 ```bash
-sudo cp deployment/systemd/*.service /etc/systemd/system/
+sudo cp deployment/systemd/spectra.service \
+        deployment/systemd/spectra-scheduler.service \
+        deployment/systemd/spectra-health.service \
+        /etc/systemd/system/
 sudo systemctl daemon-reload
+sudo systemctl enable --now spectra.service spectra-scheduler.service spectra-health.service
 ```
 
-### 7. Enable and Start Services
+#### 5. Install index workers alongside the archiver
 
 ```bash
-# Enable services to start on boot
-sudo systemctl enable spectra.service
-sudo systemctl enable spectra-scheduler.service
-sudo systemctl enable spectra-health.service
-
-# Start services
-sudo systemctl start spectra.service
-sudo systemctl start spectra-scheduler.service
-sudo systemctl start spectra-health.service
+sudo bash deployment/systemd/install-index-services.sh \
+  --project-dir /opt/spectra \
+  --config     /etc/spectra/config.json \
+  --database   /opt/spectra/data/spectra.db \
+  --task-database /opt/spectra/data/spectra.tasks.sqlite3 \
+  --environment-file /etc/spectra/environment
 ```
 
-## Management
+---
 
-### Check Status
+## Management Reference
+
+### Status
 
 ```bash
-sudo systemctl status spectra
-sudo systemctl status spectra-scheduler
-sudo systemctl status spectra-health
+# Archiver stack
+sudo systemctl status spectra spectra-scheduler spectra-health
+
+# Index workers (system)
+sudo systemctl status spectra-index spectra-index-tasks
+
+# Index workers (user)
+systemctl --user status spectra-index spectra-index-tasks
 ```
 
-### View Logs
+### Logs
 
 ```bash
-# Real-time logs
-sudo journalctl -u spectra -f
+# Follow live (system)
+sudo journalctl -u spectra-index -f
+sudo journalctl -u spectra-index-tasks -f
+
+# Follow live (user)
+journalctl --user -u spectra-index -f
+journalctl --user -u spectra-index-tasks -f
 
 # Last 100 lines
 sudo journalctl -u spectra -n 100
 
-# Since boot
+# Since last boot
 sudo journalctl -u spectra -b
 ```
 
-### Restart Services
-
-```bash
-sudo systemctl restart spectra
-```
-
-### Stop Services
-
-```bash
 sudo systemctl stop spectra
 sudo systemctl stop spectra-scheduler
 sudo systemctl stop spectra-health

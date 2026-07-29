@@ -13,6 +13,7 @@ from .forward_operations import ForwardOperations
 from .migration_operations import MigrationOperations
 from .sorting_hash_operations import SortingHashOperations
 from .mirror_operations import MirrorOperations
+from .operation_records import OperationRecords
 
 
 class SpectraDB(BaseDB):
@@ -38,6 +39,7 @@ class SpectraDB(BaseDB):
         self.sorting_hash = SortingHashOperations(self)
         self.migration = MigrationOperations(self)
         self.mirror = MirrorOperations(self)
+        self.operations = OperationRecords(self)
         
         # Integrate QIHSE natively as the root vector DB layer
         try:
@@ -195,6 +197,31 @@ class SpectraDB(BaseDB):
 
     def get_mirror_progress(self, *args, **kwargs):
         return self.mirror.get_mirror_progress(*args, **kwargs)
+
+    # Delegate operation records
+    def save_operation(self, *args, **kwargs):
+        return self.operations.save_operation(*args, **kwargs)
+
+    def save_operation_event(self, *args, **kwargs):
+        return self.operations.save_operation_event(*args, **kwargs)
+
+    def get_operation(self, *args, **kwargs):
+        return self.operations.get_operation(*args, **kwargs)
+
+    def get_operation_events(self, *args, **kwargs):
+        return self.operations.get_operation_events(*args, **kwargs)
+
+    def update_operation_status(self, *args, **kwargs):
+        return self.operations.update_operation_status(*args, **kwargs)
+
+    def save_audit_log(self, *args, **kwargs):
+        return self.operations.save_audit_log(*args, **kwargs)
+
+    def cancel_operation(self, *args, **kwargs):
+        return self.operations.cancel_operation(*args, **kwargs)
+
+    def get_operation_by_idempotency_key(self, *args, **kwargs):
+        return self.operations.get_operation_by_idempotency_key(*args, **kwargs)
 
     def find_messages_by_timestamp_range(
         self,

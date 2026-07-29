@@ -15,6 +15,7 @@ from typing import AsyncIterator
 import pytz  # type: ignore
 
 from .schema import SCHEMA_SQL
+from .index_outbox import IndexOutbox
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,7 @@ class BaseDB(AbstractContextManager):
                 self.conn.create_function("PAGE", 2, _page)
                 self.cur = self.conn.cursor()
                 self.cur.executescript(SCHEMA_SQL)
+                IndexOutbox.ensure_schema(self.conn)
                 self.conn.commit()
                 logger.info("DB ready at %s", self.db_path)
                 return

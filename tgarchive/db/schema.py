@@ -214,6 +214,43 @@ CREATE TABLE IF NOT EXISTS channel_file_inventory (
     created_at          TEXT NOT NULL,
     UNIQUE(channel_id, file_id, message_id)
 );
+
+CREATE TABLE IF NOT EXISTS operations (
+    operation_id        TEXT PRIMARY KEY,
+    operation_name      TEXT NOT NULL,
+    arguments           TEXT,
+    status              TEXT NOT NULL,
+    result              TEXT,
+    error               TEXT,
+    dry_run             BOOLEAN DEFAULT FALSE,
+    idempotency_key     TEXT,
+    started_at          TEXT NOT NULL,
+    finished_at         TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_operations_idempotency ON operations(idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_operations_status ON operations(status);
+
+CREATE TABLE IF NOT EXISTS operation_events (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    operation_id        TEXT NOT NULL REFERENCES operations(operation_id) ON DELETE CASCADE,
+    event               TEXT NOT NULL,
+    message             TEXT,
+    progress            REAL,
+    data                TEXT,
+    timestamp           TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_operation_events_op_id ON operation_events(operation_id);
+
+CREATE TABLE IF NOT EXISTS operation_audit_log (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    operation_id        TEXT REFERENCES operations(operation_id) ON DELETE SET NULL,
+    action              TEXT NOT NULL,
+    user                TEXT,
+    authorization       TEXT,
+    details             TEXT,
+    timestamp           TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_operation_audit_op_id ON operation_audit_log(operation_id);
 """
 
 __all__ = ["SCHEMA_SQL"]

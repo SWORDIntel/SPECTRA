@@ -89,17 +89,6 @@ function HomepageFeatures() {
 
 export default function Home() {
   const {siteConfig} = useDocusaurusContext();
-  const {setColorMode} = useColorMode();
-  
-  // Force dark theme on page load
-  useEffect(() => {
-    setColorMode('dark');
-    // Also set it on the document element
-    document.documentElement.setAttribute('data-theme', 'dark');
-    // Remove light theme class if present
-    document.documentElement.classList.remove('light-theme');
-    document.documentElement.classList.add('dark-theme');
-  }, [setColorMode]);
   
   return (
     <Layout

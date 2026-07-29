@@ -94,3 +94,57 @@ python -m tgarchive --shunt-from @source_channel --shunt-to @destination_channel
 ```
 
 See the [Shunt Mode Guide](../guides/shunt-mode.md) for detailed documentation.
+
+## Agent Planner
+
+The Agent Planner can formulate automated intelligence gathering plans from natural language requests.
+
+```bash
+# Generate an execution plan from a natural language request
+spectra agent plan "download all media from -1002407846598 to /fast/ULPs" --output json
+```
+
+### Agent Run
+Safely execute an operation plan using the unified execution manager, with full audit trails and idempotency tracking.
+
+```bash
+spectra agent run "download all media from -1002407846598 to /fast/ULPs"
+```
+Or from a pre-planned JSON file:
+```bash
+spectra agent run --file plan.json
+```
+
+## Mass Channel Downloader
+
+The modern CLI supports high-performance, resumable mass channel media downloading that can safely run in parallel across multiple accounts to different directories. It bypasses legacy global locks and maintains local state manifests to skip duplicates and resume interrupted transfers.
+
+```bash
+# Mass download all media from a channel with a specific account to a specific directory
+python -m tgarchive channel download --account +447871042245 --output-dir channel_downloads -- -1002778007272
+
+# Tune the concurrency and reliability for massive channels
+spectra channel download @example_channel \
+    --max-connections 64 \
+    --max-retries 10 \
+    --retry-delay 5.0 \
+    --progress-interval 30.0
+
+# Download ONLY media (skip saving text JSONL metadata)
+spectra channel download @example_channel --media-only
+
+# Retry ONLY media files that failed to download in a previous run
+spectra channel retry-failed @example_channel --output-dir channel_downloads
+
+# Inspect local download status and statistics
+spectra channel status channel_downloads/ --output json
+```
+
+## Live Unified Monitor
+
+You can monitor all active mass channel downloads locally using a `rich`-based terminal UI dashboard that tracks progress, download speeds, ETAs, failure counts, and the last log output for every job.
+
+```bash
+# Launch the live interactive TUI monitor for a directory of downloads
+spectra channel monitor /fast/ULPs
+```

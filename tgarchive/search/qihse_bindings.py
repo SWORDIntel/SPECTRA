@@ -99,6 +99,27 @@ class QihseVerifyConfig(Structure):
     ]
 
 
+class QihseTypeDescriptor(Structure):
+    """Type descriptor for custom data types (qihse_type_descriptor_t).
+
+    Must match the C struct in include/qihse.h exactly:
+        qihse_data_type_t type;
+        size_t element_size;
+        size_t (*hash_fn)(const void*, size_t);
+        int (*compare_fn)(const void*, const void*);
+        void (*embed_fn)(const void*, double*, size_t);
+        const char* type_name;
+    """
+    _fields_ = [
+        ("type", c_int),
+        ("element_size", c_size_t),
+        ("hash_fn", ctypes.CFUNCTYPE(c_size_t, c_void_p, c_size_t)),
+        ("compare_fn", ctypes.CFUNCTYPE(c_int, c_void_p, c_void_p)),
+        ("embed_fn", ctypes.CFUNCTYPE(None, c_void_p, ctypes.POINTER(c_double), c_size_t)),
+        ("type_name", ctypes.c_char_p),
+    ]
+
+
 class QihseBackendPriority(Structure):
     """Backend priority configuration"""
     _fields_ = [
@@ -110,7 +131,11 @@ class QihseBackendPriority(Structure):
 
 
 class QihseConfig(Structure):
-    """Main QIHSE configuration structure"""
+    """Main QIHSE configuration structure (qihse_config_t).
+
+    Field order and types must match include/qihse.h exactly — any mismatch
+    causes qihse_config_init to write past the buffer and corrupt the heap.
+    """
     _fields_ = [
         ("anchor_config", QihseAnchorConfig),
         ("auto_dimensions", c_bool),
@@ -118,6 +143,7 @@ class QihseConfig(Structure):
         ("max_dimensions", c_size_t),
         ("min_dimensions", c_size_t),
         ("data_type", c_int),
+        ("type_descriptor", QihseTypeDescriptor),
         ("rff_gamma", c_double),
         ("random_seed", c_uint64),
         ("amplification", QihseAmplificationConfig),
@@ -195,10 +221,15 @@ def _load_qihse_library():
     if os.getenv("QIHSE_LIB_PATH"):
         possible_paths.append(Path(os.environ["QIHSE_LIB_PATH"]))
 
+    # SPECTRA root is 3 parents up from tgarchive/search/qihse_bindings.py
+    spectra_root = Path(__file__).resolve().parent.parent.parent
     possible_paths.extend([
-        # Relative to SPECTRA root
-        Path(__file__).parent.parent.parent.parent.parent / "libs" / "search_algorithms" / "QIHSE" / "qihse" / "libqihse.so",
-        Path(__file__).parent.parent.parent.parent.parent / "libs" / "search_algorithms" / "QIHSE" / "build" / "bin" / "libqihse.so",
+        # SPECTRA bundled QIHSE submodule (QIHSE/ or libs/QIHSE)
+        spectra_root / "QIHSE" / "libqihse.so",
+        spectra_root / "libs" / "QIHSE" / "libqihse.so",
+        # Legacy search_algorithms layout
+        spectra_root / "libs" / "search_algorithms" / "QIHSE" / "qihse" / "libqihse.so",
+        spectra_root / "libs" / "search_algorithms" / "QIHSE" / "build" / "bin" / "libqihse.so",
         # OSINT node unified install
         Path("/opt/osint-node/sources/QIHSE/qihse/libqihse.so"),
         # System library paths

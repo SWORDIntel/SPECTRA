@@ -198,7 +198,8 @@ def test_bootstrap_login_logout_session_flow():
 
     dashboard = client.get("/")
     assert dashboard.status_code == 200
-    assert "SPECTRA Web Console" in dashboard.get_data(as_text=True)
+    assert "SPECTRA" in dashboard.get_data(as_text=True)
+    assert "CIPHER" in dashboard.get_data(as_text=True)
 
     status_response = client.get("/api/system/status")
     assert status_response.status_code == 200

@@ -3,6 +3,7 @@
 **Spectrally-Processing Extraction, Crawling, & Tele-Reconnaissance Archive**
 
 SPECTRA is a forensic-grade intelligence framework for Telegram network discovery, criminal market economics, and threat actor attribution. It features a unified **NSO-style Cipher Command** dashboard for real-time operational control.
+NOTE:That doesnt actually work,use the CLI right now i fuckin hate GUIs and im busy ill get to it
 
 <p align="center">
   <img src="SPECTRA.png" alt="SPECTRA" width="35%">

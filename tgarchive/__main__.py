@@ -58,17 +58,20 @@ class GroupedHelpFormatter(argparse.RawDescriptionHelpFormatter):
 
         # For subparsers, group commands by category
         if action.choices is not None:
+            # Build a {cmd: help} lookup from the subparser action's
+            # _choices_actions (where add_parser(help=...) actually stores it).
+            choice_helps = {ca.dest: ca.help for ca in getattr(action, '_choices_actions', [])}
             # Define command groups
             command_groups = {
                 'Core Operations': ['archive', 'discover', 'network'],
                 'Batch/Parallel Operations': ['batch', 'parallel'],
-                'Account Management': ['accounts'],
+                'Account Management': ['accounts', 'tdata2session'],
                 'Forwarding': ['forward'],
                 'Configuration': ['config'],
                 'Channel Management': ['channels'],
                 'Scheduling': ['schedule'],
                 'Migration': ['migrate', 'migrate-report', 'rollback'],
-                'Advanced Tools': ['download-users', 'mirror', 'osint', 'sort']
+                'Advanced Tools': ['download-users', 'mirror', 'osint', 'sort', 'stickers']
             }
 
             # Build grouped help text
@@ -78,8 +81,7 @@ class GroupedHelpFormatter(argparse.RawDescriptionHelpFormatter):
                 parts.append(f'\n  {group_name}:')
                 for cmd in commands:
                     if cmd in action.choices:
-                        subaction = action.choices[cmd]
-                        help_text = subaction.help if subaction.help else ''
+                        help_text = choice_helps.get(cmd, '') or ''
                         parts.append(f'    {cmd:<20}  {help_text}')
 
             parts.append('\nUse "spectra <command> --help" for more information on a specific command.\n')
@@ -351,6 +353,92 @@ For more help, visit: https://github.com/SWORDIntel/SPECTRA
     sort_parser = subparsers.add_parser("sort", help="Watch a directory and sort new files by type")
     sort_parser.add_argument("--directory", required=True, help="Directory to watch for new files")
     sort_parser.add_argument("--output-directory", required=True, help="Directory to move sorted files to")
+
+    # tdata2session — convert Telegram Desktop / Alternatives tdata folders into
+    # Telethon .session files (no re-login required).
+    tdata_parser = subparsers.add_parser(
+        "tdata2session",
+        help="Convert logged-in Telegram Desktop / Alternatives tdata folders into Telethon .session files",
+    )
+    tdata_parser.add_argument(
+        "--tdata",
+        type=str,
+        default=None,
+        help="Path to the tdata folder. Defaults to auto-detection (Telegram Desktop / Alternatives).",
+    )
+    tdata_parser.add_argument(
+        "--output",
+        type=str,
+        default="sessions",
+        help="Directory to write .session + .json files (default: ./sessions).",
+    )
+    tdata_parser.add_argument(
+        "--passcode",
+        type=str,
+        default="",
+        help="Local passcode if the tdata folder is passcode-protected.",
+    )
+    tdata_parser.add_argument(
+        "--string-sessions",
+        action="store_true",
+        help="Also emit Telethon StringSession strings in the JSON sidecars.",
+    )
+    tdata_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite existing .session files instead of skipping them.",
+    )
+    tdata_parser.add_argument(
+        "--register",
+        action="store_true",
+        help="Register the converted accounts into spectra_config.json so SPECTRA can use them.",
+    )
+
+    # Stickers command — download and archive sticker sets
+    stickers_parser = subparsers.add_parser(
+        "stickers",
+        aliases=["download-stickers"],
+        help="Download and archive Telegram sticker sets (.webp, .tgs, .webm) with metadata",
+    )
+    stickers_parser.add_argument(
+        "stickerset",
+        type=str,
+        help="Sticker set short name or URL (e.g., atklib, https://t.me/addstickers/atklib)",
+    )
+    stickers_parser.add_argument(
+        "-o", "--output",
+        type=str,
+        default=None,
+        help="Output directory (default: ./data/stickers/<set_name>)",
+    )
+    stickers_parser.add_argument(
+        "-s", "--session",
+        type=str,
+        default=None,
+        help="Specific .session file or name in sessions/ to use",
+    )
+    stickers_parser.add_argument(
+        "--sessions-dir",
+        type=str,
+        default="sessions",
+        help="Directory containing converted .session files (default: ./sessions)",
+    )
+    stickers_parser.add_argument(
+        "--info-only",
+        action="store_true",
+        help="Inspect and display sticker set metadata without downloading",
+    )
+    stickers_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite existing sticker files",
+    )
+    stickers_parser.add_argument(
+        "--png", "--convert-png",
+        dest="png",
+        action="store_true",
+        help="Convert downloaded static WebP stickers into PNG format",
+    )
 
     return parser
 
@@ -1288,6 +1376,116 @@ async def handle_sort(args: argparse.Namespace) -> int:
     start_watching(args.directory, sorting_manager)
     return 0
 
+async def handle_tdata2session(args: argparse.Namespace) -> int:
+    """Handle tdata2session command — convert tdata folders into Telethon .session files."""
+    from .utils.tdata_converter import (
+        autodetect_tdata,
+        convert_tdata,
+        register_into_config,
+    )
+
+    # Resolve the tdata folder (explicit flag → auto-detection).
+    tdata_path = args.tdata
+    if tdata_path:
+        tdata_path = Path(tdata_path).expanduser().resolve()
+    else:
+        tdata_path = autodetect_tdata()
+        if tdata_path is None:
+            logger.error(
+                "No tdata folder found. Pass --tdata /path/to/tdata explicitly."
+            )
+            return 1
+        logger.info(f"Auto-detected tdata folder: {tdata_path}")
+
+    output_dir = Path(args.output).expanduser().resolve()
+
+    try:
+        report = convert_tdata(
+            tdata_path=tdata_path,
+            output_dir=output_dir,
+            passcode=args.passcode,
+            string_sessions=args.string_sessions,
+            overwrite=args.overwrite,
+        )
+    except FileNotFoundError as exc:
+        logger.error(str(exc))
+        return 1
+    except RuntimeError as exc:
+        logger.error(str(exc))
+        return 1
+
+    # Register into SPECTRA config if requested.
+    registered = 0
+    if args.register and report.converted:
+        try:
+            registered = register_into_config(
+                report, Path(args.config), session_dir=output_dir
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"Failed to register accounts into config: {exc}")
+
+    # Print a human-readable summary.
+    print()
+    print(report.summary())
+    if args.register:
+        print(f"\nRegistered into config: {registered} new account(s) → {args.config}")
+    print()
+
+    if report.errors:
+        for err in report.errors:
+            logger.warning(f"Error: {err}")
+    if report.skipped:
+        for skip in report.skipped:
+            logger.info(f"Skipped: {skip}")
+
+    return 0 if report.converted else 1
+
+async def handle_stickers(args: argparse.Namespace) -> int:
+    """Handle stickers command — download and archive Telegram sticker sets."""
+    from .utils.sticker_downloader import StickerDownloader
+
+    try:
+        downloader = StickerDownloader(
+            sessions_dir=args.sessions_dir,
+            explicit_session=args.session,
+        )
+    except Exception as exc:
+        logger.error(f"Initialization error: {exc}")
+        return 1
+
+    if args.info_only:
+        try:
+            info = await downloader.get_stickerset_info(args.stickerset)
+            print(f"\n📦 Sticker Set: {info['title']} (@{info['short_name']})")
+            print(f"   Total Stickers: {info['count']}")
+            print(f"   Set Type:       {'Animated (.tgs)' if info['is_animated'] else 'Video (.webm)' if info['is_video'] else 'Static (.webp)'}")
+            print(f"   Internal ID:    {info['id']}\n")
+            return 0
+        except Exception as exc:
+            logger.error(f"Failed to inspect sticker set: {exc}")
+            return 1
+
+    def on_progress(idx: int, total: int, filename: str, skipped: bool):
+        action = "⏭️  [SKIPPED]" if skipped else "⬇️  [SAVED]  "
+        print(f"[{idx:03d}/{total:03d}] {action} {filename}")
+
+    try:
+        res = await downloader.download(
+            stickerset_input=args.stickerset,
+            output_dir=args.output,
+            overwrite=args.overwrite,
+            convert_to_png=args.png,
+            progress_callback=on_progress,
+        )
+        png_note = f", {res['converted_png']} converted to PNG" if args.png else ""
+        print(f"\n✅ Successfully archived '{res['title']}' ({res['downloaded']} downloaded, {res['skipped']} cached{png_note})")
+        print(f"   📁 Destination:   {res['output_dir']}")
+        print(f"   📋 Metadata file: {res['metadata_file']}\n")
+        return 0
+    except Exception as exc:
+        logger.error(f"Failed to download sticker set: {exc}")
+        return 1
+
 # ── Main function ───────────────────────────────────────────────────────────
 async def async_main(args: argparse.Namespace) -> int:
     """Async entry point for command-line application"""
@@ -1320,6 +1518,9 @@ async def async_main(args: argparse.Namespace) -> int:
         "mirror": handle_mirror,
         "sort": handle_sort,
         "download-users": handle_download_users,
+        "tdata2session": handle_tdata2session,
+        "stickers": handle_stickers,
+        "download-stickers": handle_stickers,
     }
 
     if args.command in command_map:

@@ -55,6 +55,12 @@ checkpoints/
 *.session-journal
 *.session.bak
 
+# tdata2session output (converted Telegram Desktop / Alternatives accounts)
+sessions/
+sessions.*/
+*.tdata
+tdata/
+
 # Legacy config and runtime logs
 spectra_config.json
 scheduler_state.json
@@ -66,3 +72,4 @@ logs/
 .idea/
 .vscode/
 .DS_Store
+data/stickers/

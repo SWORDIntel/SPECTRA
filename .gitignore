@@ -95,6 +95,9 @@ spectra.db-wal
 # Other runtime files
 logs/
 *.log
+*.session
+*.session-journal
+*.session.bak
 
 # Local editor / workspace state
 .cursor/

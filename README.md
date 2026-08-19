@@ -35,12 +35,10 @@ Additions and commits adhering to this doctrine are absolutely welcome and will 
 - 🕸️ **Infrastructure Nexus:** Map shared technical artifacts (Panel URLs, Bot IDs) to reveal hidden connections between seemingly independent actors.
 - 💰 **Economic Market Engine:** Track Gross Market Value (GMV) across CaaS sectors with USD-normalized pricing.
 - 📑 **Narrative Synthesis:** Offline, heuristically-driven intelligence briefings classifying actor archetypes.
-- 💳 **Wallet-Watch (DIRECTEYE Ready):** Forensic extraction of BTC, XMR, and TRX/ETH addresses with built-in hooks for blockchain attribution.
 - 🤖 **Gatekeeper Evasion:** Built-in anti-bot challenge solving for automated invite access (math captchas and inline callbacks).
 - 👁️ **Media OCR & Image Fingerprinting:** Scan downloaded media to extract threat indicators and crypto wallets directly from screenshots.
 - ⏳ **Burner Account & Temporal Tracking:** Correlate aliases over time, mapping rebrands back to original Telegram UUIDs.
 - 🚀 **Containerized Deployment:** Docker orchestration with automated SSL via Caddy.
-- 🧠 **MEMSHADOW Integration Ready:** Optional sidecar reconnection without changing route contracts.
 - 📤 **Automated STIX/TAXII Exports:** Telemetry pipelines for direct MISP/OpenCTI integration.
 
 ## ⚡ Quick Start (Docker)

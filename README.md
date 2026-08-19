@@ -1,25 +1,23 @@
+![SPECTRA Banner](assets/SPECTRA.png)
+
 # SPECTRA [SWORD CIPHER COMMAND]
 
 **Spectrally-Processing Extraction, Crawling, & Tele-Reconnaissance Archive**
 
-SPECTRA is a forensic-grade intelligence framework for Telegram network discovery, criminal market economics, and threat actor attribution. 
+SPECTRA is firmly on trajectory to become a forensic-grade intelligence framework for Telegram network discovery, criminal market economics, and threat actor attribution. It is not fully there yet, but the vector is locked.
 
 ## ⚠️ SITREP: PROJECT STATUS & DEVELOPMENT DOCTRINE
 
-Read this before deploying or submitting PRs. I am still actively developing SPECTRA, but due to pressing operational commitments, I am compartmentalizing my intensely personal, bespoke operational additions from this public release. 
+Read this before deploying or submitting PRs. I am actively developing SPECTRA, but due to pressing operational commitments, I am compartmentalizing my bespoke, operational additions from this public release. 
 
-**The GUI is dead.** I do not have the time or patience for web consoles right now. We are pivoting strictly to a **CLI-first** architecture, leaning into a centaur/local-model oversight structure. 
+**The GUI is a zombie.** It is still included in the codebase, but it needs to be put down. I do not have the time or patience for web consoles right now. I will find the time to do it eventually, but if anyone feels like it, you are highly encouraged to "commit a shotgun shell" for me and rip it out. We are pivoting strictly to a **CLI-first** architecture, leaning heavily into a centaur/local-model oversight structure. 
 
 **Rules of Engagement for Contributions:**
 1. **CLI First:** All new capabilities must be accessible and optimized for the command line. 
-2. **Air-Gapped AI Only:** Absolutely zero integration with Claude, ChatGPT, or any other online model provider. If your code makes an API call to a cloud LLM, the PR will be rejected. 
+2. **Air-Gapped AI Only:** Absolutely zero integration with Claude, ChatGPT, or any other online model provider. If your code makes an API call to a cloud LLM, the PR will be rejected immediately. 
 3. **Hardware Constraints:** If you implement a local model, it must fit under a strict **2GB VRAM hard ceiling** (e.g., highly quantized micro-models fitting on legacy GTX 1050 hardware). It must be treated as a non-vital auxiliary function with a seamless, graceful fallback to standard heuristics if the hardware is absent. 
 
 Additions and commits adhering to this doctrine are absolutely welcome and will be reviewed.
-
-<p align="center">
-  <img src="SPECTRA.png" alt="SPECTRA" width="35%">
-</p>
 
 ## 🛡️ Operational Features
 

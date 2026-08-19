@@ -388,7 +388,7 @@ def create_keyboard_handler(app: Any, config_path: Optional[Path] = None) -> Key
 
 
 if HAS_NPYSCREEN:
-    class ShortcutWidget(npyscreen.Widget):
+    class ShortcutWidget(npyscreen.widget.Widget):
         """
         Invisible widget that intercepts keyboard shortcuts.
         

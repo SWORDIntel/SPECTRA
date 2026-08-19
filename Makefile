@@ -45,7 +45,7 @@ help: ## Show this help message
 
 bootstrap: ## Auto-setup and launch SPECTRA
 	@echo "$(BLUE)▶$(NC) Starting SPECTRA bootstrap..."
-	@./bootstrap
+	@./spectra bootstrap
 
 run: ## Launch SPECTRA TUI
 	@echo "$(BLUE)▶$(NC) Launching SPECTRA TUI..."
@@ -123,4 +123,4 @@ format: ## Format code with Black (if available)
 .PHONY: check-files
 check-files:
 	@test -x $(LAUNCH_SCRIPT) || chmod +x $(LAUNCH_SCRIPT)
-	@test -x ./bootstrap || chmod +x ./bootstrap
+	@test -x ./spectra || chmod +x ./spectra

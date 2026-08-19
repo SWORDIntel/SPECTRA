@@ -1,112 +1,165 @@
-#!/bin/bash
+#!/usr/bin/env bash
 ################################################################################
-# SPECTRA Launcher - Main entry point
+# SPECTRA - Unified CLI, Bootstrap & Archiving Launcher
 ################################################################################
-#
-# Default: launch the main web console.
-# Compatibility: preserve legacy install/repair/bootstrap paths.
-#
-# Usage: ./spectra [COMMAND]
-#
-################################################################################
-
 set -euo pipefail
 
-# Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LAUNCH_SCRIPT="$SCRIPT_DIR/scripts/launch/spectra-launch.sh"
+INSTALL_SCRIPT="$SCRIPT_DIR/scripts/install/install-spectra.sh"
+REPAIR_SCRIPT="$SCRIPT_DIR/scripts/install/repair-installation.sh"
+SETUP_SCRIPT="$SCRIPT_DIR/scripts/setup/setup_env.sh"
 
-# Colors
+# ANSI Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m'
 
-print_error() {
-    echo -e "${RED}✗${NC} $1" >&2
+print_status()  { echo -e "${BLUE}▶${NC} $1"; }
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_error()   { echo -e "${RED}✗${NC} $1" >&2; }
+print_warning() { echo -e "${YELLOW}⚠${NC} $1"; }
+
+print_banner() {
+    echo -e "${CYAN}"
+    cat << 'EOF'
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                          ███████╗██████╗ ███████╗ ██████╗████████╗██████╗  ║
+║                          ██╔════╝██╔══██╗██╔════╝██╔════╝╚══██╔══╝██╔══██╗ ║
+║                          ███████╗██████╔╝█████╗  ██║        ██║   ██████╔╗ ║
+║                          ╚════██║██╔═══╝ ██╔══╝  ██║        ██║   ██╔══██║ ║
+║                          ███████║██║     ███████╗╚██████╗   ██║   ██║  ██║ ║
+║                          ╚══════╝╚═╝     ╚══════╝ ╚═════╝   ╚═╝   ╚═╝  ╚═╝ ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+              Telegram Network Discovery & Archiving System [CLI]
+EOF
+    echo -e "${NC}"
 }
 
-print_success() {
-    echo -e "${GREEN}✓${NC} $1"
+# Resolve Python environment
+resolve_python() {
+    if [[ -n "${VIRTUAL_ENV:-}" && -x "${VIRTUAL_ENV}/bin/python" ]]; then
+        echo "${VIRTUAL_ENV}/bin/python"
+    elif [[ -x "$SCRIPT_DIR/.venv/bin/python" ]]; then
+        echo "$SCRIPT_DIR/.venv/bin/python"
+    elif [[ -x "$SCRIPT_DIR/spectra_venv/bin/python" ]]; then
+        echo "$SCRIPT_DIR/spectra_venv/bin/python"
+    elif command -v python3 >/dev/null 2>&1; then
+        echo "python3"
+    else
+        print_error "Python 3 is required but not found in PATH."
+        exit 1
+    fi
 }
 
-print_status() {
-    echo -e "${BLUE}▶${NC} $1"
+is_configured() {
+    [[ -f "$SCRIPT_DIR/data/config/spectra_config.json" || -f "$SCRIPT_DIR/spectra_config.json" ]]
 }
 
-# Handle command line arguments
-COMMAND="${1:-web}"
-if [[ $# -gt 0 && "${1:0:1}" == "-" ]]; then
-    COMMAND="web"
-elif [[ $# -gt 0 ]]; then
-    shift
-fi
+run_bootstrap() {
+    print_banner
+    print_status "Starting SPECTRA bootstrap & environment setup..."
+    if [[ -x "$LAUNCH_SCRIPT" ]]; then
+        exec "$LAUNCH_SCRIPT"
+    elif [[ -f "$SETUP_SCRIPT" ]]; then
+        bash "$SETUP_SCRIPT"
+    else
+        local PY_BIN
+        PY_BIN="$(resolve_python)"
+        print_status "Installing SPECTRA package in editable mode..."
+        "$PY_BIN" -m pip install -e "$SCRIPT_DIR"
+        print_success "SPECTRA installation complete."
+    fi
+}
 
-case "$COMMAND" in
-    "web"|"gui"|"ui"|"")
-        HOST="${SPECTRA_HOST:-127.0.0.1}"
-        PORT="${SPECTRA_PORT:-5000}"
-        exec python3 -m spectra_app.spectra_gui_launcher --host "$HOST" --port "$PORT" "$@"
-        ;;
-    "semantic-tui")
-        exec python3 -m tgarchive.ui.tui_caas "$@"
-        ;;
-    "semantic-discovery")
-        exec python3 -m tgarchive.osint.caas.discovery_ops "$@"
-        ;;
-    "process-queue")
-        exec python3 -m tgarchive.osint.caas.cli process-queue "$@"
-        ;;
-    "docs"|"documentation")
-        exec python3 "$SCRIPT_DIR/webapp.py" "$@"
-        ;;
-    "tui"|"run"|"launch")
-        exec "$SCRIPT_DIR/scripts/launch/spectra-launch.sh"
-        ;;
-    "bootstrap")
-        exec "$SCRIPT_DIR/bootstrap"
-        ;;
-    "install")
-        exec bash "$SCRIPT_DIR/scripts/install/install-spectra.sh"
-        ;;
-    "repair")
-        exec bash "$SCRIPT_DIR/scripts/install/repair-installation.sh"
-        ;;
-    "help"|"-h"|"--help")
-        cat << 'EOF'
-SPECTRA - Telegram Network Discovery & Archiving System
+show_help() {
+    cat << 'EOF'
+SPECTRA - Telegram Network Discovery & Archiving System [CLI-First]
 
-Usage: ./spectra [COMMAND]
+Usage: ./spectra [COMMAND] [OPTIONS]
 
-Commands:
-  web                 Launch the main web console (default)
-  semantic-tui        Launch the semantic-intelligence TUI
-  semantic-discovery  Run CAAS-aware semantic discovery
-  process-queue       Process the semantic intelligence queue
-  docs                Launch the documentation console
-  tui                 Launch the legacy TUI
-  bootstrap           Auto-setup and launch SPECTRA
-  install             Install/update SPECTRA
-  repair              Repair broken SPECTRA installation
-  help                Show this help message
+Core Operational Commands:
+  discover            Run CaaS-aware semantic discovery (--seed @channel)
+  profile             Extract dossiers, pricing, and aliases (--profile @channel)
+  process-queue       Process the automated worker intelligence queue
+  archive             Archive messages and media from Telegram channels
+  semantic-tui        Launch the interactive Semantic Intelligence TUI
+  tui                 Launch the legacy full-terminal interface
+
+Environment & Management:
+  bootstrap           Auto-setup environment, dependencies, and venv
+  install             Install/update dependencies and SPECTRA package
+  repair              Repair virtualenv or missing packages
+  help, -h, --help    Show this help message
 
 Examples:
-  ./spectra                    # Launch the main web console
-  ./spectra semantic-tui       # Launch semantic TUI
-  ./spectra process-queue --loop # Keep processing queue
-  ./spectra docs               # Open the documentation launcher
-  ./spectra install      # Install or update
-  ./spectra repair       # Repair a broken installation
-
-For more options, see:
-  - Makefile (use: make help)
-  - README.md (see: Quick Start section)
-  - docs/INSTALLATION_GUIDE.md
+  ./spectra                                # Launch TUI (or auto-bootstrap if unconfigured)
+  ./spectra discover --seed @target        # Discover connected Telegram channels
+  ./spectra profile --target @target       # Extract threat actor profile & economics
+  ./spectra process-queue --batch-size 250 # Process batch intelligence queue
+  ./spectra bootstrap                      # Install dependencies & configure
 EOF
+}
+
+# Main Dispatcher
+COMMAND="${1:-}"
+
+case "$COMMAND" in
+    ""|"tui"|"launch"|"run")
+        if is_configured; then
+            PY="$(resolve_python)"
+            exec "$PY" -m tgarchive.ui.tui_caas "$@"
+        else
+            run_bootstrap
+        fi
+        ;;
+    "bootstrap"|"setup")
+        run_bootstrap
+        ;;
+    "install")
+        if [[ -f "$INSTALL_SCRIPT" ]]; then
+            exec bash "$INSTALL_SCRIPT"
+        else
+            run_bootstrap
+        fi
+        ;;
+    "repair")
+        if [[ -f "$REPAIR_SCRIPT" ]]; then
+            exec bash "$REPAIR_SCRIPT"
+        else
+            run_bootstrap
+        fi
+        ;;
+    "semantic-tui")
+        shift || true
+        PY="$(resolve_python)"
+        exec "$PY" -m tgarchive.ui.tui_caas "$@"
+        ;;
+    "discover"|"semantic-discovery")
+        shift || true
+        PY="$(resolve_python)"
+        exec "$PY" -m tgarchive.osint.caas.discovery_ops "$@"
+        ;;
+    "profile")
+        shift || true
+        PY="$(resolve_python)"
+        exec "$PY" -m tgarchive.osint.caas.cli profile "$@"
+        ;;
+    "process-queue")
+        shift || true
+        PY="$(resolve_python)"
+        exec "$PY" -m tgarchive.osint.caas.cli process-queue "$@"
+        ;;
+    "help"|"-h"|"--help")
+        show_help
         ;;
     *)
-        print_error "Unknown command: $1"
-        echo "Use './spectra help' for usage information"
-        exit 1
+        # Forward any other subcommand directly to tgarchive CLI
+        PY="$(resolve_python)"
+        exec "$PY" -m tgarchive "$@"
         ;;
 esac

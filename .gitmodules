@@ -10,6 +10,3 @@
 [submodule "libs/QIHSE"]
 	path = libs/QIHSE
 	url = https://github.com/SWORDIntel/QIHSE
-[submodule "src/MEMSHADOW"]
-	path = src/MEMSHADOW
-	url = https://github.com/SWORDIntel/MEMSHADOW

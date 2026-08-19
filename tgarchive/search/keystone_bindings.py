@@ -118,9 +118,8 @@ def _load_keystone_library():
             possible_paths.append(Path(os.environ[env_name]))
 
     possible_paths.extend([
-        Path(__file__).parent.parent.parent.parent.parent / "libs" / "search_algorithms" / "keystone" / "libkeystone.so",
-        Path(__file__).parent.parent.parent.parent.parent / "libs" / "search_algorithms" / "keystone" / "libkeystone.a",
-        Path(__file__).parent.parent / "KEYSTONE" / "libkeystone.so", # New path natively embedded in SPECTRA
+        Path(__file__).parent.parent.parent / "KEYSTONE" / "libkeystone.so", # Natively embedded in SPECTRA
+        Path(__file__).parent.parent.parent / "libs" / "KEYSTONE" / "libkeystone.so", # Alt embedded location
         # OSINT node unified install: KEYSTONE symbols are embedded in libqihse.so
         Path("/opt/osint-node/sources/QIHSE/qihse/libqihse.so"),
         # System library paths

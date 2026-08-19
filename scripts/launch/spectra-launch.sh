@@ -48,7 +48,7 @@ fi
 # ─────────────────────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$SCRIPT_DIR"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 INSTALL_LOG="$PROJECT_ROOT/logs/bootstrap_$(date +%Y%m%d_%H%M%S).log"
 VENV_PATH="$PROJECT_ROOT/.venv"
 CONFIG_PATH="$PROJECT_ROOT/spectra_config.json"

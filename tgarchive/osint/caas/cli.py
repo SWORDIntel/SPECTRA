@@ -7,9 +7,10 @@ from tgarchive.osint.caas.queue_worker import process_queue
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Standalone CAAS queue worker")
-    parser.add_argument("command", choices=["process-queue", "spider-loop", "export-graph"], help="Command to run")
+    parser = argparse.ArgumentParser(description="Standalone CAAS queue worker & profiling tool")
+    parser.add_argument("command", choices=["process-queue", "spider-loop", "export-graph", "profile"], help="Command to run")
     parser.add_argument("--db", default="spectra.db", help="Path to SQLite database")
+    parser.add_argument("--target", "--profile", dest="target", default="", help="Target actor handle / channel for profiling")
     parser.add_argument("--batch-size", type=int, default=500, help="Queue claim size")
     parser.add_argument("--limit-per-chat", type=int, default=1000, help="Max messages to archive per spidered chat")
     parser.add_argument("--loop", action="store_true", help="Keep draining until the queue is empty")
@@ -22,6 +23,21 @@ def main() -> int:
     if args.command == "process-queue":
         processed = process_queue(db_path=args.db, batch_size=args.batch_size, once=not args.loop)
         print(f"Processed {processed} queue items")
+        return 0
+    elif args.command == "profile":
+        import json
+        from tgarchive.db import SpectraDB
+        from tgarchive.osint.caas.aggregator import ActorDossierAggregator
+        
+        target = (args.target or "").lstrip("@")
+        if not target:
+            print("Error: --target <handle/channel> is required for profiling.", file=sys.stderr)
+            return 1
+            
+        db = SpectraDB(args.db)
+        agg = ActorDossierAggregator(db)
+        dossier = agg.generate_dossier(target)
+        print(json.dumps(dossier, indent=2))
         return 0
     elif args.command == "spider-loop":
         import asyncio

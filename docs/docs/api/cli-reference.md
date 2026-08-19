@@ -2,95 +2,124 @@
 id: cli-reference
 title: CLI Reference
 sidebar_position: 1
-description: Complete command-line interface documentation
-tags: [api, cli, commands]
+description: Complete command-line interface documentation for SPECTRA
+tags: [api, cli, commands, spectra]
 ---
 
-# CLI Reference
+# Unified CLI Reference
 
-For automation, scripting, and advanced use cases, SPECTRA provides a comprehensive CLI. Most operations available in the TUI can also be performed via CLI commands.
+SPECTRA is built around a **CLI-first architecture** designed for high-performance forensic analysis, multi-account Telegram crawling, and automated intelligence pipelines.
 
-## Account Management
+All operations can be executed directly using the root executable `./spectra` or via the Python module `python -m tgarchive`.
 
-```bash
-# Import accounts from gen_config.py
-python -m tgarchive accounts --import
+---
 
-# List configured accounts and their status
-python -m tgarchive accounts --list
-
-# Test all accounts for connectivity
-python -m tgarchive accounts --test
-
-# Reset account usage statistics
-python -m tgarchive accounts --reset
-```
-
-## Discovery Mode
+## 🚀 Execution Syntax
 
 ```bash
-# Discover groups from a seed entity
-python -m tgarchive discover --seed @example_channel --depth 2
-
-# Discover from multiple seeds in a file
-python -m tgarchive discover --seeds-file seeds.txt --depth 2 --export discovered.txt
-
-# Import existing scan data
-python -m tgarchive discover --crawler-dir ./telegram-groups-crawler/
+./spectra [COMMAND] [OPTIONS]
 ```
 
-## Network Analysis
+If run without arguments, `./spectra` automatically resolves the local virtual environment and boots the interactive terminal interface (or runs the setup wizard if unconfigured).
+
+---
+
+## 🧠 Core Intelligence Pipeline
+
+### 1. Semantic Discovery (Layer 0)
+Traverses Telegram networks using CaaS (Crime-as-a-Service) heuristic scoring to map high-value clusters.
 
 ```bash
-# Analyze network from crawler data
-python -m tgarchive network --crawler-dir ./telegram-groups-crawler/ --plot
+# Discover connected channels from a seed entity
+./spectra discover --seed @target_channel --depth 2
 
-# Analyze network from SQL database
-python -m tgarchive network --from-db --export priority_targets.json --top 50
+# Discover from a list of seeds
+./spectra discover --seeds-file seeds.txt --depth 2 --export discovered.json
 ```
 
-## Archive Mode
+### 2. Forensic Profiling (Layer 1)
+Extracts pricing, criminal services, aliases, and operational footprint into structured dossiers.
 
 ```bash
-# Archive a specific channel
-python -m tgarchive archive --entity @example_channel
+# Generate forensic actor profile
+./spectra profile --target @target_channel
+
+# Export structured intelligence dossier
+./spectra profile --target @target_channel --export-json dossier.json
 ```
 
-## Batch Operations
+### 3. Worker Queue Processing (Layer 1.5)
+Executes bulk extraction jobs through the automated background worker queue.
 
 ```bash
-# Process multiple groups from file
-python -m tgarchive batch --file groups.txt --delay 30
+# Process a batch of pending extraction jobs
+./spectra process-queue --batch-size 250
 
-# Process high-priority groups from database
-python -m tgarchive batch --from-db --limit 20 --min-priority 0.1
+# Continuous processing daemon loop
+./spectra process-queue --loop --interval 30
 ```
 
-## Parallel Processing
-
-SPECTRA supports parallel processing using multiple Telegram accounts and proxies simultaneously:
+### 4. Interactive Semantic TUI
+Launches the full-terminal operator console.
 
 ```bash
-# Run discovery in parallel across multiple accounts
-python -m tgarchive parallel discover --seeds-file seeds.txt --depth 2 --max-workers 4
-
-# Join multiple groups in parallel
-python -m tgarchive parallel join --file groups.txt --max-workers 4
-
-# Archive multiple entities in parallel
-python -m tgarchive parallel archive --file entities.txt --max-workers 4
+./spectra semantic-tui
 ```
 
-## Forwarding
+---
 
-See the [Forwarding Guide](../guides/forwarding.md) for complete forwarding command documentation.
+## 📁 Archiving & Network Operations
 
-## Shunt Mode
-
-Shunt Mode transfers all media files from one Telegram channel to another with advanced deduplication.
+### Account Management
+Manage, rotate, and test Telegram MTProto account pools.
 
 ```bash
-python -m tgarchive --shunt-from @source_channel --shunt-to @destination_channel
+# List configured accounts and session statuses
+./spectra accounts --list
+
+# Test connectivity across all account proxies
+./spectra accounts --test
+
+# Import accounts from configuration
+./spectra accounts --import
 ```
 
-See the [Shunt Mode Guide](../guides/shunt-mode.md) for detailed documentation.
+### Forensic Archiving
+Archive full message history, media, reactions, and sidecar metadata.
+
+```bash
+# Archive a target channel or group
+./spectra archive --entity @target_channel
+
+# Archive with strict media filtering
+./spectra archive --entity @target_channel --download-media --media-types photo,document
+```
+
+### Infrastructure Nexus & Network Mapping
+Correlate bot IDs, payment artifacts, and shared infrastructure across discovered targets.
+
+```bash
+# Generate network graph from SQL database
+./spectra network --from-db --export priority_targets.json --top 50
+
+# Plot interactive network visualization
+./spectra network --from-db --plot
+```
+
+---
+
+## ⚙️ Environment & Maintenance Commands
+
+```bash
+# Run automatic setup, dependency installation, and venv creation
+./spectra bootstrap
+
+# Install or update Python dependencies
+./spectra install
+
+# Repair a damaged virtualenv or broken package dependencies
+./spectra repair
+
+# Display CLI help and command overview
+./spectra --help
+```

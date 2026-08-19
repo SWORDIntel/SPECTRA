@@ -194,11 +194,18 @@ The `sessions/` directory is gitignored by default, so converted sessions stay l
 
 ---
 
-## ⚡ Optional: Redis Search Cache
+## ⚡ Optional: Search Cache (Redis or QIHSE KV)
 
-SPECTRA can use Redis as an optional caching layer for search results, KEYSTONE anchor tables, and message metadata. When Redis is absent, the cache silently no-ops and all searches hit the database directly — no functionality is lost, just the speedup.
+SPECTRA can use an optional caching layer for search results, KEYSTONE anchor tables, and message metadata. When no cache is configured, the cache silently no-ops and all searches hit the database directly — no functionality is lost, just the speedup.
 
-### What Redis caches
+Two backends are supported:
+
+| Backend | Type | Notes |
+|---------|------|-------|
+| **Redis** | External server | Standard `redis://` protocol. Use `redis:7-alpine` or any Redis-compatible server. |
+| **QIHSE KV** | Built-in (in-process) | QIHSE's native KV store with RESP2/RESP3 wire protocol. No external process needed — runs in the same process space as SPECTRA. Trinary Trie in-memory engine backed by LSM-Trees and SSTable persistence. Any standard Redis client connects out-of-the-box. See [`QIHSE/docs/architecture/cluster_sharding.md`](../QIHSE/docs/architecture/cluster_sharding.md) for the full cluster sharding specification. |
+
+### What the cache stores
 
 | Cache | TTL | Purpose |
 |-------|-----|---------|
@@ -206,9 +213,9 @@ SPECTRA can use Redis as an optional caching layer for search results, KEYSTONE 
 | KEYSTONE anchor tables | 24 hours | Structured timestamp index lookups avoid repeated DB scans |
 | Message metadata | 1 hour | Per-message metadata avoids repeated DB reads |
 
-### Enabling Redis
+### Enabling the cache
 
-**Docker (recommended):** Redis is included in `docker-compose.yml` and starts automatically:
+**Docker with Redis (default):** Redis is included in `docker-compose.yml` and starts automatically:
 
 ```bash
 docker-compose up -d
@@ -216,7 +223,9 @@ docker-compose up -d
 
 The `spectra` container connects to `redis://redis:6379` automatically.
 
-**Local / manual:** Install the Python package and point at a Redis server:
+**Docker with QIHSE KV (no external Redis container):** Comment out or remove the `redis` service in `docker-compose.yml` and set `REDIS_URL` to point at a QIHSE RESP server instance. QIHSE's RESP engine listens on a standard Redis-compatible port and accepts the same wire protocol.
+
+**Local / manual with Redis:**
 
 ```bash
 pip install redis
@@ -224,12 +233,74 @@ pip install redis
 redis-server &
 ```
 
-Set `REDIS_URL` in your `.env` or environment:
+**Local / manual with QIHSE KV:** Build and run the QIHSE RESP server (see [`QIHSE/Makefile`](../QIHSE/Makefile) target `redis-cluster-node`):
+
+```bash
+cd QIHSE && make lib && make redis-cluster-node
+LD_LIBRARY_PATH=. ./tests/qihse_cluster_node --port 6379
+```
+
+Any `redis://` client URL works — QIHSE's RESP engine is wire-compatible with Redis.
+
+Set `REDIS_URL` in your `.env` or environment (works for both Redis and QIHSE KV):
 
 ```bash
 REDIS_URL=redis://localhost:6379
 ```
 
-### Disabling Redis
+### Disabling the cache
 
 Leave `REDIS_URL` blank or unset, or don't install the `redis` package. The cache manager will silently skip all reads/writes and search will use the database directly. No warning is printed at startup.
+
+---
+
+## ⚡ Task Queue & Worker Scheduling (QIHSE Celery-Equivalent)
+
+For background crawling, media downloading, entity extraction, and periodic reconnaissance sweeps, SPECTRA integrates with **QIHSE's native Task Queue and Scheduler Engine** (`qihse_task`), eliminating the need for an external Celery or RabbitMQ cluster.
+
+### Key Capabilities
+
+| Capability | QIHSE Task Engine | Conventional Alternative (Celery + Redis) |
+|---|---|---|
+| **Broker & Results** | In-process (Event Stream + Trinary Trie KV) | External Redis / RabbitMQ process + DB |
+| **Worker Threads** | NUMA-pinned C worker threads | OS prefork Python worker processes |
+| **Priorities** | 4 priority levels (`CRITICAL`, `HIGH`, `NORMAL`, `LOW`) | Limited queue routing |
+| **Periodic Scheduling** | 10ms timing wheel cron engine | Separate Celery Beat daemon |
+| **Wire Protocol** | Native RESP `TASK.*` & `SCHEDULE.*` commands | Custom AMQP / Redis serialization |
+| **Python Interface** | `@task` decorator, `.delay()`, `.apply_async()`, `AsyncResult` | Standard Celery API |
+
+### Python Task Definition & Usage
+
+```python
+from QIHSE.sdks.python.qihse_task import task, TaskClient
+
+# Define an async background job with automatic retry & timeout
+@task(queue="media_download", priority="HIGH", max_retries=3, timeout=60)
+def download_channel_media(channel_id: int, message_ids: list):
+    # Background extraction and deduplication
+    return {"channel_id": channel_id, "downloaded": len(message_ids)}
+
+# Dispatch asynchronously (.delay)
+handle = download_channel_media.delay(123456789, [101, 102, 103])
+print(f"Task dispatched: {handle.id} (State: {handle.status})")
+
+# Wait for completion
+result = handle.get(timeout=30.0)
+print("Finished:", result)
+```
+
+### Periodic Reconnaissance Sweeps (Cron Scheduling)
+
+```python
+client = TaskClient(port=6379)
+
+# Schedule nightly channel crawl at 02:00 daily
+client.schedule_add(
+    schedule_id="nightly_crawl",
+    cron_expr="0 2 * * *",
+    queue_name="crawling",
+    payload={"func": "spectra.recon.sweep_active_targets"},
+    priority="LOW"
+)
+```
+

@@ -703,13 +703,33 @@ class GroupManager:
         self.active_client = None
         self.current_account = None
         self.db_path = db_path
-        
-        # Create account rotator with database integration if path provided
-        self.account_rotator = AccountRotator(
-            self.config.active_accounts,
-            rotation_mode=self.config.data.get("account_rotation_mode", "sequential"),
-            db_path=self.db_path
+
+        # Determine rotation mode — check both legacy flat key and new nested key
+        rotation_mode = (
+            self.config.data.get("account_rotation_mode")
+            or self.config.data.get("account_rotation", {}).get("mode", "sequential")
         )
+
+        # Use AdvancedAccountRotator for new strategies, legacy AccountRotator
+        # for the original 4 modes (it's already battle-tested).
+        from .rotation_strategies import AdvancedAccountRotator
+        ADVANCED_MODES = {
+            "floodwait_adaptive", "circuit_breaker", "latency",
+            "sticky", "sharded", "primary_fallback",
+        }
+        if rotation_mode in ADVANCED_MODES:
+            self.account_rotator = AdvancedAccountRotator(
+                self.config.active_accounts,
+                config=self.config.data,
+                db_path=self.db_path,
+            )
+            logger.info(f"Using AdvancedAccountRotator (mode={rotation_mode})")
+        else:
+            self.account_rotator = AccountRotator(
+                self.config.active_accounts,
+                rotation_mode=rotation_mode,
+                db_path=self.db_path
+            )
         
     async def init_clients(self) -> Dict[str, TelegramClient]:
         """Initialize Telegram clients from accounts in config"""
@@ -747,12 +767,14 @@ class GroupManager:
         
         return self.clients
     
-    async def select_client(self, session_name: str = None) -> Optional[TelegramClient]:
+    async def select_client(self, session_name: str = None, channel: str = None) -> Optional[TelegramClient]:
         """
         Select a specific client by session name or rotate automatically
-        
+
         Args:
             session_name: Specific session to select, or None to use account rotator
+            channel: Optional target channel — used by sticky/sharded modes
+                     to pick the account pinned to this channel.
         """
         # If specific session requested
         if session_name and session_name in self.clients:
@@ -760,14 +782,18 @@ class GroupManager:
             self.current_account = self.clients[session_name]["account"]
             logger.info(f"Selected client: {session_name}")
             return self.active_client
-            
+
         # Otherwise rotate accounts
         if not self.clients:
             logger.error("No clients initialized")
             return None
-            
-        # Get next account from rotator
-        next_account = self.account_rotator.get_next_account()
+
+        # Get next account from rotator (pass channel for sticky/sharded modes)
+        try:
+            next_account = self.account_rotator.get_next_account(channel=channel)
+        except TypeError:
+            # Legacy AccountRotator doesn't accept channel kwarg
+            next_account = self.account_rotator.get_next_account()
         if not next_account:
             return None
         session_name = next_account["session_name"]
@@ -788,19 +814,33 @@ class GroupManager:
     
     async def join_group(self, target_link: str) -> Optional[int]:
         """Join a Telegram group/channel"""
+        # Channel de-duplication: skip if already archived
+        if hasattr(self.account_rotator, 'is_channel_available'):
+            if not self.account_rotator.is_channel_available(target_link):
+                logger.info(f"Channel {target_link} already archived or in progress — skipping")
+                return None
+
         # Rotate clients if no active client or based on policy
         rotate_policy = self.config.data.get("account_rotation_policy", "per_operation")
         if not self.active_client or rotate_policy == "per_operation":
-            await self.select_client()
-            
+            await self.select_client(channel=target_link)
+
         if not self.active_client:
             if not self.clients:
                 await self.init_clients()
-            await self.select_client()
-            
+            await self.select_client(channel=target_link)
+
         if not self.active_client:
             logger.error("No client available. Cannot join group.")
             return None
+
+        # Channel de-duplication: acquire lock
+        if hasattr(self.account_rotator, 'acquire_channel_async'):
+            session = self.current_account["session_name"]
+            acquired = await self.account_rotator.acquire_channel_async(target_link, session)
+            if not acquired:
+                logger.info(f"Channel {target_link} locked by another account — skipping")
+                return None
             
         try:
             # Parse link type
@@ -813,32 +853,44 @@ class GroupManager:
                     logger.info(f"Joined group @{username} (ID: {entity_id})")
                     
                     # Record success
-                    curr_idx = self.clients[self.current_account["session_name"]]["idx"]
-                    self.account_rotator.mark_account_success(curr_idx)
-                    
+                    curr_session = self.current_account["session_name"]
+                    curr_idx = self.clients[curr_session]["idx"]
+                    if hasattr(self.account_rotator, 'record_success'):
+                        self.account_rotator.record_success(curr_session)
+                    else:
+                        self.account_rotator.mark_account_success(curr_idx)
+
                     return entity_id
                 except errors.FloodWaitError as e:
                     logger.warning(f"FloodWait: Need to wait {e.seconds} seconds")
-                    
+
                     # Mark current account as having issues
-                    idx = self.clients[self.current_account["session_name"]]["idx"]
-                    self.account_rotator.mark_account_failed(
-                        idx, 
-                        error=f"FloodWaitError: {e.seconds}s",
-                        cooldown_hours=e.seconds / 3600
-                    )
-                    
+                    session = self.current_account["session_name"]
+                    idx = self.clients[session]["idx"]
+                    # Use advanced rotator's FloodWait tracking if available
+                    if hasattr(self.account_rotator, 'record_failure'):
+                        self.account_rotator.record_failure(
+                            session, error=f"FloodWaitError: {e.seconds}s",
+                            floodwait_seconds=e.seconds,
+                        )
+                    else:
+                        self.account_rotator.mark_account_failed(
+                            idx,
+                            error=f"FloodWaitError: {e.seconds}s",
+                            cooldown_hours=e.seconds / 3600
+                        )
+
                     # Try again with different account
-                    await self.select_client()
+                    await self.select_client(channel=target_link)
                     if self.active_client:
                         return await self.join_group(target_link)
                     return None
-                    
+
                 except (errors.ChatAdminRequiredError, errors.ChatWriteForbiddenError) as e:
                     logger.warning(f"Permission error for @{username}: {e}")
                     # No need to mark account as failed - this is a target-specific issue
                     return None
-                    
+
                 except errors.ChannelsTooMuchError:
                     logger.warning(f"Account has joined too many channels")
                     idx = self.clients[self.current_account["session_name"]]["idx"]
@@ -876,11 +928,15 @@ class GroupManager:
                         
                     if entity_id:
                         logger.info(f"Joined group via invite {invite_hash} (ID: {entity_id})")
-                        
+
                         # Record success
-                        curr_idx = self.clients[self.current_account["session_name"]]["idx"]
-                        self.account_rotator.mark_account_success(curr_idx)
-                        
+                        curr_session = self.current_account["session_name"]
+                        curr_idx = self.clients[curr_session]["idx"]
+                        if hasattr(self.account_rotator, 'record_success'):
+                            self.account_rotator.record_success(curr_session)
+                        else:
+                            self.account_rotator.mark_account_success(curr_idx)
+
                         return entity_id
                     else:
                         logger.error(f"Could not determine entity ID after join")
@@ -888,21 +944,28 @@ class GroupManager:
                         
                 except errors.FloodWaitError as e:
                     logger.warning(f"FloodWait: Need to wait {e.seconds} seconds")
-                    
+
                     # Mark current account as having issues
-                    idx = self.clients[self.current_account["session_name"]]["idx"]
-                    self.account_rotator.mark_account_failed(
-                        idx, 
-                        error=f"FloodWaitError: {e.seconds}s", 
-                        cooldown_hours=e.seconds / 3600
-                    )
-                    
+                    session = self.current_account["session_name"]
+                    idx = self.clients[session]["idx"]
+                    if hasattr(self.account_rotator, 'record_failure'):
+                        self.account_rotator.record_failure(
+                            session, error=f"FloodWaitError: {e.seconds}s",
+                            floodwait_seconds=e.seconds,
+                        )
+                    else:
+                        self.account_rotator.mark_account_failed(
+                            idx,
+                            error=f"FloodWaitError: {e.seconds}s",
+                            cooldown_hours=e.seconds / 3600
+                        )
+
                     # Try again with different account
-                    await self.select_client()
+                    await self.select_client(channel=target_link)
                     if self.active_client:
                         return await self.join_group(target_link)
                     return None
-                    
+
                 except errors.InviteHashExpiredError:
                     logger.warning(f"Invite hash expired: {invite_hash}")
                     return None
@@ -1925,6 +1988,9 @@ class SpectraCrawlerManager:
                             "UPDATE discovered_groups SET status = 'archived' WHERE group_link = ?",
                             (link,)
                         )
+                        # Also mark in the channel deduplicator
+                        if hasattr(self.group_manager.account_rotator, 'mark_channel_archived'):
+                            self.group_manager.account_rotator.mark_channel_archived(link)
                 
                 db.conn.commit()
                 logger.info(f"Updated database status for {sum(results.values())} archived groups")

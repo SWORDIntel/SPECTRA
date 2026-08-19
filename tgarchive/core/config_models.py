@@ -92,6 +92,18 @@ DEFAULT_CFG: Dict[str, Any] = {
         "strategy": "none",
         "time_window_seconds": 300
     },
+    "account_rotation": {
+        "mode": "sequential",
+        "floodwait_enabled": True,
+        "failure_threshold": 3,
+        "quarantine_minutes": 30.0,
+        "latency_window": 20,
+        "affinity_map": {},
+        "num_shards": None,
+        "primary_session": None,
+        "channel_lock_timeout": 3600.0,
+        "skip_archived_channels": True,
+    },
     "advanced_features": {
         "enabled": False,
         "vector_database": {

@@ -75,10 +75,41 @@ Archives messages, media, reactions, and sidecar metadata with cryptographic int
 
 # Import accounts from configuration
 ./spectra accounts --import
+
+# Set account rotation strategy
+./spectra accounts --set-rotation floodwait_adaptive
+
+# View live rotation stats (circuit breaker, FloodWait cooldowns, latency, channel locks)
+./spectra accounts --rotation-stats
 ```
 
+**Rotation modes** (see [ROTATION_STRATEGIES.md](ROTATION_STRATEGIES.md) for full details):
+
+| Mode | Description |
+|------|-------------|
+| `sequential` | Round-robin (default) |
+| `random` | Random selection |
+| `weighted` | Least-used account |
+| `smart` | Rested + under-used scoring |
+| `floodwait_adaptive` | Auto-cooldowns from real FloodWaitError seconds |
+| `circuit_breaker` | Consecutive failure tracking with quarantine + probe recovery |
+| `latency` | Prefers fastest RTT account |
+| `sticky` | Pins channels to accounts (OPSEC) |
+| `sharded` | Deterministic hash-based partitioning |
+| `primary_fallback` | Primary account with fallback rotation |
+
+**Flags:**
+| Flag | Description |
+|------|-------------|
+| `--list` | List all accounts and their usage/ban status |
+| `--reset` | Reset usage counts for all accounts |
+| `--test` | Test all accounts for connectivity |
+| `--import` | Import accounts from `gen_config.py` |
+| `--set-rotation <mode>` | Set rotation mode and save to config |
+| `--rotation-stats` | Show detailed rotation strategy stats |
+
 ### 7. tdata → Session Import
-Converts logged-in Telegram Desktop / Alternatives `tdata` folders into Telethon `.session` files with **no re-login**. The existing MTProto authorization keys are extracted directly from the on-disk `tdata` and written into native Telethon SQLite sessions.
+Converts logged-in Telegram Desktop / Alternatives `tdata` folders into Telethon `.session` files with **no re-login**. The existing MTProto authorization keys are extracted directly from the on-disk `tdata` and written into native Telethon SQLite sessions. Supports filtering by user_id, username, or converting all accounts at once.
 
 ```bash
 # Auto-detect Telegram Desktop / Alternatives tdata, write to ./sessions
@@ -86,6 +117,21 @@ Converts logged-in Telegram Desktop / Alternatives `tdata` folders into Telethon
 
 # Custom tdata path + output directory
 ./spectra tdata2session --tdata /path/to/tdata --output sessions
+
+# Convert only a specific account by user_id
+./spectra tdata2session --account 8011484242
+
+# Convert multiple specific accounts by user_id (comma-separated)
+./spectra tdata2session --account 8011484242,8199441474
+
+# Convert only the account matching a Telegram username (connects to resolve)
+./spectra tdata2session --username @someuser
+
+# List all accounts found in tdata (quick, no network)
+./spectra tdata2session --list-accounts
+
+# List accounts with resolved usernames/names/phones (connects to Telegram)
+./spectra tdata2session --list-accounts --resolve
 
 # Passcode-protected tdata
 ./spectra tdata2session --passcode 1234
@@ -105,6 +151,10 @@ Converts logged-in Telegram Desktop / Alternatives `tdata` folders into Telethon
 |------|-------------|
 | `--tdata <path>` | Path to the tdata folder. Defaults to auto-detection (Telegram Desktop / Alternatives / snap). |
 | `--output <dir>` | Directory to write `.session` + `.json` files (default: `./sessions`). |
+| `--account <spec>` | Which account(s) to convert: `all` (default), a numeric user_id, or comma-separated user_ids (e.g., `8011484242,8199441474`). |
+| `--username <name>` | Convert only the account matching this Telegram username (e.g., `@someuser`). Requires network access to resolve. |
+| `--list-accounts` | List all accounts found in the tdata folder and exit (no conversion). |
+| `--resolve` | When used with `--list-accounts`, connect to Telegram to resolve usernames, phones, and display names. |
 | `--passcode <code>` | Local passcode if the tdata folder is passcode-protected. |
 | `--string-sessions` | Also emit Telethon `StringSession` strings in the JSON sidecars. |
 | `--overwrite` | Overwrite existing `.session` files instead of skipping them. |

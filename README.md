@@ -21,7 +21,8 @@ Additions and commits adhering to this doctrine are absolutely welcome and will 
 
 ## 🛡️ Operational Features
 
-- 🔄 **Multi-account orchestration:** Smart, persistent selection and failure detection.
+- 🔑 **tdata → Session Import (★ highly useful):** Convert logged-in Telegram Desktop / Alternatives `tdata` folders into Telethon `.session` files with no re-login. Filter by user_id, username, or convert all at once — directly from the CLI.
+- 🔄 **Multi-account orchestration:** Smart, persistent selection and failure detection with 10 rotation strategies (sequential, random, weighted, smart, FloodWait-adaptive, circuit breaker, latency-aware, sticky/affinity, sharded, primary+fallback) plus channel de-duplication.
 - 🕵️ **Proxy rotation:** OPSEC and anti-detection routing.
 - 🔎 **Network discovery:** Automated mapping of connected groups and channels with SQL audit trails.
 - 📊 **Graph/network analysis:** Target identification and cluster isolation.
@@ -38,7 +39,6 @@ Additions and commits adhering to this doctrine are absolutely welcome and will 
 - ⏳ **Burner Account & Temporal Tracking:** Correlate aliases over time, mapping rebrands back to original Telegram UUIDs.
 - 🚀 **Containerized Deployment:** Docker orchestration with automated SSL via Caddy.
 - 📤 **Automated STIX/TAXII Exports:** Telemetry pipelines for direct MISP/OpenCTI integration.
-- 🔑 **tdata → Session Import:** Convert logged-in Telegram Desktop / Alternatives `tdata` folders into Telethon `.session` files with no re-login, directly from the CLI.
 - 🎨 **Sticker Set Archiver & Converter:** Download complete Telegram sticker sets (`.webp`, `.tgs`, `.webm`) with metadata sidecars and automatic PNG conversion.
 
 ## ⚡ Quick Start (Docker)
@@ -107,6 +107,21 @@ Convert logged-in Telegram Desktop / Alternatives `tdata` folders into Telethon 
 # Point at a specific tdata folder and register accounts into spectra_config.json
 ./spectra tdata2session --tdata /path/to/tdata --output sessions --register
 
+# Convert only a specific account by user_id
+./spectra tdata2session --account 8011484242
+
+# Convert multiple specific accounts by user_id (comma-separated)
+./spectra tdata2session --account 8011484242,8199441474
+
+# Convert only the account matching a Telegram username (connects to resolve)
+./spectra tdata2session --username @someuser
+
+# List all accounts found in tdata (quick, no network)
+./spectra tdata2session --list-accounts
+
+# List accounts with resolved usernames/names/phones (connects to Telegram)
+./spectra tdata2session --list-accounts --resolve
+
 # Passcode-protected tdata + emit StringSession strings in the JSON sidecars
 ./spectra tdata2session --passcode 1234 --string-sessions
 
@@ -144,6 +159,7 @@ Comprehensive technical documentation is available in the [`docs/`](docs/) direc
 - 📖 [CLI Reference](docs/CLI_REFERENCE.md)
 - 🏗️ [Architecture & Intelligence Pipeline](docs/ARCHITECTURE.md)
 - ⚙️ [Configuration & Accounts](docs/CONFIGURATION.md)
+- 🔄 [Rotation Strategies](docs/ROTATION_STRATEGIES.md) — all 10 account rotation modes + channel de-duplication
 
 ## 📜 License
 

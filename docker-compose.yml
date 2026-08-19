@@ -70,6 +70,10 @@ services:
   # Redis — optional search-result caching layer
   # Caches hybrid search results, KEYSTONE anchor tables, and message metadata.
   # If absent, CacheManager silently no-ops and search hits the DB directly.
+  #
+  # QIHSE KV alternative: QIHSE's built-in RESP2/RESP3 KV store is wire-compatible
+  # with Redis and can replace this container entirely. To use it, comment out
+  # this service and run the QIHSE RESP server (see docs/CONFIGURATION.md).
   redis:
     image: redis:7-alpine
     container_name: spectra-redis

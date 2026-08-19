@@ -28,6 +28,7 @@ Additions and commits adhering to this doctrine are absolutely welcome and will 
 - 📊 **Graph/network analysis:** Target identification and cluster isolation.
 - 📁 **Forensic archiving:** Integrity checksums and sidecar metadata generation.
 - 🗄️ **QIHSE Database Storage:** Rapid SQLite-replacement DB for persistent tracking of all discovered groups, relationships, and archive metadata.
+- ⚡ **QIHSE Task Queue & Scheduler (Celery-Equivalent):** In-process asynchronous task dispatch and 10ms timing wheel cron scheduling with 4 priority levels and NUMA-pinned workers — zero external Celery or RabbitMQ processes required.
 - ⚡ **Parallel processing:** Leverage multiple accounts and proxies simultaneously.
 - 🖥️ **CLI-First Architecture:** Modular backend designed for terminal-driven centaur analysis.
 - ☁️ **Forwarding Mode:** Traverse channel series, discover related infrastructure, and extract payloads based on strict rulesets.

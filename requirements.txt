@@ -162,7 +162,9 @@ aiofiles==23.2.1
 # Fallback: aiofiles>=23.0.0,<24.0
 
 # === OPTIONAL: SEARCH CACHING ===
-# Redis cache for search results, metadata, and KEYSTONE anchor tables.
+# Search cache for search results, metadata, and KEYSTONE anchor tables.
+# Supports Redis or QIHSE KV (built-in RESP2/RESP3 wire-compatible KV store).
+# QIHSE KV requires no external package — it is a native C engine in the QIHSE submodule.
 # If not installed, CacheManager silently no-ops and search hits the DB directly.
 # Enable with: pip install redis pymemcache
 # redis>=5.0.0

@@ -2,330 +2,72 @@
 id: installation
 title: Installation Guide
 sidebar_position: 1
-description: Complete installation guide for SPECTRA with automatic setup and manual options
+description: Complete installation guide for SPECTRA with automatic bootstrap and CLI setup
 tags: [installation, setup, getting-started]
 ---
 
 # SPECTRA Installation Guide
 
-## 🚀 Quick Start
-
-### **Use the Official Installer**
-
-```bash
-./install-spectra.sh
-```
-
-This is the **only installer you need**. It provides:
-- ✅ Automatic system detection (Linux, macOS, WSL)
-- ✅ System dependency installation
-- ✅ Virtual environment setup
-- ✅ Python package installation with real-time progress
-- ✅ Project structure setup
-- ✅ Configuration template creation
-- ✅ Installation verification
+SPECTRA is packaged as a standard Python package with an automated, self-bootstrapping CLI.
 
 ---
 
-## 📋 Installation Steps
+## 🚀 Quick Setup (Recommended)
 
-### **Step 1: Run the Installer**
-
-```bash
-cd ~/Documents/SPECTRA  # (or wherever you cloned it)
-./install-spectra.sh
-```
-
-### **Step 2: Watch Progress**
-
-The installer displays each dependency as it's installed:
-
-```
-▶ Installing Python dependencies...
-→ Installing 8 core dependencies...
-↳ Installing: telethon>=1.34.0
-  ✓ telethon>=1.34.0
-↳ Installing: rich>=13.0.0
-  ✓ rich>=13.0.0
-↳ Installing: npyscreen>=4.10.5
-  ✓ npyscreen>=4.10.5
-...
-✓ Dependency installation complete
-```
-
-### **Step 3: Configure API Keys**
-
-After installation, edit the configuration file:
+Run the unified bootstrap command from the repository root:
 
 ```bash
-nano spectra_config.json
+git clone https://github.com/SWORDIntel/SPECTRA.git
+cd SPECTRA
+
+# Run automated bootstrap
+./spectra bootstrap
 ```
 
-Add your Telegram API credentials:
-
-```json
-{
-  "accounts": [
-    {
-      "api_id": 12345678,
-      "api_hash": "abcdef1234567890abcdef1234567890",
-      "session_name": "account1",
-      "phone_number": "+1234567890",
-      "password": ""
-    }
-  ]
-}
-```
-
-**Get API keys from:** https://my.telegram.org/auth?to=apps
-
-### **Step 4: Activate Virtual Environment**
-
-```bash
-source .venv/bin/activate
-```
-
-### **Step 5: Test Installation**
-
-```bash
-spectra accounts --test
-```
-
-Expected output:
-```
-✓ account1: Connected
-```
+### What the Bootstrap Process Does:
+1. Detects your host OS and Python environment.
+2. Checks and installs necessary system dependencies.
+3. Automatically sets up or validates the local Python virtual environment (`.venv`).
+4. Installs SPECTRA in editable mode (`pip install -e .`) along with core dependencies.
+5. Initializes required local storage directories (`data/`, `logs/`, `config/`).
 
 ---
 
-## ⚠️ Important Notes
+## 🔧 Manual Installation
 
-### **Installer**
-
-- ✅ **USE:** `./install-spectra.sh` (Recommended installer)
-
-The `install-spectra.sh` installer provides complete dependency management and setup.
-
-### **What Gets Installed**
-
-#### System Dependencies
-- Python 3.10+ development headers
-- C/C++ compiler (build-essential/gcc)
-- OpenSSL and libffi development libraries
-
-#### Python Packages (Core)
-- telethon (Telegram API)
-- rich (Terminal formatting)
-- npyscreen (TUI framework)
-- pyyaml (Configuration)
-- Pillow (Image processing)
-- cryptg (Encryption)
-
-#### Python Packages (Optional)
-- networkx, matplotlib, pandas (Analysis)
-- aiofiles, aiosqlite (Async I/O)
-- croniter, yoyo-migrations (Scheduling)
-- pysocks (Proxy support)
-
----
-
-## 🔧 Installation Options
-
-### **Custom Installation**
-
-The script has built-in options (though typically not needed):
+If you prefer to configure your environment manually:
 
 ```bash
-# Verbose output
-VERBOSE=true ./install-spectra.sh
-
-# Dry run (shows what would be done)
-DRY_RUN=true ./install-spectra.sh
-```
-
-### **Manual Installation** (Not Recommended)
-
-If you need to install manually:
-
-```bash
-# Create virtual environment
+# 1. Create and activate a Python 3.10+ virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
 
-# Install dependencies
-pip install --upgrade pip
-pip install telethon rich npyscreen pyyaml Pillow cryptg jinja2
+# 2. Upgrade pip and build tooling
+pip install --upgrade pip setuptools wheel
 
-# Optional packages
-pip install networkx matplotlib pandas pysocks croniter aiofiles aiosqlite
+# 3. Install SPECTRA and dependencies
+pip install -e .
 ```
 
 ---
 
-## 🐛 Troubleshooting
+## 🔑 Operational Configuration
 
-### **Issue: "Python 3.10+ is required"**
+Create or update your API credentials in `data/config/spectra_config.json`:
 
-```bash
-# Check your Python version
-python3 --version
-
-# If too old, install Python 3.10+
-sudo apt-get install python3.10  # Ubuntu/Debian
-brew install python@3.10         # macOS
-```
-
-### **Issue: System Dependencies Fail**
-
-The script continues even if some system dependencies fail (they're often already installed).
-
-To manually install them:
-
-**Ubuntu/Debian:**
-```bash
-sudo apt-get install build-essential libffi-dev libssl-dev python3-dev python3-venv
-```
-
-**CentOS/RHEL:**
-```bash
-sudo yum install gcc gcc-c++ make libffi-devel openssl-devel python3-devel
-```
-
-**macOS:**
-```bash
-brew install libffi openssl
-```
-
-### **Issue: "Failed to install" for Optional Packages**
-
-These are non-critical. The script will skip them and continue.
-
-### **Issue: Virtual Environment Already Exists**
-
-The installer will reuse it. To start fresh:
-
-```bash
-rm -rf .venv
-./install-spectra.sh
-```
-
-### **Issue: Permission Denied**
-
-Make installer executable:
-
-```bash
-chmod +x install-spectra.sh
+```json
+{
+    "api_id": 1234567,
+    "api_hash": "your_telegram_api_hash_here"
+}
 ```
 
 ---
 
-## ✅ After Installation
+## 🧪 Verification
 
-### **1. Configure API Keys**
-
-Edit `spectra_config.json` with your Telegram API credentials.
-
-See: [How to Set API Key](../guides/configuration.md)
-
-### **2. Update Channel Database**
+Verify your installation:
 
 ```bash
-source .venv/bin/activate
-spectra channels update-access
+./spectra --help
 ```
-
-### **3. Launch SPECTRA**
-
-```bash
-# Interactive TUI
-spectra
-
-# Or use CLI
-spectra forward --total-mode --destination <channel_id> --enable-deduplication
-```
-
-### **4. Test Channel Recovery**
-
-Use the TUI Forwarding → Channel Recovery Wizard:
-1. Update Channel Access Database
-2. Set Recovery Destination
-3. Click "START RECOVERY"
-
----
-
-## 📝 Installation Log
-
-All installation details are logged to:
-
-```
-logs/install_YYYYMMDD_HHMMSS.log
-```
-
-View the latest log:
-
-```bash
-tail -f logs/install_*.log
-```
-
----
-
-## 🆘 Getting Help
-
-If installation fails:
-
-1. **Check the log file** (see above)
-2. **Check Python version:** `python3 --version` (need 3.10+)
-3. **Check pip:** `pip3 --version`
-4. **Run in verbose mode:** `VERBOSE=true ./install-spectra.sh`
-5. **Report the error with the full log output**
-
----
-
-## 📌 System Requirements
-
-- **OS:** Linux (Ubuntu, CentOS, etc.), macOS, or Windows WSL2
-- **Python:** 3.10 or higher
-- **RAM:** 2GB minimum (more for large channels)
-- **Disk:** 1GB+ for dependencies and data
-- **Network:** Internet connection for Telegram API
-
----
-
-## 🔒 Security Notes
-
-1. **API Keys:** Keep `spectra_config.json` secure (`chmod 600`)
-2. **Don't commit:** Add to `.gitignore`:
-   ```
-   spectra_config.json
-   *.session
-   ```
-3. **Use env vars:** For production, use environment variables instead of config files
-   ```bash
-   export TG_API_ID=your_id
-   export TG_API_HASH=your_hash
-   ```
-
----
-
-## ✨ Success Indicators
-
-After installation, you should see:
-
-```
-✓ INSTALLATION COMPLETE!
-
-Next Steps:
-1. Configure API Keys
-   Edit: spectra_config.json
-
-2. Activate Virtual Environment
-   source .venv/bin/activate
-
-3. Test Installation
-   spectra accounts --test
-
-4. Start SPECTRA
-   spectra
-```
-
-If you see this, installation was successful! 🎉

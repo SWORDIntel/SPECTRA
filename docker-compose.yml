@@ -20,7 +20,6 @@ services:
       SPECTRA_MEDIA_DIR: "/app/media"
       SPECTRA_LOG_DIR: "/app/logs"
       SPECTRA_CHECKPOINT_DIR: "/app/checkpoints"
-      SPECTRA_MEMSHADOW_URL: "${SPECTRA_MEMSHADOW_URL:-}"
 
     ports:
       - "5000:5000"
@@ -91,7 +90,7 @@ services:
       - spectra-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:5000/login"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:6333/healthz || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3

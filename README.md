@@ -26,7 +26,7 @@ Additions and commits adhering to this doctrine are absolutely welcome and will 
 - 🔎 **Network discovery:** Automated mapping of connected groups and channels with SQL audit trails.
 - 📊 **Graph/network analysis:** Target identification and cluster isolation.
 - 📁 **Forensic archiving:** Integrity checksums and sidecar metadata generation.
-- 🗄️ **SQL database storage:** Persistent tracking of all discovered groups, relationships, and archive metadata.
+- 🗄️ **QIHSE Database Storage:** Rapid SQLite-replacement DB for persistent tracking of all discovered groups, relationships, and archive metadata.
 - ⚡ **Parallel processing:** Leverage multiple accounts and proxies simultaneously.
 - 🖥️ **CLI-First Architecture:** Modular backend designed for terminal-driven centaur analysis.
 - ☁️ **Forwarding Mode:** Traverse channel series, discover related infrastructure, and extract payloads based on strict rulesets.

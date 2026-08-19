@@ -38,6 +38,8 @@ Additions and commits adhering to this doctrine are absolutely welcome and will 
 - ⏳ **Burner Account & Temporal Tracking:** Correlate aliases over time, mapping rebrands back to original Telegram UUIDs.
 - 🚀 **Containerized Deployment:** Docker orchestration with automated SSL via Caddy.
 - 📤 **Automated STIX/TAXII Exports:** Telemetry pipelines for direct MISP/OpenCTI integration.
+- 🔑 **tdata → Session Import:** Convert logged-in Telegram Desktop / Alternatives `tdata` folders into Telethon `.session` files with no re-login, directly from the CLI.
+- 🎨 **Sticker Set Archiver & Converter:** Download complete Telegram sticker sets (`.webp`, `.tgs`, `.webm`) with metadata sidecars and automatic PNG conversion.
 
 ## ⚡ Quick Start (Docker)
 
@@ -93,6 +95,48 @@ Process bulk intelligence extraction requests through the automated worker queue
 
 ### Layer 2: Nexus & Wallet Analysis
 Automatically map infrastructure links and crypto-financial footprints across the entire repository.
+
+## 🔑 tdata → Session Import
+
+Convert logged-in Telegram Desktop / Alternatives `tdata` folders into Telethon `.session` files — **no phone number, no verification code, no re-login**. The existing MTProto authorization keys are extracted directly from the on-disk `tdata` and written into native Telethon SQLite sessions that SPECTRA's archiver, discovery crawler, and forwarder can use immediately.
+
+```bash
+# Auto-detect Telegram Desktop / Alternatives tdata and write sessions to ./sessions
+./spectra tdata2session
+
+# Point at a specific tdata folder and register accounts into spectra_config.json
+./spectra tdata2session --tdata /path/to/tdata --output sessions --register
+
+# Passcode-protected tdata + emit StringSession strings in the JSON sidecars
+./spectra tdata2session --passcode 1234 --string-sessions
+
+# Re-run / overwrite existing session files
+./spectra tdata2session --overwrite
+```
+
+Each converted account produces two files in the output directory:
+- `spectra_tdata_<user_id>_<n>.session` — native Telethon SQLite session (drop-in for any Telethon client)
+- `spectra_tdata_<user_id>_<n>.json` — sidecar with `api_id`, `api_hash`, `user_id`, `dc_id`, device info, and optional `StringSession`
+
+## 🎨 Sticker Set Archiving & PNG Conversion
+
+Download and archive entire Telegram sticker sets (`.webp`, animated `.tgs`, or video `.webm`) using any active session in the account pool, with full metadata sidecars and optional lossless `.png` conversion:
+
+```bash
+# Archive a sticker set by short name or URL
+./spectra stickers atklib
+
+# Convert downloaded WebP stickers to PNG
+./spectra stickers atklib --png
+
+# Download to a custom output directory
+./spectra stickers https://t.me/addstickers/atklib --output ~/Pictures/atklib --png
+
+# Inspect metadata without downloading
+./spectra stickers atklib --info-only
+```
+
+Each downloaded set produces formatted sticker assets (`001_<doc_id>.webp` / `.png`) alongside a structured `metadata.json` sidecar containing emoji associations, set title, document IDs, dimensions, and type tags.
 
 ## 📚 Documentation
 

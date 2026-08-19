@@ -196,6 +196,8 @@ For more help, visit: https://github.com/SWORDIntel/SPECTRA
     account_parser.add_argument("--reset", action="store_true", help="Reset usage counts for all accounts")
     account_parser.add_argument("--test", action="store_true", help="Test all accounts for connectivity")
     account_parser.add_argument("--import", action="store_true", dest="import_accs", help="Import accounts from gen_config.py")
+    account_parser.add_argument("--rotation-stats", action="store_true", help="Show detailed rotation strategy stats (circuit breaker, FloodWait, latency, channel locks)")
+    account_parser.add_argument("--set-rotation", type=str, default=None, help="Set rotation mode: sequential, random, weighted, smart, floodwait_adaptive, circuit_breaker, latency, sticky, sharded, primary_fallback")
 
     # Forwarding command (MERGED)
     forward_parser = subparsers.add_parser("forward", help="Forward messages between channels or perform targeted traversal and downloading. Useful for channel recovery when owner has been banned.")
@@ -392,6 +394,28 @@ For more help, visit: https://github.com/SWORDIntel/SPECTRA
         "--register",
         action="store_true",
         help="Register the converted accounts into spectra_config.json so SPECTRA can use them.",
+    )
+    tdata_parser.add_argument(
+        "--account",
+        type=str,
+        default="all",
+        help="Which account(s) to convert: 'all' (default), a numeric user_id, or comma-separated user_ids (e.g., 8011484242,8199441474).",
+    )
+    tdata_parser.add_argument(
+        "--username",
+        type=str,
+        default=None,
+        help="Convert only the account matching this Telegram username (e.g., @someuser). Requires network access to resolve.",
+    )
+    tdata_parser.add_argument(
+        "--list-accounts",
+        action="store_true",
+        help="List all accounts found in the tdata folder (with --resolve, connects to Telegram to show usernames/names).",
+    )
+    tdata_parser.add_argument(
+        "--resolve",
+        action="store_true",
+        help="When used with --list-accounts, connect to Telegram to resolve usernames, phones, and display names.",
     )
 
     # Stickers command — download and archive sticker sets
@@ -766,6 +790,71 @@ async def handle_accounts(args: argparse.Namespace) -> int:
     """Handle accounts command"""
     cfg = Config(Path(args.config))
     db_path = Path(args.db)
+
+    # Set rotation mode if requested
+    if getattr(args, "set_rotation", None):
+        valid_modes = {
+            "sequential", "random", "weighted", "smart",
+            "floodwait_adaptive", "circuit_breaker", "latency",
+            "sticky", "sharded", "primary_fallback",
+        }
+        mode = args.set_rotation
+        if mode not in valid_modes:
+            logger.error(f"Invalid rotation mode: {mode}. Valid: {', '.join(sorted(valid_modes))}")
+            return 1
+        cfg.data["account_rotation"] = cfg.data.get("account_rotation", {})
+        cfg.data["account_rotation"]["mode"] = mode
+        cfg.data["account_rotation_mode"] = mode  # legacy flat key
+        cfg.save()
+        logger.info(f"Rotation mode set to '{mode}' and saved to {args.config}")
+        return 0
+
+    # Show rotation strategy stats
+    if getattr(args, "rotation_stats", False):
+        from .utils.rotation_strategies import AdvancedAccountRotator
+        rotator = AdvancedAccountRotator(cfg.active_accounts, config=cfg.data, db_path=db_path)
+        stats = rotator.get_stats()
+        print(f"\n{'='*60}")
+        print(f"  Rotation Strategy Stats")
+        print(f"{'='*60}")
+        print(f"  Mode:                 {stats['mode']}")
+        print(f"  Total accounts:       {stats['accounts']}")
+        print(f"  Available:            {stats['available']}")
+        print(f"  Archived channels:    {stats['archived_channels']}")
+        print()
+        print(f"  Circuit Breaker States:")
+        for session, state in stats["circuit_breaker_states"].items():
+            print(f"    {session:<40} {state}")
+        print()
+        if stats["floodwait_cooldowns"]:
+            print(f"  FloodWait Cooldowns:")
+            for session, secs in stats["floodwait_cooldowns"].items():
+                print(f"    {session:<40} {secs}s remaining")
+            print()
+        if stats["latency_ms"]:
+            print(f"  Latency (avg ms):")
+            for session, ms in sorted(stats["latency_ms"].items(), key=lambda x: x[1]):
+                print(f"    {session:<40} {ms:.0f}ms")
+            print()
+        if stats["sticky_mapping"]:
+            print(f"  Sticky Affinity Mapping:")
+            for channel, session in stats["sticky_mapping"].items():
+                print(f"    {channel:<30} → {session}")
+            print()
+        if stats["shards"]:
+            print(f"  Shard Assignments:")
+            for shard, session in sorted(stats["shards"].items()):
+                print(f"    Shard {shard}: {session}")
+            print()
+        if stats["locked_channels"]:
+            print(f"  Locked Channels (in progress):")
+            for channel, session in stats["locked_channels"].items():
+                print(f"    {channel:<30} ← {session}")
+            print()
+        if stats["primary"]:
+            print(f"  Primary account:      {stats['primary']}")
+        print(f"{'='*60}\n")
+        return 0
 
     # Import accounts from gen_config if requested
     if args.import_accounts or getattr(args, "import_accs", False):
@@ -1382,6 +1471,10 @@ async def handle_tdata2session(args: argparse.Namespace) -> int:
         autodetect_tdata,
         convert_tdata,
         register_into_config,
+        parse_account_filter,
+        list_tdata_accounts,
+        resolve_account_info_async,
+        filter_by_username_async,
     )
 
     # Resolve the tdata folder (explicit flag → auto-detection).
@@ -1399,6 +1492,44 @@ async def handle_tdata2session(args: argparse.Namespace) -> int:
 
     output_dir = Path(args.output).expanduser().resolve()
 
+    # ── --list-accounts: inspect tdata and exit ──
+    if args.list_accounts:
+        try:
+            accounts = list_tdata_accounts(tdata_path, passcode=args.passcode)
+        except (FileNotFoundError, RuntimeError) as exc:
+            logger.error(str(exc))
+            return 1
+
+        if args.resolve:
+            logger.info("Resolving usernames via Telegram (requires network)...")
+            accounts = await resolve_account_info_async(
+                accounts, tdata_path, args.passcode, output_dir
+            )
+
+        print(f"\nFound {len(accounts)} account(s) in {tdata_path}:\n")
+        print(f"  {'#':<4} {'User ID':<16} {'DC':<4} {'API ID':<10} {'Username':<20} {'Name':<24} {'Phone':<16}")
+        print(f"  {'─'*4} {'─'*16} {'─'*4} {'─'*10} {'─'*20} {'─'*24} {'─'*16}")
+        for a in accounts:
+            name = f"{a.get('first_name') or ''} {a.get('last_name') or ''}".strip() or "-"
+            print(
+                f"  {a['index']:<4} {a['user_id']:<16} {a['dc_id']:<4} {a['api_id']:<10} "
+                f"{a.get('username') or '-':<20} {name:<24} {a.get('phone') or '-':<16}"
+            )
+        print()
+        return 0
+
+    # ── Parse account filter ──
+    try:
+        user_id_filter, username_filter = parse_account_filter(args.account, args.username)
+    except ValueError as exc:
+        logger.error(str(exc))
+        return 1
+
+    if user_id_filter:
+        logger.info(f"Filtering by user_id(s): {sorted(user_id_filter)}")
+    elif username_filter:
+        logger.info(f"Filtering by username: @{username_filter} (requires network)")
+
     try:
         report = convert_tdata(
             tdata_path=tdata_path,
@@ -1406,6 +1537,7 @@ async def handle_tdata2session(args: argparse.Namespace) -> int:
             passcode=args.passcode,
             string_sessions=args.string_sessions,
             overwrite=args.overwrite,
+            user_id_filter=user_id_filter,
         )
     except FileNotFoundError as exc:
         logger.error(str(exc))
@@ -1413,6 +1545,11 @@ async def handle_tdata2session(args: argparse.Namespace) -> int:
     except RuntimeError as exc:
         logger.error(str(exc))
         return 1
+
+    # ── Username filtering (async — requires connecting to Telegram) ──
+    if username_filter and report.converted:
+        logger.info("Resolving usernames to filter accounts...")
+        report = await filter_by_username_async(report, username_filter)
 
     # Register into SPECTRA config if requested.
     registered = 0

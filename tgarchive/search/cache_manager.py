@@ -3,10 +3,19 @@ Cache Manager for Search Results
 =================================
 
 Redis/Memcached caching layer for search results, metadata, and anchor tables.
+
+Both backends are **optional**. If neither is installed, CacheManager silently
+no-ops (all reads return None, all writes return False) and search falls
+through to the database every time.
+
+Configuration:
+    REDIS_URL env var or constructor arg (default: redis://localhost:6379).
+    Set to empty string to explicitly disable Redis.
 """
 
 import logging
 import json
+import os
 import pickle
 import hashlib
 from typing import Optional, Any, Dict, List
@@ -15,15 +24,18 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Try to import Redis
+# Try to import Redis (optional — search caching layer)
 try:
     import redis
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
-    logger.warning("Redis not available. Caching will be disabled.")
+    logger.debug(
+        "redis package not installed — search caching disabled. "
+        "Install with: pip install redis"
+    )
 
-# Try to import Memcached
+# Try to import Memcached (optional — alternative cache backend)
 try:
     import pymemcache
     MEMCACHED_AVAILABLE = True
@@ -45,21 +57,26 @@ class CacheManager:
     
     def __init__(
         self,
-        redis_url: Optional[str] = "redis://localhost:6379",
+        redis_url: Optional[str] = None,
         memcached_url: Optional[str] = None,
         default_ttl: int = 3600,  # 1 hour
     ):
         """
         Initialize cache manager.
-        
+
         Args:
-            redis_url: Redis connection URL (None to disable)
+            redis_url: Redis connection URL. Falls back to REDIS_URL env var,
+                then to redis://localhost:6379. Set to empty string to disable.
             memcached_url: Memcached server address (None to disable)
             default_ttl: Default TTL in seconds
         """
         self.default_ttl = default_ttl
         self.redis_client = None
         self.memcached_client = None
+
+        # Resolve Redis URL: explicit arg → env var → default
+        if redis_url is None:
+            redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
         
         # Initialize Redis
         if redis_url and REDIS_AVAILABLE:

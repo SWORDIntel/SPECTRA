@@ -73,3 +73,8 @@ logs/
 .vscode/
 .DS_Store
 data/stickers/
+
+# Runtime lock files and integrity chains
+*.qlock
+qihse_integrity.chain
+data/qihse/

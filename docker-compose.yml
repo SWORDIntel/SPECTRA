@@ -5,24 +5,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: spectra-ui
+    container_name: spectra-worker
     environment:
       SPECTRA_DEBUG: "false"
-      SPECTRA_HOST: "0.0.0.0"
-      SPECTRA_PORT: "5000"
       SPECTRA_LOG_LEVEL: "INFO"
-      SPECTRA_BOOTSTRAP_SECRET: "${SPECTRA_BOOTSTRAP_SECRET:-}"
-      SPECTRA_SESSION_SECRET: "${SPECTRA_SESSION_SECRET:-change-me-in-production-use-strong-secret}"
-      SPECTRA_WEBAUTHN_ORIGIN: "${SPECTRA_WEBAUTHN_ORIGIN:-http://localhost:5000}"
-      SPECTRA_WEBAUTHN_RP_ID: "${SPECTRA_WEBAUTHN_RP_ID:-localhost}"
-      SPECTRA_JWT_SECRET: "${SPECTRA_JWT_SECRET:-change-me-in-production-use-strong-secret}"
       SPECTRA_DB_PATH: "/app/data/spectra.db"
       SPECTRA_MEDIA_DIR: "/app/media"
       SPECTRA_LOG_DIR: "/app/logs"
       SPECTRA_CHECKPOINT_DIR: "/app/checkpoints"
-
-    ports:
-      - "5000:5000"
+      QDRANT_URL: "http://qdrant:6333"
 
     volumes:
       - spectra-data:/app/data
@@ -50,32 +41,10 @@ services:
 
     networks:
       - spectra-network
-
-  # Caddy Reverse Proxy for Automated SSL & Secure Access
-  caddy:
-    image: caddy:latest
-    container_name: spectra-proxy
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      SITE_ADDRESS: "${SITE_ADDRESS:-localhost}"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy-data:/data
-      - caddy-config:/config
-      - spectra-logs:/var/log/caddy
     depends_on:
-      - spectra
-    networks:
-      - spectra-network
-    deploy:
-      resources:
-        limits:
-          memory: 512M
+      - qdrant
 
-  # Qdrant Vector Database for Semantic Search (Enabled by default)
+  # Qdrant Vector Database for Semantic Search
   qdrant:
     image: qdrant/qdrant:latest
     container_name: spectra-qdrant
@@ -107,12 +76,8 @@ volumes:
     driver: local
   spectra-config:
     driver: local
-  caddy-data:
+  spectra-qdrant:
     driver: local
-  caddy-config:
-    driver: local
-  # spectra-redis:
-  #   driver: local
 
 networks:
   spectra-network:

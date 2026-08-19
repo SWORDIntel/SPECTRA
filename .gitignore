@@ -1,5 +1,3 @@
-# https://github.com/github/gitignore/blob/main/Python.gitignore
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -27,80 +25,44 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-tga/bin/activate
-tga/bin/activate.csh
-tga/bin/activate.fish
-tga/bin/Activate.ps1
-tga/bin/pip
-tga/bin/pip3
-tga/bin/pip3.11
-tga/bin/pyrsa-decrypt
-tga/bin/pyrsa-encrypt
-tga/bin/pyrsa-keygen
-tga/bin/pyrsa-priv2pub
-tga/bin/pyrsa-sign
-tga/bin/pyrsa-verify
-tga/bin/python
-tga/bin/python3
-tga/bin/python3.11
-tga/bin/tg-archive
-tga/lib64
-tga/pyvenv.cfg
-.venv/pyvenv.cfg
-.venv/lib64
-.venv/bin/tg-archive
-.venv/bin/python3.11
-.venv/bin/python3
-.venv/bin/python
-.venv/bin/pyrsa-verify
-.venv/bin/pyrsa-sign
-.venv/bin/pyrsa-priv2pub
-.venv/bin/pyrsa-keygen
-.venv/bin/pyrsa-encrypt
-.venv/bin/pyrsa-decrypt
-.venv/bin/pip3.11
-.venv/bin/pip3
-.venv/bin/pip
-.venv/bin/Activate.ps1
-.venv/bin/activate.fish
-.venv/bin/activate.csh
-.venv/bin/activate
-/.venv
-
-requirements_minimal.txt
 
 # Virtual environments
+.venv/
+/.venv
+tga/
 spectra_venv/
 .venv_old/
 
-test_env_check.py
-test_minimal.py
-core.*
-
-# Runtime data and configuration
-# ==============================
-# Ignore all files in data directory except the structure
+# Runtime data, sessions, and databases
 data/logs/
 data/cache/
+data/media/
+data/checkpoints/
 data/config/*.json
 data/config/*.ini
+media/
+checkpoints/
 
-# Legacy config and state files (now in data/)
-spectra_config.json
-scheduler_state.json
-spectra.db
-spectra.db-shm
-spectra.db-wal
+# Database files
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
 
-# Other runtime files
-logs/
-*.log
+# Telethon and network session files
 *.session
 *.session-journal
 *.session.bak
 
+# Legacy config and runtime logs
+spectra_config.json
+scheduler_state.json
+logs/
+*.log
+
 # Local editor / workspace state
 .cursor/
-
-# Local virtual environments
-spectra_venv/
+.idea/
+.vscode/
+.DS_Store

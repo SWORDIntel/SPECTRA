@@ -71,11 +71,26 @@ class BaseDB(AbstractContextManager):
         self._open()
 
     def _open(self) -> None:
+        # Load QIHSE VFS globally before opening main database
+        try:
+            with sqlite3.connect(":memory:") as dummy:
+                dummy.enable_load_extension(True)
+                vfs_path = Path(__file__).parent.parent.parent / "QIHSE" / "qihse_vfs.so"
+                if vfs_path.exists():
+                    dummy.load_extension(str(vfs_path.resolve().with_suffix("")))
+                    logger.info(f"Loaded QIHSE SQLite VFS from {vfs_path}")
+                else:
+                    logger.warning(f"QIHSE VFS not found at {vfs_path}, continuing with default VFS.")
+        except Exception as e:
+            logger.warning(f"Failed to load QIHSE VFS: {e}")
+
         backoff = 1.0
         for attempt in range(1, self.RETRIES + 1):
             try:
+                uri_path = f"file:{self.db_path.absolute()}?vfs=qihse"
                 self.conn = sqlite3.connect(
-                    self.db_path,
+                    uri_path,
+                    uri=True,
                     detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
                     timeout=5.0,
                 )

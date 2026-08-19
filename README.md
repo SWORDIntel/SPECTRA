@@ -96,21 +96,10 @@ Automatically map infrastructure links and crypto-financial footprints across th
 
 ## 📚 Documentation
 
-Detailed technical reference and guides are available at `/docs` or via [GitHub Pages](https://swordintel.github.io/SPECTRA/).
-
-### Building Documentation
-
-**Documentation Framework:**
-- Built with Docusaurus 3.x
-- Source files: `docs/docs/`
-- Build output: `docs/html/`
-
-```bash
-cd docs
-npm install          # Install dependencies
-npm start            # Start development server
-npm run build        # Build static HTML
-```
+Comprehensive technical documentation is available in the [`docs/`](docs/) directory:
+- 📖 [CLI Reference](docs/CLI_REFERENCE.md)
+- 🏗️ [Architecture & Intelligence Pipeline](docs/ARCHITECTURE.md)
+- ⚙️ [Configuration & Accounts](docs/CONFIGURATION.md)
 
 ## 📜 License
 

@@ -27,7 +27,7 @@ Additions and commits adhering to this doctrine are absolutely welcome and will 
 - 🔎 **Network discovery:** Automated mapping of connected groups and channels with SQL audit trails.
 - 📊 **Graph/network analysis:** Target identification and cluster isolation.
 - 📁 **Forensic archiving:** Integrity checksums and sidecar metadata generation.
-- 🗄️ **QIHSE Database Storage:** Rapid SQLite-replacement DB for persistent tracking of all discovered groups, relationships, and archive metadata.
+- 🗄️ **QIHSE Database Engine:** Full multi-model database replacement (KV, vector, document, columnar, time-series, FTS, event stream, graph) with ACID transactions, MVCC, SQL engine (JOIN/GROUP BY/ORDER BY/subqueries), B+ tree and hash secondary indexes, unified WAL with crash recovery, and PostgreSQL + Redis wire protocol compatibility. Replaces SQLite, Redis, PostgreSQL, and Celery with a single in-process engine.
 - ⚡ **QIHSE Task Queue & Scheduler (Celery-Equivalent):** In-process asynchronous task dispatch and 10ms timing wheel cron scheduling with 4 priority levels and NUMA-pinned workers — zero external Celery or RabbitMQ processes required.
 - ⚡ **Parallel processing:** Leverage multiple accounts and proxies simultaneously.
 - 🖥️ **CLI-First Architecture:** Modular backend designed for terminal-driven centaur analysis.

@@ -203,7 +203,7 @@ Two backends are supported:
 | Backend | Type | Notes |
 |---------|------|-------|
 | **Redis** | External server | Standard `redis://` protocol. Use `redis:7-alpine` or any Redis-compatible server. |
-| **QIHSE KV** | Built-in (in-process) | QIHSE's native KV store with RESP2/RESP3 wire protocol. No external process needed — runs in the same process space as SPECTRA. Trinary Trie in-memory engine backed by LSM-Trees and SSTable persistence. Any standard Redis client connects out-of-the-box. See [`QIHSE/docs/architecture/cluster_sharding.md`](../QIHSE/docs/architecture/cluster_sharding.md) for the full cluster sharding specification. |
+| **QIHSE KV** | Built-in (in-process) | QIHSE's native multi-model database engine with RESP2/RESP3 wire protocol, PostgreSQL wire protocol, full SQL engine (JOIN, GROUP BY, ORDER BY, subqueries), ACID transactions with MVCC, B+ tree and hash secondary indexes, unified WAL with crash recovery, and 16,384-slot cluster sharding. No external process needed — runs in the same process space as SPECTRA. Any standard Redis or PostgreSQL client connects out-of-the-box. See [`QIHSE/docs/architecture/system_overview.md`](../QIHSE/docs/architecture/system_overview.md) for the full architecture overview. |
 
 ### What the cache stores
 

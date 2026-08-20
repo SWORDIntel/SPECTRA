@@ -67,6 +67,10 @@ scheduler_state.json
 logs/
 *.log
 
+# OSINT crawler config — contains references to session files, not secrets,
+# but kept local to avoid leaking any account-specific paths/IDs.
+tgarchive/osint/config.yaml
+
 # Local editor / workspace state
 .cursor/
 .idea/

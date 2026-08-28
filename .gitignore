@@ -33,6 +33,11 @@ tga/
 spectra_venv/
 .venv_old/
 
+# Environment files — may contain API credentials
+.env
+.env.*
+!env.example
+
 # Runtime data, sessions, and databases
 data/logs/
 data/cache/

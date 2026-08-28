@@ -69,8 +69,8 @@ Launch the unified CLI directly:
 Secure the interface for remote access or update your local `spectra_config.json`:
 ```json
 {
-    "api_id": REDACTED_API_ID,
-    "api_hash": "REDACTED_API_HASH"
+    "api_id": "YOUR_API_ID",
+    "api_hash": "YOUR_API_HASH"
 }
 ```
 

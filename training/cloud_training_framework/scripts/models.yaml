@@ -1,0 +1,109 @@
+# Cloud GPU Training Framework — Model Pipeline Definition
+#
+# Define your training pipeline here. The run_pipeline.py script reads this
+# file and runs each model sequentially, skipping completed ones.
+#
+# Each model entry:
+#   name:         Unique identifier (used in pipeline_state.json)
+#   display_name: Human-readable name for TUI dashboard
+#   script:       Path to training script (relative to repo root)
+#   args:         Command-line arguments (list of strings)
+#                 Use $DATA_DIR, $OUTPUT_DIR, $REPO_DIR as placeholders
+#   output_dir:   Where model artifacts are saved (relative to repo root)
+#   log_file:     Where to redirect training logs (optional, default /tmp/<name>.log)
+#   optional:     If true, failure doesn't block the pipeline (default: false)
+
+models:
+  - name: spectra_operator_qwen7b
+    display_name: "SPECTRA Operator - Qwen2.5-7B LoRA"
+    script: training/spectra_operator/train_spectra_operator.py
+    args:
+      - "--base-model"
+      - "Qwen/Qwen2.5-7B-Instruct"
+      - "--data-path"
+      - "$REPO_DIR/training/spectra_operator/data/train.jsonl"
+      - "--output-dir"
+      - "$OUTPUT_DIR/spectra-operator-qwen7b"
+      - "--epochs"
+      - "3"
+      - "--batch-size"
+      - "2"
+      - "--grad-accum"
+      - "8"
+      - "--lora-r"
+      - "32"
+      - "--max-length"
+      - "2048"
+    output_dir: training/cloud_training_framework/models/spectra-operator-qwen7b
+    log_file: /tmp/train_spectra_operator_qwen7b.log
+
+  # NetFix remains as a copied reference pattern. Its generated JSONL data is not
+  # included in this public repo copy.
+  # - name: netfix
+  #   display_name: "NetFix - Network Repair Model (Qwen2.5-1.5B LoRA)"
+  #   script: training/cloud_training_framework/netfix/scripts/train_netfix.py
+  #   args:
+  #     - "--base-model"
+  #     - "Qwen/Qwen2.5-1.5B-Instruct"
+  #     - "--data-path"
+  #     - "$REPO_DIR/training/cloud_training_framework/netfix/data/train.jsonl"
+  #     - "--output-dir"
+  #     - "$OUTPUT_DIR/netfix"
+  #     - "--epochs"
+  #     - "4"
+  #     - "--batch-size"
+  #     - "2"
+  #     - "--grad-accum"
+  #     - "4"
+  #     - "--lora-r"
+  #     - "16"
+  #     - "--max-length"
+  #     - "1024"
+  #   output_dir: training/cloud_training_framework/models/netfix
+  #   log_file: /tmp/train_netfix.log
+
+  # ── Example: Image Classifier (template) ──
+  # - name: image_classifier
+  #   display_name: "Image Classifier"
+  #   script: scripts/train_template.py
+  #   args:
+  #     - "--data-dir"
+  #     - "$DATA_DIR"
+  #     - "--output-dir"
+  #     - "$OUTPUT_DIR/image_classifier"
+  #     - "--epochs"
+  #     - "50"
+  #   output_dir: models/image_classifier
+  #   log_file: /tmp/train_image_classifier.log
+
+  # ── Example: Text Classifier ──
+  # - name: text_classifier
+  #   display_name: "Text Classifier"
+  #   script: scripts/train_text_model.py
+  #   args:
+  #     - "--data-dir"
+  #     - "$DATA_DIR"
+  #     - "--output-dir"
+  #     - "$OUTPUT_DIR/text_classifier"
+  #     - "--epochs"
+  #     - "15"
+  #     - "--batch-size"
+  #     "256"
+  #   output_dir: models/text_classifier
+  #   log_file: /tmp/train_text_classifier.log
+
+# Dataset configuration
+dataset:
+  # URL to download dataset archive (tar.gz). Set to empty to skip download.
+  url: ""
+  # Local path on VM where dataset is extracted
+  path: "/opt/training-repo/training/spectra_operator/data"
+  # Minimum number of files expected in dataset (re-download if fewer)
+  min_files: 1
+
+# Output configuration
+output:
+  # Base directory for model outputs (relative to repo root)
+  dir: training/cloud_training_framework/models
+  # Report directory
+  report_dir: training/cloud_training_framework/reports

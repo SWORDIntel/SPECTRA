@@ -1,0 +1,102 @@
+#cloud-config
+# ── Cloud-init for Nebius GPU VM ──
+# Creates user, installs CUDA/PyTorch, and starts training pipeline on boot.
+#
+# BEFORE USING:
+#   1. Replace SSH public key below with your key
+#   2. Set REPO_URL in the setup script if you want auto-clone
+#   3. Set DATASET_URL in models.yaml for auto-download
+#   4. Adjust VENV path and Python version if needed
+
+users:
+  - name: ubuntu
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - __SSH_PUB_KEY__
+
+write_files:
+  # ── First-boot setup script ──
+  - path: /opt/setup.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      trap 'echo "[SETUP] CRASHED on line $LINENO! Shutting down VM to save costs..."; sudo shutdown -h now' ERR
+      exec > >(tee /var/log/training-setup.log) 2>&1
+      log() { echo "[SETUP] $(date -Iseconds) $*"; }
+
+      CLONE_DIR="/opt/training-repo"
+      VENV="/opt/training-venv"
+      PYTHON="python3.12"
+
+      log "Starting setup on $(hostname)"
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update -q
+      apt-get install -y -q \
+        $PYTHON $PYTHON-venv $PYTHON-dev python3-pip \
+        build-essential cmake pkg-config \
+        libgl1 libglib2.0-0 libsm6 libxext6 libxrender-dev \
+        git curl wget tmux unzip \
+        || { echo "Failed core packages"; exit 1; }
+      apt-get install -y -q htop nvtop nodejs npm || true
+
+      curl -LsSf https://astral.sh/uv/install.sh | sh
+      export PATH="$HOME/.cargo/bin:$PATH"
+
+      uv venv "$VENV" --python $PYTHON
+      source "$VENV/bin/activate"
+
+      # Core dependencies via uv for fast, strict resolution
+      log "Installing dependencies from project requirements..."
+      if [ -f "$CLONE_DIR/training/spectra_operator/requirements-gpu.txt" ]; then
+          uv pip install -r "$CLONE_DIR/training/spectra_operator/requirements-gpu.txt"
+      fi
+      if [ -f "$CLONE_DIR/training/cloud_training_framework/requirements-gpu.txt" ]; then
+          uv pip install -r "$CLONE_DIR/training/cloud_training_framework/requirements-gpu.txt"
+      elif [ -f "$CLONE_DIR/requirements.txt" ]; then
+          uv pip install -r "$CLONE_DIR/requirements.txt"
+      else
+          log "Warning: No requirements file found. Environment may be empty!"
+      fi
+      
+      uvx google-agents-cli setup --skip-auth || true
+      python3 -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'none')" || true
+      log "Setup complete."
+
+  # ── Pipeline runner (every boot) ──
+  - path: /opt/run-pipeline.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      exec > >(tee /var/log/training-run.log) 2>&1
+      log() { echo "[RUN] $(date -Iseconds) $*"; }
+
+      CLONE_DIR="/opt/training-repo"
+      VENV="/opt/training-venv"
+
+      cd "$CLONE_DIR" || { log "Repo not found!"; exit 1; }
+      git pull || log "No network or already latest"
+
+      source "$VENV/bin/activate"
+
+      log "Pipeline state:"
+      python3 "$CLONE_DIR/training/cloud_training_framework/scripts/pipeline_state.py" show
+
+      log "Starting pipeline..."
+      if [ -f "$CLONE_DIR/run.py" ]; then
+          python3 "$CLONE_DIR/run.py"
+      elif [ -f "$CLONE_DIR/training/cloud_training_framework/scripts/run_pipeline.py" ]; then
+          python3 "$CLONE_DIR/training/cloud_training_framework/scripts/run_pipeline.py"
+      else
+          log "No entrypoint found (run.py or training/cloud_training_framework/scripts/run_pipeline.py)"
+      fi
+
+      log "Pipeline started. Attach: tmux attach -t train"
+
+runcmd:
+  # Only run full setup on first boot — check for sentinel file
+  - if [ ! -f /opt/setup-done ]; then bash /opt/setup.sh && touch /opt/setup-done; fi
+  # Always run the pipeline (resume-safe via pipeline_state.json)
+  - bash /opt/run-pipeline.sh

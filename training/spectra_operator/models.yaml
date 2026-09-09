@@ -1,0 +1,32 @@
+models:
+  - name: spectra_operator_qwen7b
+    display_name: "SPECTRA Operator - Qwen2.5-7B LoRA"
+    script: training/spectra_operator/train_spectra_operator.py
+    args:
+      - "--base-model"
+      - "Qwen/Qwen2.5-7B-Instruct"
+      - "--data-path"
+      - "$REPO_DIR/training/spectra_operator/data/train.jsonl"
+      - "--output-dir"
+      - "$OUTPUT_DIR/spectra-operator-qwen7b"
+      - "--epochs"
+      - "3"
+      - "--batch-size"
+      - "2"
+      - "--grad-accum"
+      - "8"
+      - "--lora-r"
+      - "32"
+      - "--max-length"
+      - "2048"
+    output_dir: models/spectra-operator-qwen7b
+    log_file: /tmp/train_spectra_operator_qwen7b.log
+
+dataset:
+  url: ""
+  path: "/opt/training-repo/training/spectra_operator/data"
+  min_files: 1
+
+output:
+  dir: models
+  report_dir: reports

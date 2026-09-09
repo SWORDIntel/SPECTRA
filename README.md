@@ -41,6 +41,12 @@ Additions and commits adhering to this doctrine are absolutely welcome and will 
 - 🚀 **Containerized Deployment:** Docker orchestration with automated SSL via Caddy.
 - 📤 **Automated STIX/TAXII Exports:** Telemetry pipelines for direct MISP/OpenCTI integration.
 - 🎨 **Sticker Set Archiver & Converter:** Download complete Telegram sticker sets (`.webp`, `.tgs`, `.webm`) with metadata sidecars and automatic PNG conversion.
+- 🧠 **Attribution Engine:** Multi-source actor identity resolution with Bayesian evidence fusion, 18 feature extractors, and analyst label tracking.
+- 🎭 **Persona Modeling:** Train char-LM persona models, score text against known profiles, detect persona drift, and generate synthetic text — all on local hardware.
+- 🔍 **Semantic Search:** 384-dimensional vector embeddings (all-MiniLM-L6-v2) with 3-tier fallback (SentenceTransformer → TF-IDF → hash BoW), QIHSE/KEYSTONE/numpy vector stores, and hybrid rank fusion.
+- 📊 **Evaluation Harness:** Benchmark intelligence modules with metrics, calibration, dataset splits, and reproducible reports.
+- 🔄 **LAN Replication:** Gossip protocol + CRDT LWW-Set for multi-instance SPECTRA deployments with mDNS peer discovery and post-quantum signatures.
+- 🗄️ **IndexOutbox + IndexProjector:** Durable change-log architecture with concurrent projection to QIHSE/KEYSTONE/FTS/graph stores, payload nulling, and DB compaction (71% size reduction verified).
 
 ## ⚡ Quick Start (Docker)
 
@@ -97,6 +103,90 @@ Process bulk intelligence extraction requests through the automated worker queue
 ### Layer 2: Nexus & Wallet Analysis
 Automatically map infrastructure links and crypto-financial footprints across the entire repository.
 
+### Layer 3: Attribution & Entity Resolution
+
+Multi-source actor identity resolution with Bayesian fusion:
+
+```bash
+# Resolve actor identity across channels
+./spectra intel resolve --actor @target_user
+
+# Generate attribution evidence with confidence scores
+./spectra intel attribute --channel @target_channel --evidence
+
+# Cross-reference entities (wallets, panel URLs, bot IDs)
+./spectra intel crossref --entity "example.com"
+```
+
+**Attribution engine features:**
+- 6 feature families (linguistic, discourse, register, notation, orthographic, temporal)
+- 18 feature extractors covering conversation patterns, dialogue acts, formatting, media usage
+- Bayesian evidence fusion with anti-double-counting
+- ActorIdentityResolver + EntityResolverV2 (7 evidence sources)
+- Analyst label store (Confirm/Reject/Unsure) with provenance tracking
+- Evaluation harness with benchmarks, metrics, calibration, and dataset splits
+
+### Layer 4: Persona Modeling
+
+Train and evaluate persona models from message corpora:
+
+```bash
+# Train a persona model from a channel's message history
+./spectra persona train --channel @target_channel --epochs 50
+
+# Score a text sample against known personas
+./spectra persona score --model persona_v2 --text "suspicious message"
+
+# Generate synthetic text from a trained persona
+./spectra persona generate --model persona_v2 --length 500
+
+# Detect persona drift over time
+./spectra persona drift --channel @target_channel --window 30d
+```
+
+### Layer 5: Semantic Search
+
+384-dimensional vector embeddings with 3-tier fallback:
+
+```bash
+# Search for similar messages across all channels
+./spectra search semantic "crypto escrow service"
+
+# Search with filters
+./spectra search semantic "wallet address" --channel @target --limit 20
+
+# Hybrid search (semantic + full-text + graph)
+./spectra search hybrid "payment processor" --rank-fusion
+```
+
+**Search architecture:**
+- EmbeddingGenerator: SentenceTransformer (CPU) → TF-IDF + random projection → hash bag-of-words
+- Vector store: QIHSE vector index → KEYSTONE LSH + SIMD → numpy BLOB sidecar
+- Query planner: cost-based routing across QIHSE/KEYSTONE/FTS/graph
+- Rank fusion: reciprocal rank fusion across heterogeneous search backends
+
+### Layer 6: LAN Replication (Gossip + CRDT)
+
+Multi-instance replication for distributed crawling:
+
+```bash
+# Start the sync daemon
+./spectra sync start --db data/spectra.db --port 7900
+
+# Check sync status
+./spectra sync status
+
+# Connect to a static peer
+./spectra sync start --peer 192.168.1.50 7900
+```
+
+**Replication features:**
+- mDNS peer discovery + UDP gossip protocol
+- CRDT LWW-Set for conflict-free merging
+- Anti-entropy sync with Bloom filter comparison
+- ML-DSA-87 post-quantum signatures
+- Only IndexOutbox events replicated — each instance projects independently
+
 ## 🔑 tdata → Session Import
 
 Convert logged-in Telegram Desktop / Alternatives `tdata` folders into Telethon `.session` files — **no phone number, no verification code, no re-login**. The existing MTProto authorization keys are extracted directly from the on-disk `tdata` and written into native Telethon SQLite sessions that SPECTRA's archiver, discovery crawler, and forwarder can use immediately.
@@ -109,10 +199,10 @@ Convert logged-in Telegram Desktop / Alternatives `tdata` folders into Telethon 
 ./spectra tdata2session --tdata /path/to/tdata --output sessions --register
 
 # Convert only a specific account by user_id
-./spectra tdata2session --account 8011484242
+./spectra tdata2session --account 8000000002
 
 # Convert multiple specific accounts by user_id (comma-separated)
-./spectra tdata2session --account 8011484242,8199441474
+./spectra tdata2session --account 8000000002,8000000003
 
 # Convert only the account matching a Telegram username (connects to resolve)
 ./spectra tdata2session --username @someuser
@@ -157,10 +247,21 @@ Each downloaded set produces formatted sticker assets (`001_<doc_id>.webp` / `.p
 ## 📚 Documentation
 
 Comprehensive technical documentation is available in the [`docs/`](docs/) directory:
-- 📖 [CLI Reference](docs/CLI_REFERENCE.md)
+- 📖 [CLI Reference](docs/CLI_REFERENCE.md) — full command surface
+- 📖 [Full CLI Reference](docs/docs/api/cli-reference-full.md) — every subcommand documented
 - 🏗️ [Architecture & Intelligence Pipeline](docs/ARCHITECTURE.md)
 - ⚙️ [Configuration & Accounts](docs/CONFIGURATION.md)
 - 🔄 [Rotation Strategies](docs/ROTATION_STRATEGIES.md) — all 10 account rotation modes + channel de-duplication
+- 🧠 [Advanced Features](docs/docs/features/advanced-features.md) — intelligence, attribution, vector search
+- 🎯 [Attribution Engine](docs/docs/features/attribution-engine.md) — actor identity resolution
+- 🔐 [CNSA Cryptography](docs/docs/features/cnsa-cryptography.md) — post-quantum security
+- ⚡ [Vector Database](docs/docs/features/vector-database.md) — QIHSE + KEYSTONE + semantic search
+- 🚀 [Quick Start Guide](docs/docs/getting-started/quick-start.md) — get running in 5 minutes
+- 📦 [Installation](docs/docs/getting-started/installation.md) — full setup walkthrough
+- 🔧 [Build from Source](docs/docs/getting-started/build.md) — compile QIHSE/KEYSTONE from submodules
+- 📋 [Agent Guide](AGENTS.md) — architecture, DB management, LAN sync, all internals
+- 📊 [API Examples](docs/docs/api/api-examples.md) — programmatic usage patterns
+- 🗄️ [Database Schema](docs/docs/reference/database-schema.md) — full schema reference
 
 ## 📜 License
 

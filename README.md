@@ -265,4 +265,4 @@ Comprehensive technical documentation is available in the [`docs/`](docs/) direc
 
 ## 📜 License
 
-This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0) - see the LICENSE file for details.
+This project is licensed under the **SWORD Restricted Source Licence v1.0 (SRSL-1.0)** for code owned by SWORD Intelligence. Personal and non-commercial use is permitted under its terms; commercial exploitation requires a separate written agreement. See [LICENSE](LICENSE). Existing third-party code remains under its respective licences; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

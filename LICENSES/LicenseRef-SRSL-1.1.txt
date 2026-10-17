@@ -1,0 +1,297 @@
+SWORD RESTRICTED SOURCE LICENCE (SRSL-1.1)
+Version 1.1 — 17 October 2026
+
+Copyright © 2026 SWORD Intelligence and other applicable copyright holders.
+All rights reserved except as expressly granted under this Licence.
+
+PREAMBLE
+
+The SWORD Restricted Source Licence ("SRSL") is a source-available software licence intended to encourage independent research, education, experimentation and non-commercial development while preserving the copyright holder's exclusive control over commercial exploitation.
+
+The Software is provided freely for eligible non-commercial purposes. Commercial exploitation is not authorised by this Licence and requires a separate written agreement with the Licensor.
+
+The Licensor may offer commercial licensing under substantial financial and source-disclosure obligations or negotiate alternative arrangements at its sole discretion.
+
+This Licence is not an open-source licence as defined by the Open Source Initiative.
+
+1. DEFINITIONS
+
+1.1 "Software" means the source code, object code, documentation, associated files and modifications expressly distributed under SRSL-1.0.
+
+1.2 "Licensor" means the copyright holder or other person legally authorised to grant rights in the Software.
+
+1.3 "Licensee" means any individual or legal entity exercising rights granted by this Licence.
+
+1.4 "Non-Commercial Use" means an activity wholly within one or more of the following permitted purposes, and not undertaken on behalf of a for-profit enterprise as part of its operations:
+
+a. Personal, domestic, hobby, experimental, independent educational or laboratory use by a natural person acting outside a trade, employment assignment or paid service.
+b. Independent research, including non-commercial defensive security research, scholarship and responsible vulnerability disclosure, not carried out under a commercial research or services contract.
+c. Teaching, learning and research for a not-for-profit educational or research institution for its own non-commercial purposes.
+d. Bona fide charitable and public-interest activity undertaken directly by a registered charity or not-for-profit organisation and not as an outsourced business function of a commercial enterprise.
+e. Non-commercial contribution, development, modification and redistribution in compliance with Section 5.
+
+Incidental personal benefits, including skills, a portfolio, improved employment prospects, publication of research or an occasional discretionary research award, do not alone disqualify otherwise permitted activity. Employment, paid work, enterprise-directed research, paid bug-bounty contracting and commercial deliverables are assessed under Section 1.5.
+
+1.5 "Commercial Exploitation" means, solely for determining the scope of permissions granted under this Licence, any exercise of rights in the Software that does not fall wholly within Section 1.4, whether or not a fee, profit, cost saving, commercial intent or other benefit can be shown.
+
+It includes, without limitation:
+- Use by a for-profit legal entity in connection with its business operations, including internal evaluation, development, deployment, testing and automation.
+- Use by a person in the course of a trade or business, or as a service for a commercial client.
+- Incorporation into paid or unpaid products, hosted services, consultancy or commercial data-processing operations undertaken for a business.
+- Research, prototyping, model development, integration or validation intended for a commercial enterprise or commissioned for its benefit.
+- Commercial marketing, redistribution, licensing or sublicensing of the Software or covered Modifications.
+
+A natural person who also owns or works for a business may still qualify under Section 1.4 when acting wholly independently of that business. Designating an activity as Commercial Exploitation does not override mandatory statutory permissions or itself establish copyright infringement.
+
+1.6 "Modification" means any adaptation, alteration, extension or derivative work of the Software to the extent recognised by applicable copyright law.
+
+1.7 "Commercial Agreement" means a separate written agreement, executed by the Licensor and the relevant commercial licensee, expressly granting specified commercial rights.
+
+1.8 "Covered Product" means the product, service, application or system expressly identified in a Commercial Agreement as incorporating or exploiting the Software.
+
+2. GRANT OF NON-COMMERCIAL RIGHTS
+
+Subject to compliance with this Licence, the Licensor grants the Licensee a worldwide, non-exclusive, royalty-free, non-transferable licence to:
+
+a. Download and reproduce the Software.
+b. Inspect, study and analyse its source code.
+c. Compile and execute the Software.
+d. Modify, extend and adapt the Software.
+e. Use the Software in personal laboratories, home computing environments and independent non-commercial projects.
+f. Use the Software for eligible educational and academic activities.
+g. Redistribute original or modified copies for Non-Commercial Use, provided all applicable copyright notices, licence terms and attribution requirements remain intact.
+
+No registration, payment or prior approval is required for activities expressly permitted by this section.
+
+This grant is limited to Non-Commercial Use and remains subject to the restrictions below.
+
+2.1 Notice and Acceptance
+
+This Licence is an offer of conditional copyright permissions, not a commercial contract. Where the Licensee exercises rights that otherwise require the Licensor's permission, those permissions are conditional on compliance with these terms. Downloading, compiling, executing, adapting or redistributing after reasonable notice of the terms may demonstrate acceptance by conduct to the extent recognised by applicable law. Mere viewing, receipt or exercise of mandatory statutory rights does not itself constitute assent.
+
+The Licence shall remain accessible in distributed source material and be reproduced with redistributions under Section 5. No mandatory registration, telemetry, activation, licence key or click-through is imposed on permitted non-commercial users.
+
+2.2 Commercial Entitlement
+
+Commercial rights arise only under a separately executed Commercial Agreement. A technical entitlement, activation or key establishes rights only to the extent expressly authorised by such an agreement.
+
+3. RESTRICTIONS ON COMMERCIAL EXPLOITATION
+
+No permission for Commercial Exploitation is granted under SRSL-1.0.
+
+A Licensee must obtain a separate Commercial Agreement before commencing Commercial Exploitation of the Software.
+
+Without such an agreement, the Licensee must not:
+
+a. Incorporate the Software into commercial products or services.
+b. Deploy the Software for material commercial advantage.
+c. Sell, rent, license or commercially redistribute the Software or covered derivative works.
+d. Offer paid access to functionality substantially provided by the Software.
+e. Use the Software as part of commercial analysis, processing or research services.
+f. Grant commercial sublicences to third parties.
+g. Represent possession of the source code as authorisation for commercial exploitation.
+
+Commercial use without appropriate authorisation may constitute copyright infringement or another actionable violation, subject to applicable law.
+
+3.1 AI and Machine-Learning Use
+
+No licence is granted to reproduce, extract, transform, aggregate, or use all or substantial protected portions of the Software as training, fine-tuning, distillation, alignment, synthetic-data generation, or benchmark/evaluation material for machine-learning models, whether for internal or commercial purposes, without separate written authorisation. Using the Software itself as an ordinary functional tool, without treating its protected contents as model-development material, is not prohibited by this paragraph.
+
+This restriction does not override mandatory statutory exceptions, including qualifying non-commercial computational analysis. No ownership of all outputs of models that have encountered the Software is asserted: an output is subject to the Licensor's copyright only insofar as applicable law protects material reproduced or adapted in that output.
+
+3.2 Technological Measures and Rights Information
+
+Where effective technical protections, commercial entitlement mechanisms, or copyright-management information are lawfully applied to a particular distribution, this Licence grants no permission to circumvent them for unauthorised commercial use or to remove or falsify rights notices. Such conduct may create separate liability only where the relevant statutory tests are met. This paragraph neither asserts that current distributions contain such a measure nor limits statutory exceptions for reverse engineering, security testing or interoperability.
+
+Nothing in this section prohibits activities permitted by mandatory statutory provisions that cannot lawfully be excluded.
+
+4. COMMERCIAL LICENSING
+
+4.1 No Automatic Commercial Licence
+
+Commercial rights are granted only through a separately executed Commercial Agreement.
+
+Publication of standard commercial terms does not itself grant commercial rights, establish a contractual relationship or create an automatic obligation to pay royalties.
+
+4.2 Standard Commercial Licensing Proposal
+
+Unless otherwise negotiated, the Licensor's standard opening proposal for commercial licensing comprises:
+
+A. Profit Participation
+
+Payment to the Licensor of fifty percent (50%) of Defined Attributable Net Profits arising from the authorised commercial exploitation of the Software.
+
+Defined Attributable Net Profits shall be calculated using the accounting methodology expressly agreed in the Commercial Agreement.
+
+The agreement shall specify:
+- Revenue attributable to the Covered Product.
+- Permitted direct costs and deductions.
+- Treatment of related-party transactions.
+- Accounting periods and reporting obligations.
+- Treatment of losses and adjustments.
+- Procedures for resolving accounting disputes.
+
+Where commercial benefit cannot reasonably be measured through product profits, the Licensor may propose an alternative fee or royalty structure.
+
+B. Complete Covered-Product Source Disclosure
+
+The commercial licensee shall provide the Licensor with complete, corresponding source code for the Covered Product, to the extent specified in the Commercial Agreement.
+
+This may include:
+- Modifications to the Software.
+- Proprietary components incorporated into the Covered Product.
+- Integration and interface code.
+- Build scripts and configuration required to reproduce the licensed functionality.
+- Other source material expressly identified in the agreement.
+
+Disclosure obligations shall respect third-party intellectual-property rights and applicable law.
+
+Disclosure does not automatically transfer copyright or grant redistribution rights to the Licensor.
+
+C. Financial Transparency
+
+The commercial licensee shall maintain accurate records sufficient to calculate and verify royalties.
+
+The Commercial Agreement may require periodic financial statements and reasonable independent audits, subject to appropriate confidentiality and data-protection safeguards.
+
+D. Commercial Restrictions
+
+Unless expressly authorised in writing, commercial licences shall not permit sublicensing, assignment, transfer or expansion beyond the agreed products, services, territories or activities.
+
+4.3 Additional Negotiated Conditions
+
+The Licensor may request additional contractual obligations, including broader source-code disclosure, enhanced auditing, minimum payments or other commercially negotiated conditions.
+
+Such obligations apply only where expressly agreed in a valid Commercial Agreement.
+
+4.4 Alternative Commercial Terms
+
+The Licensor may negotiate alternative commercial arrangements, including:
+- Fixed licence fees.
+- Reduced or increased royalties.
+- Subscription or annual licensing.
+- Per-product or per-deployment fees.
+- Limited-purpose commercial permissions.
+- Alternative source-disclosure arrangements.
+- Custom enterprise licensing.
+
+The Licensor is under no obligation to offer, approve or negotiate a Commercial Agreement.
+
+4.5 Unauthorised Use and Remedies
+
+Unauthorised Commercial Exploitation does not grant a retroactive licence and does not create a Commercial Agreement or automatic debt for the fifty percent (50%) profit-participation proposal in Section 4.2. The Licensor reserves remedies available under applicable law, including injunctive relief, proven losses, account of profits and a reasonable hypothetical licence fee where the evidence and law support those remedies. Proposed commercial terms are not conclusive evidence of a reasonable royalty, loss or agreed debt.
+
+The Licensor may seek additional damages under section 97(2) of the Copyright, Designs and Patents Act 1988 where applicable, subject to proof, the facts and judicial discretion.
+
+5. MODIFICATIONS AND REDISTRIBUTION
+
+Licensees may create and use Modifications for Non-Commercial Use.
+
+Redistribution of the Software or Modifications under this Licence is permitted only where:
+
+a. The redistribution is non-commercial.
+b. A copy of SRSL-1.0 accompanies the redistributed material.
+c. Existing copyright and attribution notices are preserved.
+d. Material modifications are identified as such.
+e. Recipients are informed that Commercial Exploitation requires separate authorisation.
+f. The redistributor has sufficient rights to distribute any third-party material included.
+
+No Licensee may represent a modified version as an official SWORD release without authorisation.
+
+Nothing in this section requires a Licensee to publish private non-commercial modifications.
+
+6. INTELLECTUAL PROPERTY AND RESERVED RIGHTS
+
+All copyrights, trademarks, trade secrets and other intellectual-property rights remain with their respective owners.
+
+No ownership interest is transferred by this Licence.
+
+No patent licence is granted except to the extent expressly provided by a separate agreement or necessarily implied by applicable law.
+
+The names, trademarks and branding of SWORD Intelligence may not be used to imply endorsement, sponsorship or official affiliation without permission.
+
+All rights not expressly granted are reserved.
+
+7. THIRD-PARTY COMPONENTS
+
+The Software may incorporate or interact with independently licensed third-party components.
+
+Such components remain subject to their applicable licences.
+
+SRSL-1.0 does not override third-party licences, copyright ownership or other legal obligations.
+
+Where a component cannot lawfully be distributed under SRSL-1.0, its applicable licence shall govern that component.
+
+8. TERMINATION AND REINSTATEMENT
+
+Rights granted under this Licence terminate automatically upon material breach of its conditions, to the extent permitted by applicable law.
+
+Where a breach is capable of remedy, the Licensor may provide written notice identifying the breach and allowing thirty (30) days for correction.
+
+The Licensor may reinstate terminated rights in writing.
+
+After termination, the former Licensee has no permission under this Licence to exercise rights reserved to the copyright holder. Unauthorised post-termination reproduction, adaptation, distribution and other restricted acts may constitute copyright infringement, subject to statutory rights and the circumstances of the use.
+
+Termination does not extinguish accrued claims or liabilities arising from prior infringement or breach.
+
+Lawful rights granted to compliant third-party recipients are not automatically terminated solely because an upstream distributor breached this Licence.
+
+9. DISCLAIMER OF WARRANTY
+
+To the maximum extent permitted by applicable law, the Software is provided "AS IS" and "AS AVAILABLE", without warranties of merchantability, satisfactory quality, fitness for a particular purpose, non-infringement or uninterrupted operation.
+
+The Licensee assumes responsibility for determining the Software's suitability for its intended use.
+
+Nothing in this Licence excludes warranties or statutory protections that cannot lawfully be excluded.
+
+10. LIMITATION OF LIABILITY
+
+To the maximum extent permitted by applicable law, the Licensor shall not be liable for indirect, incidental, consequential or special losses arising from the use or inability to use the Software, including loss of profits, data or business opportunity.
+
+Nothing in this Licence excludes or limits liability for fraud, fraudulent misrepresentation, death or personal injury caused by negligence, or any other liability that cannot lawfully be excluded or limited.
+
+11. STATUTORY RIGHTS
+
+Nothing in this Licence is intended to exclude, restrict or override rights that cannot lawfully be excluded under applicable legislation.
+
+This includes relevant mandatory provisions of the Copyright, Designs and Patents Act 1988, applicable consumer-protection legislation and other mandatory legal rights.
+
+Where a provision conflicts with mandatory law, that provision shall apply only to the maximum extent lawfully permitted.
+
+12. SEVERABILITY
+
+If any provision of this Licence is determined to be unlawful, invalid or unenforceable, the remaining provisions shall continue in effect to the extent legally permissible.
+
+No invalid provision shall be interpreted as granting commercial rights that are otherwise expressly withheld.
+
+13. GOVERNING LAW AND JURISDICTION
+
+This Licence shall be governed by the laws of England and Wales, subject to applicable mandatory legal protections and conflict-of-laws rules.
+
+Subject to any mandatory jurisdictional requirements, disputes arising from this Licence shall be submitted to the courts of England and Wales.
+
+Nothing in this Section prevents the Licensor from seeking remedies for infringement of intellectual-property rights in any competent jurisdiction where infringement is alleged, subject to applicable jurisdictional requirements.
+
+Separate Commercial Agreements may establish their own governing law and dispute-resolution arrangements.
+
+14. LICENCE VERSIONS
+
+This document constitutes SRSL-1.1 and applies to copies expressly distributed under this version.
+
+The Licensor may publish subsequent versions with revised terms.
+
+Unless expressly authorised, Licensees may not automatically substitute a later version for the version under which their copy was licensed.
+
+Publication of a later version does not retroactively revoke permissions already validly granted under an earlier version. Copies lawfully supplied under SRSL-1.0 remain governed by that version unless additional rights are lawfully offered and accepted. The original SRSL-1.0 text remains available in the accompanying LICENSES archive.
+
+15. ENTIRE LICENCE AND ACCEPTANCE
+
+This document defines the permissions offered for Non-Commercial Use.
+
+A person who does not accept these conditions receives no permissions under SRSL-1.1 beyond those otherwise available under applicable law.
+
+Commercial rights arise only through a separately executed Commercial Agreement.
+
+No statement in documentation, advertising, repository metadata or informal correspondence modifies these terms unless made by a person authorised to do so through an effective written agreement.
+
+END OF SWORD RESTRICTED SOURCE LICENCE — VERSION 1.1
